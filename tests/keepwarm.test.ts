@@ -226,11 +226,11 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
   })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎬 Wrap up')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
 
   await band.press({ key: 'wrap-up' })
   expect(ran).toEqual(['debrief'])
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎬 Wrapping up…')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrapping up…')
   // A second press while it runs asks for nothing more.
   await band.press({ key: 'wrap-up' })
   expect(ran).toEqual(['debrief'])
@@ -243,7 +243,7 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
   await clock.advance(5000)
   expect(ran).toEqual(['debrief', 'keepwarm 1m'])
   expect(store.get('keep')).toBe(true)
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎬 Wrap up')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
   await band.unmount()
 })
 

@@ -86,7 +86,7 @@ test('at 68 columns the compact row holds only the essentials, buttons inline as
   // The estimate: the compact row is 48 columns here (step 0), the icon buttons 18 and 2 columns of slack: 68 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎬')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌')
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
   expect(await band.find({ text: '99% left' })).toBeDefined()
   expect(await band.find({ text: '82% left' })).toBeDefined()
@@ -116,7 +116,7 @@ test('at 160 columns the same content is one wide row, buttons inline with their
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎬 Wrap up')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
