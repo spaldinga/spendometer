@@ -650,7 +650,7 @@ export const register: Register = on => {
     )
     // Ends the conversation: runs the debrief, then lets go of this conversation's cache.
     const wrapping = await read($, ending)
-    const wrapLabel = (isWide: boolean) => (isWide ? (wrapping ? '🏁 Wrapping up…' : '🏁 Wrap up') : wrapping ? '🏁…' : '🏁')
+    const wrapLabel = (isWide: boolean) => (isWide ? (wrapping ? '📝 Wrapping up…' : '📝 Wrap up') : wrapping ? '📝…' : '📝')
     const wrapShown = (await switchOf($, WRAP_KEY, false)) && (await hasCommand($, DEBRIEF))
     const wrapButton = (isWide: boolean) => wrapShown ? (
       <Box key="wrap" flexShrink={0} alignItems="flex-start" marginLeft={1}>
