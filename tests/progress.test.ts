@@ -271,3 +271,52 @@ test('pacing mirrors the surfer for the return leg; a real position does not', (
   expect(flip).toContain('repeatCount="indefinite"')
   expect(walkSvg(0.5, 3, 200, false)).not.toContain('type="scale"')
 })
+
+const LONG = 'Fetch my assigned work items and read every one of their linked pull requests'
+const LONG_ITEMS = [
+  { content: 'Read the code', status: 'completed' },
+  { content: LONG, status: 'in_progress' },
+  { content: 'Run tests', status: 'pending' },
+]
+
+/** The progress row's estimated width in columns: the bar's px over 12 plus the words at 0.85 columns a character. */
+const rowCols = async (band: Awaited<ReturnType<T$['ui']['mount']>>) => {
+  const bar = (await band.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Progress'))
+  const row = String((await band.find({ key: 'progress-row' }))?.text)
+  return { cols: Number(bar?.props.width) / 12 + (row.length) * 0.85 + 2, row }
+}
+
+test('at a compact width a long step name is cut with an ellipsis and the row fits the band', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
+  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 60) })
+  const { cols, row } = await rowCols(band)
+  expect(row).toContain('…')
+  expect(row).not.toContain(LONG)
+  expect(cols).toBeLessThanOrEqual(60)
+  await band.unmount()
+})
+
+test('where not even the count and the smallest bar leave room, the step name is dropped', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
+  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 16) })
+  expect(await band.find({ key: 'note' })).toBeUndefined()
+  expect(await band.find({ text: ' 1/3' })).toBeDefined()
+  await band.unmount()
+})
+
+test('at 160 columns the step name shows in full, up to the note limit', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
+  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 160) })
+  // NOTE_MAX is 32: the name is cut there, not by the room.
+  expect(await band.find({ text: ` · ${LONG.slice(0, 31)}…` })).toBeDefined()
+  await band.unmount()
+})

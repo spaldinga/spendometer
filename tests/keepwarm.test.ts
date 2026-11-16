@@ -136,15 +136,15 @@ test('the switch turns keep-warm off and on again through cache-tax, and remembe
   await seed($, 18)
 
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('Keep warm: on')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
 
   await band.press({ key: 'keep-warm' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('Keep warm: off')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
   expect(store.get('keep')).toBe(false)
   expect(ran).toEqual(['keepwarm off'])
 
   await band.press({ key: 'keep-warm' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('Keep warm: on')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
   expect(store.get('keep')).toBe(true)
   expect(ran).toEqual(['keepwarm off', 'keepwarm always'])
   await band.unmount()
@@ -156,7 +156,7 @@ test('the switch shows in the terminal too, and before the first reply', async (
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('Keep warm: off')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
   await band.unmount()
 })
 
@@ -168,7 +168,7 @@ test('the first session ever stores nothing and runs nothing; the switch reads o
   expect(store.has('keep')).toBe(false)
   expect(ran).toEqual([])
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('Keep warm: off')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
   await band.unmount()
 })
 
@@ -226,11 +226,11 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
   })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('Wrap up')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🏁 Wrap up')
 
   await band.press({ key: 'wrap-up' })
   expect(ran).toEqual(['debrief'])
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('Wrapping up…')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🏁 Wrapping up…')
   // A second press while it runs asks for nothing more.
   await band.press({ key: 'wrap-up' })
   expect(ran).toEqual(['debrief'])
@@ -243,7 +243,7 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
   await clock.advance(5000)
   expect(ran).toEqual(['debrief', 'keepwarm 1m'])
   expect(store.get('keep')).toBe(true)
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('Wrap up')
+  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🏁 Wrap up')
   await band.unmount()
 })
 
@@ -374,7 +374,7 @@ test('the store holds main, subs, last and when; last is the latest main turn pl
   await band.unmount()
 })
 
-test('without a last turn the last part is left out; stacked layouts put it under the total', async ($, on) => {
+test('without a last turn the last part is left out; the compact row never shows it', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { 'spend:S1': FRESH(2, 1, 0) } })
   await seed($, 18)
@@ -385,7 +385,8 @@ test('without a last turn the last part is left out; stacked layouts put it unde
 
   await done($, { usage: { ...USED, model: 'claude-haiku-5-5' } })
   const tight = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 60 } })
-  expect(await tight.find({ text: 'last $4.10' })).toBeDefined()
+  expect(await tight.find({ text: '≈$7.10' })).toBeDefined()
+  expect(await tight.find({ key: 'spend-last' })).toBeUndefined()
   await tight.unmount()
 })
 

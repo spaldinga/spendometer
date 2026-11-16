@@ -5,6 +5,16 @@ A Claude Code mod: a band above the prompt. A fork of `robonuggets/ribbon` (MIT)
 drives `cache-tax` (keep-warm) and adds a progress bar, subagent display, session cost, a Wrap up
 button and a hold for risky git commands.
 
+## Branches
+
+- **`dev`** is where work goes. Commit there and push `dev` (`git push origin dev`) once the tests pass.
+- **`main`** is what people install from GitHub. It only moves when the user says the change works as
+  expected in the app: then fast-forward it to `dev` (`git switch main && git merge --ff-only dev`),
+  push `main`, and switch back to `dev`. Never commit straight to `main`, and never push `main` on
+  your own judgement.
+- The app runs whatever branch is checked out here (the plugin is installed from this folder), so keep
+  `dev` checked out while working.
+
 ## Dev loop
 
 1. Change code in `hooks/`, tests in `tests/`. Write the test first.

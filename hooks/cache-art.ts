@@ -25,13 +25,6 @@ export const WORD: Record<Mode, string> = { warm: 'WARM', cold: 'COLD' }
 export const TTL_MIN = 60
 export const TTL_MS = TTL_MIN * 60 * 1000
 
-/** One row needs about 78 columns for two windows; under that, each window stacks. */
-export const WIDE_AT = 78
-/** Under this the dot bars shrink and the cache gets its own row. */
-export const TIGHT_AT = 42
-
-export const kindOf = (columns: number): Kind => (columns >= WIDE_AT ? 'wide' : columns >= TIGHT_AT ? 'stacked' : 'tight')
-
 /**
  * The band's width in CSS pixels for a column count: the engine keeps 5 cells
  * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
@@ -230,10 +223,44 @@ export const roboSvg = (mode: Mode): string => svgDoc(ROBO_SIZE, ROBO_SIZE, robo
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
 
+// ---------- Usage limits: a zone at the top of the card ----------
+/** A usage window as the card draws it. */
+export type CardWindow = { kind: string; percentUsed: number; resetsAt?: string }
+
+/** A reset time written out: 3d 2h, 4h 1m, 35m. */
+export const fmtReset = (iso: string | undefined, now: number): string => {
+  if (!iso) return ''
+  const ms = Date.parse(iso) - now
+  if (Number.isNaN(ms)) return ''
+  if (ms <= 0) return 'resetting'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ${mins % 60}m`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+const LIMIT_LABELS: Record<string, string> = { seven_day: '7-DAY LIMIT', five_hour: '5-HOUR LIMIT' }
+const LIMIT_COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
+const LOW_AT = 15
+/** The limits zone: one block's height, 1 px rule included, on the page and in the narrow card. */
+const LIMIT_H = 133
+const LIMIT_HC = 101
+/** The narrowest a block may be to sit beside another in the narrow card. */
+const LIMIT_MIN_W = 150
+
+const limitOf = (w: CardWindow, now: number) => {
+  const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
+  const label = LIMIT_LABELS[w.kind] ?? w.kind.replace(/_/g, ' ').toUpperCase()
+  const reset = fmtReset(w.resetsAt, now)
+  const resets = !reset ? '' : reset === 'resetting' ? 'resetting now' : `resets in ${reset}`
+  return { left, label, resets, col: LIMIT_COLORS[w.kind] ?? TEXT }
+}
+
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
 
-export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; w: number; h: number; alt: string } => {
+export const cardSvg = (v: CacheView, kind: Kind, W: number, windows: readonly CardWindow[] = [], now = 0): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -322,6 +349,51 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
     return g
   }
 
+  // The usage limits, one block each: what is left, a dot bar of it, and when it resets.
+  const limits = windows.map(w => limitOf(w, now))
+  const zoneLimit = (l: ReturnType<typeof limitOf>, x: number, y: number, bw: number, o: { compact?: boolean } = {}) => {
+    const k = o.compact ? { lab: 24, big: 56, bs: 26, ts: 14, bar: 72, cap: 92 } : { lab: 30, big: 72, bs: 38, ts: 15, bar: 94, cap: 120 }
+    let g = t(x, y + k.lab, l.label, { ls: 1.4 })
+    g +=
+      `<text x="${x}" y="${y + k.big}" font-weight="600" fill="${l.col}"><tspan font-size="${k.bs}">${l.left}%</tspan>` +
+      `<tspan font-size="${k.ts}" font-weight="500" fill="${MUTED}" dx="7">left</tspan>` +
+      (l.left < LOW_AT ? `<tspan font-size="${k.ts}" font-weight="700" fill="${TEXT}" dx="7">LOW</tspan>` : '') +
+      '</text>'
+    const cols = Math.max(8, Math.min(30, Math.floor((bw - 30) / 9.6)))
+    const lit = Math.round((l.left / 100) * cols)
+    for (let c = 0; c < cols; c++) g += `<circle cx="${x + 3 + c * 9.6}" cy="${y + k.bar}" r="3" fill="${c < lit ? l.col : EMPTY}"/>`
+    if (l.resets) g += t(x, y + k.cap, l.resets, { size: 12, w: 500 })
+    return g
+  }
+  // Side by side like IDLE and IN CACHE, a divider between; one under the other where the narrow card is too thin.
+  const side = (compact: boolean) => {
+    const n = limits.length
+    const bw = (W - 26) / n
+    let g = ''
+    limits.forEach((l, i) => {
+      const left = 13 + i * bw
+      if (i > 0) g += vline(left, 18, (compact ? LIMIT_HC : LIMIT_H) - 37)
+      g += zoneLimit(l, left + (i > 0 ? 26 : 0), 0, bw - (i > 0 ? 26 : 0) - 14, { compact })
+    })
+    return g + hline((compact ? LIMIT_HC : LIMIT_H) - 1)
+  }
+  let top = ''
+  let topH = 0
+  if (limits.length > 0) {
+    if (kind !== 'tight') {
+      top = side(false)
+      topH = LIMIT_H
+    } else if ((W - 26) / limits.length >= LIMIT_MIN_W) {
+      top = side(true)
+      topH = LIMIT_HC
+    } else {
+      limits.forEach((l, i) => {
+        top += zoneLimit(l, 13, i * LIMIT_HC, W - 26, { compact: true }) + hline(i * LIMIT_HC + LIMIT_HC - 1)
+      })
+      topH = limits.length * LIMIT_HC
+    }
+  }
+
   let H: number
   let g: string
   if (kind === 'wide') {
@@ -348,10 +420,14 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       hline(180) +
       zoneCost(13, 182, (W - 26) / 4, { compact: true })
   }
-  const h = H + CARD_TOP
-  const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
-  const alt = cold
-    ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
-    : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`
+  const h = H + topH + CARD_TOP
+  const inner = topH > 0 ? top + `<g transform="translate(0 ${topH})">${g}</g>` : g
+  const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + inner + '</g>'
+  const limitsAlt = limits.map(l => `${l.label.toLowerCase()} ${l.left}% left${l.resets ? `, ${l.resets}` : ''}. `).join('')
+  const alt =
+    limitsAlt +
+    (cold
+      ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
+      : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`)
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

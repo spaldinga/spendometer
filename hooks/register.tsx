@@ -8,9 +8,13 @@ import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, MUTED, ORANGE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
-  bandPx, cardSvg, chipSvg, costOf, familyOf, fmtIdle, kindOf, mineModel, roboSvg, turnCost, usd,
+  bandPx, cardSvg, chipSvg, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd,
 } from './cache-art'
 import type { CacheView } from './cache-art'
+import {
+  BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
+  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, layoutOf, textCols,
+} from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
 // dot-matrix bars. Shows how much of each usage window is LEFT, 7-day first, then
@@ -18,7 +22,7 @@ import type { CacheView } from './cache-art'
 //
 // After the first reply it also shows the prompt cache: WARM (red, Robo bobbing)
 // for an hour after the last request, then COLD (blue, Robo frozen) with what the
-// next message costs to re-cache. The arrow button folds the card; warm starts folded,
+// next message costs to re-cache. The arrow button folds the card; warm starts hasCache,
 // cold starts open, and a choice holds until the cache flips. Zero token cost:
 // it reads the engine's own figures and draws.
 //
@@ -41,6 +45,8 @@ const HOLD_KEY = 'hold'
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
 const SPEND_PREFIX = 'spend:'
 const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+/** The cache facts per conversation, so a resume that never reaches the band (state is cleared) still knows them. */
+const CACHE_PREFIX = 'cache:'
 
 const windows = atom({ plugin: 'wavebar', key: 'windows' } as const, [] as Window[])
 const cache = atom({ plugin: 'wavebar', key: 'cache' } as const, null as CacheFacts | null)
@@ -128,15 +134,14 @@ const WRAP_WINDOW = '1m'
 const WRAP_DELAY_MS = 2000
 const CREW_MAX = 40
 const CREW_SHOWN = 5
+/** How wide a button's hover text is, in columns. */
+const TIP_COLS = 44
 
 /** The step's name beside the bar is cut to this, so the bar keeps its room. */
 const NOTE_MAX = 32
-/** The bar sits in the row's spare room when at least this many columns are free; otherwise it takes a row of its own. */
-const INLINE_MIN_COLS = 18
 const BAR_MIN_PX = 140
-const BAR_MAX_PX = 380
-/** A cautious width for one column of spare room, so the bar never pushes the buttons off the row. */
-const COL_PX = 8
+/** A column is 12 px; the row's words are measured at COMPACT_CHAR_COLS of it a character. */
+const COL_PX_FULL = 12
 
 const NAMES: Record<string, string> = { seven_day: '7D', five_hour: '5H', spend_limit: 'SPEND' }
 const ORDER: Record<string, number> = { seven_day: 0, five_hour: 1 }
@@ -152,17 +157,6 @@ const dots = (left: number, cells: number): { on: string; off: string } => {
   return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
 }
 
-const fmtReset = (iso: string | undefined, now: number): string => {
-  if (!iso) return ''
-  const ms = Date.parse(iso) - now
-  if (Number.isNaN(ms)) return ''
-  if (ms <= 0) return 'resetting'
-  const mins = Math.round(ms / 60000)
-  if (mins < 60) return `${mins}m`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ${mins % 60}m`
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`
-}
 
 /** The cache figures of one keep-warm ping, as the model reports them. */
 export type PingUsage = { cache_read_input_tokens: number; cache_creation_input_tokens: number }
@@ -197,11 +191,48 @@ const pull = async ($: EngineInterface): Promise<void> => {
   await update($, windows, () => clean(u.rateLimits))
 }
 
+/** The cache facts of this conversation as last saved, or null when none, the id or the store cannot be read. */
+const readStoredCache = async ($: EngineInterface): Promise<CacheFacts | null> => {
+  try {
+    const c = (await $.store.get(CACHE_PREFIX + (await $.session.id()))) as Partial<CacheFacts> | null | undefined
+    if (!c || typeof c.lastAt !== 'number' || typeof c.tokens !== 'number') return null
+    return { lastAt: c.lastAt, tokens: c.tokens, window: typeof c.window === 'number' ? c.window : 0, model: typeof c.model === 'string' ? c.model : null }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Updates the cache facts and saves them under this conversation's id; a failing id or store only loses the
+ * saving. The saved entry is never deleted here: it is what tells warm from cold after a restart, before the
+ * first request. A /clear starts a conversation with a new id, so an old entry is simply not read again, and
+ * entries untouched for a month are pruned at session start.
+ */
+const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFacts | null): Promise<void> => {
+  const was = (await read($, cache)) ?? (await readStoredCache($))
+  await update($, cache, () => f(was))
+  try {
+    const key = CACHE_PREFIX + (await $.session.id())
+    const c = await read($, cache)
+    if (c) await $.store.set(key, { lastAt: c.lastAt, tokens: c.tokens, window: c.window, model: c.model })
+  } catch { /* the facts stay in the atom for this run */ }
+}
+
+/** The usage windows straight from the engine, or none when it cannot say. */
+const liveWindows = async ($: EngineInterface): Promise<Window[]> => {
+  try {
+    return clean((await $.session.usage()).rateLimits)
+  } catch {
+    return []
+  }
+}
+
+
 /** Fresh context figures from the engine onto the cache facts, when it has them. */
 const measure = async ($: EngineInterface, lastAt: number | null, model: string | null): Promise<void> => {
   const u = await $.session.usage()
   const m = model ?? (await $.session.model())
-  await update($, cache, c => ({
+  await putCache($, c => ({
     lastAt: lastAt ?? c?.lastAt ?? 0,
     tokens: u.context.tokens && u.context.tokens > 0 ? u.context.tokens : (c?.tokens ?? 0),
     window: u.context.window || c?.window || 0,
@@ -261,6 +292,21 @@ const WAITS: readonly (readonly string[])[] = [['sleep', '0.5'], ['ping', '-n', 
 
 type Held = { command: string; risk: Risk; report: Report | null; decision: 'proceed' | 'cancel' | null }
 /** The call being held, or null. One at a time; a second risky call waits its turn. */
+/**
+ * The 30 s redraw. A reload loses this flag and the old timer with it, and a resume may skip session.start,
+ * so the timer is armed from the start, the first request and the first render; the flag keeps it to one.
+ */
+let ticking = false
+const arm = ($: EngineInterface): void => {
+  if (ticking) return
+  ticking = true
+  try {
+    $.clock.every(TICK_MS, () => $.ui.invalidate('ui.render'))
+  } catch {
+    ticking = false
+  }
+}
+
 let held: Held | null = null
 /** Which of WAITS works on this machine: unknown until tried, -1 when none does. */
 let waitAt: number | null = null
@@ -337,8 +383,8 @@ export const register: Register = on => {
   }
 
   on('session.start', async ($, e, next) => {
-    await pull($)
-    $.clock.every(TICK_MS, () => $.ui.invalidate('ui.render'))
+    arm($)
+    try { await pull($) } catch { /* the render reads the engine itself when the atom is empty */ }
     try {
       await $.command.register({
         name: SETTINGS,
@@ -351,6 +397,11 @@ export const register: Register = on => {
     try {
       const cutoff = (await $.clock.now()) - SPEND_KEEP_MS
       for (const key of await $.store.keys()) {
+        if (key.startsWith(CACHE_PREFIX)) {
+          const c = (await $.store.get(key)) as Partial<CacheFacts> | null | undefined
+          if (c && typeof c.lastAt === 'number' && c.lastAt < cutoff) await $.store.delete(key)
+          continue
+        }
         if (!key.startsWith(SPEND_PREFIX)) continue
         const s = (await $.store.get(key)) as Partial<Spent> | null | undefined
         if (s && typeof s.at === 'number' && s.at < cutoff) await $.store.delete(key)
@@ -414,10 +465,23 @@ export const register: Register = on => {
     const r = await next(e)
     const reply = r && typeof r === 'object' && 'value' in r ? r.value : r
     if (reply && reply.isAnswered !== false && pingKeptCacheWarm(reply.usage)) {
-      await update($, cache, c => (c ? { ...c, lastAt: sentAt } : c))
+      await putCache($, c => (c ? { ...c, lastAt: sentAt } : c))
     }
     return r
   })
+
+  // /clear ends the conversation whose facts these are. It does reach mods, unlike a start event after it.
+  on('session.end', async ($, e, next) => {
+    // A /clear ends this conversation: the band forgets it. Its saved entry stays (the next conversation has
+    // another id, so it is never read again) and is pruned after a month.
+    if (e.reason === 'clear') {
+      try {
+        await update($, cache, () => null)
+        await update($, fold, () => null)
+      } catch { /* the band redraws from the next turn */ }
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('session.measure', async ($, e, next) => {
     if (e.changed.includes('rateLimits')) {
@@ -425,7 +489,7 @@ export const register: Register = on => {
     }
     if (e.changed.includes('context') && e.context.tokens && e.context.tokens > 0) {
       const tokens = e.context.tokens
-      await update($, cache, c => (c ? { ...c, tokens, window: e.context.window || c.window } : c))
+      await putCache($, c => (c ? { ...c, tokens, window: e.context.window || c.window } : c))
     }
     return next(e)
   })
@@ -434,7 +498,7 @@ export const register: Register = on => {
   on('classic.SessionStart', async ($, e, next) => {
     const r = await next(e)
     if (e.source === 'clear' || e.source === 'compact') {
-      await update($, cache, () => null)
+      await putCache($, () => null)
       await update($, fold, () => null)
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
@@ -442,16 +506,17 @@ export const register: Register = on => {
       const window = (await $.session.usage()).context.window
       const model = typeof e.model === 'string' ? e.model : await $.session.model()
       const tokens = typeof e.context_tokens === 'number' ? e.context_tokens : 0
-      await update($, cache, () => ({ lastAt, tokens, window, model }))
+      await putCache($, () => ({ lastAt, tokens, window, model }))
     }
     return r
   }).catch(($, e, next) => next(e)) // a band that fails to seed never holds up the session
 
   // Each main-thread request reads or writes the cache, so its start resets the hour.
   on('turn.step', async function* ($, e, next) {
+    arm($)
     if (!e.agentId) {
       const now = await $.clock.now()
-      await update($, cache, c => ({ lastAt: now, tokens: c?.tokens ?? 0, window: c?.window ?? 0, model: c?.model ?? null }))
+      await putCache($, c => ({ lastAt: now, tokens: c?.tokens ?? 0, window: c?.window ?? 0, model: c?.model ?? null }))
       // A turn's first request starts its clock, and a list finished last turn has had its moment.
       if (e.index === 0) {
         await update($, turn, () => ({ startedAt: now, steps: 1 }))
@@ -503,6 +568,7 @@ export const register: Register = on => {
     const c = await read($, cache)
     // turn.step stamps the exact request time; when no step of this turn did, the turn's end is the floor.
     const lastAt = !c || now - c.lastAt > e.durationMs ? now : c.lastAt
+    try { await pull($) } catch { /* the figures come with the next reading */ }
     await measure($, lastAt, e.usage?.model ?? null)
     return r
   })
@@ -541,23 +607,56 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const list = await read($, windows)
+    // The atom is cleared by a resume and refilled only by events that may not come: an empty one asks the engine.
+    arm($)
+    const kept = await read($, windows)
+    const list = kept.length > 0 ? kept : await liveWindows($)
     const now = await $.clock.now()
-    const view = viewOf(await read($, cache), now)
+    const view = viewOf((await read($, cache)) ?? (await readStoredCache($)), now)
 
     const keep = await keepState($)
-    const keepButton = keep === null ? null : (
+    // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
+    // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
+    // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
+    const tip = (_key: string, text: string) =>
+      Svg ? (
+        <Box
+          position="absolute"
+          bottom={1}
+          right={0}
+          display="none"
+          hover={{ display: 'flex' }}
+          flexDirection="column"
+          borderStyle="round"
+          borderDimColor
+          paddingX={1}
+          width={TIP_COLS}
+        >
+          <Text wrap="wrap">{text}</Text>
+        </Box>
+      ) : null
+    // The labels: an icon, and on the wide layout its word too.
+    const keepLabel = (isWide: boolean) => `${keep ? '🔥' : '🧊'}${isWide ? ' Keep warm' : ''}`
+    const keepButton = (isWide: boolean) => keep === null ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={1}>
-        <Button key="keep-warm" label={keep ? 'Keep warm: on' : 'Keep warm: off'} onPress={() => setKeep($, !keep)} />
+        <Button key="keep-warm" label={keepLabel(isWide)} onPress={() => setKeep($, !keep)} />
+        {tip(
+          'keep',
+          keep
+            ? 'Keep warm is on: cache-tax pings between turns so the prompt cache stays warm (a few cents a ping). Click to turn it off.'
+            : 'Keep warm is off. Click to let cache-tax keep the prompt cache warm between turns.',
+        )}
       </Box>
     )
     // Ends the conversation: runs the debrief, then lets go of this conversation's cache.
     const wrapping = await read($, ending)
-    const wrapButton = (await switchOf($, WRAP_KEY, false)) && (await hasCommand($, DEBRIEF)) ? (
+    const wrapLabel = (isWide: boolean) => (isWide ? (wrapping ? '🏁 Wrapping up…' : '🏁 Wrap up') : wrapping ? '🏁…' : '🏁')
+    const wrapShown = (await switchOf($, WRAP_KEY, false)) && (await hasCommand($, DEBRIEF))
+    const wrapButton = (isWide: boolean) => wrapShown ? (
       <Box key="wrap" flexShrink={0} alignItems="flex-start" marginLeft={1}>
         <Button
           key="wrap-up"
-          label={wrapping ? 'Wrapping up…' : 'Wrap up'}
+          label={wrapLabel(isWide)}
           onPress={async () => {
             if ((await read($, ending)) !== null) return
             await update($, ending, () => 'asked' as const)
@@ -567,13 +666,111 @@ export const register: Register = on => {
             fire($, DEBRIEF, '')
           }}
         />
+        {tip('wrap', "Wrap up: runs /debrief with this conversation's cost, then stops keeping this conversation's cache warm.")}
       </Box>
     ) : null
-    const buttons = [keepButton, wrapButton]
     const grow = <Box key="grow" flexGrow={1} />
 
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
-    const kind = kindOf(columns)
+
+    // What the conversation has cost so far, read from the store: it survives a restart.
+    const paid = await readSpend($)
+    const total = paid ? paid.main + paid.subs : 0
+    const lastText = paid && paid.last > 0 ? usd(paid.last) : null
+
+    // Folding needs the card, and the card is a drawing: the terminal stays hasCache.
+    const stored = await read($, fold)
+    const open = view !== null && Svg !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
+    const toggle = () => {
+      if (view) update($, fold, f => ({ mode: view.mode, open: !(f && f.mode === view.mode ? f.open : view.mode === 'cold') }))
+    }
+    const button = Svg && view ? (
+      <Box key="fold" flexShrink={0} alignItems="flex-start">
+        <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
+        {tip('fold', open ? 'Hide the cache card.' : "Show the cache card: idle time, context size and what a message costs on each model.")}
+      </Box>
+    ) : null
+
+    // The layout follows from what the row holds: each width below is counted in columns from the
+    // text the row will say, and layoutOf picks the first layout whose row fits.
+    // Columns a character of text takes: one in the terminal, about half on the desktop.
+    const k = Svg ? DESKTOP_CHAR_COLS : 1
+    const t = (s: string) => textCols(s, k)
+    const lefts = list.map(w => Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10))
+    const resets = list.map(w => fmtReset(w.resetsAt, now))
+    const lowText = (i: number) => (lefts[i] < LOW_AT ? ' LOW' : '')
+    const nameOf = (w: Window) => NAMES[w.kind] ?? w.kind.toUpperCase()
+    const windowCols = (isWideRow: boolean, cells: number) =>
+      list.length === 0
+        ? Math.ceil(WAITING_COLS * k) + BLOCK_MARGIN
+        : list.reduce(
+            (n, w, i) =>
+              n +
+              (isWideRow
+                ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + BLOCK_MARGIN
+                : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
+            0,
+          )
+    const spendCols = (isWideRow: boolean) =>
+      total <= 0
+        ? 0
+        : isWideRow
+          ? t(`COST ≈${usd(total)}${lastText ? ` · last ${lastText}` : ''}`) + BLOCK_MARGIN
+          : blockCols(['COST', `≈${usd(total)}`, lastText ? `last ${lastText}` : ''], BLOCK_MARGIN, k)
+    const waitingOnly = list.length === 0 && !view
+    const rowCols = (isWideRow: boolean, cells: number, cacheCols: number) =>
+      ROW_PAD +
+      (waitingOnly ? Math.ceil(WAITING_ROW_COLS * k) + (total > 0 ? WAITING_SPEND_GAP : 0) : LABEL_COLS + (isWideRow ? WIDE_LABEL_MARGIN : BLOCK_MARGIN) + windowCols(isWideRow, cells)) +
+      spendCols(isWideRow) +
+      cacheCols
+    const badgeCols = Svg ? ROBO_CHIP_COLS : TEXT_CHIP_COLS
+    const minsLeft = view ? Math.max(0, TTL_MIN - view.idleMin) : 0
+    const priced = view ? mineModel(view) : undefined
+    const nextCost = view && priced ? usd(costOf(priced, view.mode, view.tokens)) : null
+    const summaryText = !view ? '' : view.mode === 'cold' ? ` ${view.idle}${nextCost ? ` · ${nextCost}` : ''}` : ` ${minsLeft}m left`
+    // The cache state shows in the row whether the card is open or not.
+    const hasCache = view !== null
+    const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + CACHE_MARGIN : 0
+    const cacheBlockCols =
+      hasCache && view
+        ? Math.max(badgeCols, blockCols([view.mode === 'cold' ? `${view.idle} idle` : `${minsLeft}m left`, nextCost ? `${nextCost} next` : ''], 0, k)) + CACHE_MARGIN
+        : 0
+    const buttonsWideCols =
+      (button ? FOLD_COLS : 0) +
+      (keep !== null ? buttonCols(keepLabel(true), BUTTON_GAP, k) : 0) +
+      (wrapShown ? buttonCols(wrapLabel(true), BUTTON_GAP, k) : 0)
+    // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
+    const buttonsCols = ((button ? 1 : 0) + (keep !== null ? 1 : 0) + (wrapShown ? 1 : 0)) * COMPACT_BUTTON_COLS
+    // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
+    // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
+    // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
+    const k2 = Svg ? COMPACT_CHAR_COLS : 1
+    const t2 = (s: string) => textCols(s, k2)
+    const nextShown = (step: number) => nextCost !== null && (step === 0 || view?.mode === 'cold')
+    const compactAt = (step: number) =>
+      ROW_PAD +
+      list.reduce((n, w, i) => n + t2(`${lefts[i]}%${step < 4 ? ' left' : ''}${lowText(i)}`) + COMPACT_MARGIN, 0) +
+      (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
+      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + COMPACT_MARGIN : 0)
+    const need = {
+      wide: rowCols(true, CELLS, cacheInlineCols),
+      compact: Array.from({ length: COMPACT_STEPS }, (_, s) => (waitingOnly ? rowCols(false, CELLS, 0) : compactAt(s))),
+      tight: view ? ROW_PAD + badgeCols + t(summaryText) : rowCols(false, TIGHT_CELLS, 0),
+      buttons: buttonsCols,
+      buttonsWide: buttonsWideCols,
+    }
+    const { kind, buttonsRow, compactStep } = layoutOf(columns, need)
+    const buttons = [keepButton(kind === 'wide'), wrapButton(kind === 'wide')]
+    // Buttons that do not fit beside the row take a row of their own, right-aligned, under the band's main rows.
+    const buttonsRowEl = buttonsRow ? (
+      <Box key="buttons-row" flexDirection="row" paddingX={1}>
+        {grow}
+        {button}
+        {buttons}
+      </Box>
+    ) : null
+    const inlineButtons = buttonsRow ? [] : [button, ...buttons]
+
     const running = (await read($, crew)).filter(w => !w.isDone)
     const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
 
@@ -584,9 +781,14 @@ export const register: Register = on => {
     const pacing = !walking && e.props.isWorking ? await read($, turn) : null
     const said = walking ? labelOf(walking) : null
     const note = said && said.note.length > NOTE_MAX ? said.note.slice(0, NOTE_MAX - 1) + '…' : (said?.note ?? '')
-    const said2 = walking ? ` ${said!.count}${note ? ` · ${note}` : ''}` : pacing ? ` ${pulseText(pacing, now)}` : ''
-    // The crew's drawing is about two columns a head; its words follow.
-    const words = said2 + (running.length ? ' '.repeat(Math.min(CREW_SHOWN, running.length) * 2 + 2) + crewWords : '')
+    const pulse = pacing ? ` ${pulseText(pacing, now)}` : ''
+    // The progress row's words are measured like the compact row's: about 0.85 columns a character on the desktop.
+    const charPx = COL_PX_FULL * (Svg ? COMPACT_CHAR_COLS : 1)
+    const crewDrawPx = running.length && Svg ? crewSvg(Math.min(CREW_SHOWN, running.length)).w : 0
+    const crewPx = running.length ? crewDrawPx + (crewWords.length + (walking || pacing ? 2 : 0)) * charPx : 0
+    // What the words need beside the bar, apart from the step's name: the count (or nothing) and the crew.
+    const fixedPx = (walking ? (` ${said!.count}`.length) * charPx : 0) + crewPx
+    const fitChars = (s: string, chars: number) => (s.length <= chars ? s : chars >= 2 ? s.slice(0, chars - 1) + '…' : '')
     const crewBits = !running.length
       ? []
       : [
@@ -603,10 +805,22 @@ export const register: Register = on => {
           <Text key="crew-count" color={TEXT} bold>{` ×${running.length}`}</Text>,
           <Text key="crew-names" color={MUTED}>{` ${crewText(running)}`}</Text>,
         ]
-    /** The bar, its words and the crew, the bar's drawing at most `max` wide; null when there is nothing to show. */
-    const progressOf = (key: string, px: number, max: number) => {
+    /**
+     * The bar, its words and the crew in `availPx` of room, the bar's drawing at most `max` wide; null when
+     * there is nothing to show. The bar keeps at least BAR_MIN_PX; the step's name is cut to what is left
+     * and dropped when nothing is, so the row never wraps past the band.
+     */
+    const progressOf = (key: string, availPx: number, max: number) => {
       if (!walking && !pacing && !running.length) return null
-      const w = Math.round(Math.max(BAR_MIN_PX, Math.min(max, px)))
+      const wordsPx = (s: string) => s.length * charPx
+      // The text wanted beside the bar: the step's name (with its dot) or the pulse line.
+      const wanted = walking ? (note ? ` · ${note}` : '') : pulse
+      const room = availPx - fixedPx
+      const barPx = Math.max(BAR_MIN_PX, Math.min(max, room - wordsPx(wanted)))
+      const left = room - barPx
+      const shown = !wanted ? '' : fitChars(wanted, Math.floor(left / charPx + 1e-6))
+      const noteShown = walking ? (shown.length > 3 ? shown.slice(3) : '') : shown
+      const w = Math.round(barPx)
       const drawing = !walking && !pacing ? null : !Svg ? (
         walking ? <Text key="bar" color={ORANGE}>{barText(walking, kind === 'tight' ? TIGHT_CELLS : CELLS)}</Text> : null
       ) : walking ? (
@@ -622,26 +836,27 @@ export const register: Register = on => {
         <Svg key="bar" source={paceSvg(w)} alt="Working" width={w} height={BAR_H} isInteractive />
       )
       return (
-        <Box key={key} flexDirection="row" flexShrink={0} alignItems="center" paddingX={key === 'progress-row' ? 1 : 0}>
+        <Box key={key} flexDirection="row" flexShrink={0} alignItems="center" paddingX={1}>
           {drawing}
           {walking ? <Text key="count" color={TEXT} bold>{` ${said!.count}`}</Text> : null}
-          {walking && note ? <Text key="note" color={MUTED}>{` · ${note}`}</Text> : null}
-          {pacing ? <Text key="pulse" color={MUTED}>{said2}</Text> : null}
+          {walking && noteShown ? <Text key="note" color={MUTED} wrap="truncate-end">{` · ${noteShown}`}</Text> : null}
+          {pacing && shown ? <Text key="pulse" color={MUTED} wrap="truncate-end">{shown}</Text> : null}
           {crewBits.length && (walking || pacing) ? <Text key="crew-gap">{'  '}</Text> : null}
           {crewBits}
         </Box>
       )
     }
-    // On a row of its own the bar takes the width the words leave.
-    const rowPx = bandPx(columns) - 40 - words.length * COL_PX
+    // On a row of its own the bar takes the width the words leave: the band less its padding and a column of safety.
+    const rowPx = (columns - 3) * COL_PX_FULL
     const progressRow = progressOf('progress-row', rowPx, rowPx)
 
-    // What the conversation has cost so far, read from the store: it survives a restart.
     const isWide = kind === 'wide'
-    const paid = await readSpend($)
-    const total = paid ? paid.main + paid.subs : 0
-    const lastText = paid && paid.last > 0 ? usd(paid.last) : null
-    const spendBox = total <= 0 ? null : (
+    const isCompact = kind === 'stacked'
+    const spendBox = total <= 0 || (isCompact && compactStep >= 2) ? null : isCompact ? (
+      <Box key="spend" flexShrink={0} marginRight={COMPACT_MARGIN}>
+        <Text key="spend-total" color={TEXT} bold>{`≈${usd(total)}`}</Text>
+      </Box>
+    ) : (
       <Box key="spend" flexDirection={isWide ? 'row' : 'column'} flexShrink={0} marginRight={3}>
         <Text color={MUTED} bold>{isWide ? 'COST ' : 'COST'}</Text>
         <Text key="spend-total" color={TEXT} bold>{`≈${usd(total)}`}</Text>
@@ -656,8 +871,9 @@ export const register: Register = on => {
             <Text color={MUTED}>USAGE · waiting for the first reply</Text>
             {spendBox ? <Box key="wait-spend" marginLeft={2}>{spendBox}</Box> : null}
             {grow}
-            {buttons}
+            {inlineButtons}
           </Box>
+          {buttonsRowEl}
           {progressRow}
         </Box>
       )
@@ -710,28 +926,40 @@ export const register: Register = on => {
       )
     }
 
-    const label = (
+    // Compact: only what is left of each window, in its colour.
+    const compact = (w: Window, i: number) => {
+      const p = parts(w)
+      return (
+        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN}>
+          <Text color={p.col} bold>{`${p.left}%${compactStep < 4 ? " left" : ""}`}</Text>
+          {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
+        </Box>
+      )
+    }
+
+    const label = isCompact ? null : (
       <Box key="label" flexShrink={0} marginRight={isWide ? 2 : 3}>
         <Text color={TEXT} bold>USAGE</Text>
       </Box>
     )
     const usage = [
       ...(list.length > 0
-        ? list.map(isWide ? wide : stacked)
-        : [<Box key="wait" flexShrink={0} marginRight={3}><Text color={MUTED}>waiting for the first reply</Text></Box>]),
+        ? list.map(isWide ? wide : isCompact ? compact : stacked)
+        : isCompact ? [] : [<Box key="wait" flexShrink={0} marginRight={3}><Text color={MUTED}>waiting for the first reply</Text></Box>]),
       spendBox,
     ]
 
-    // Before the first reply there is no cache to show: today's band, as it was.
+    // Before the first reply there is no cache to show.
     if (!view) {
       return (
         <Box flexDirection="column">
-          <Box flexDirection="row" paddingX={1}>
+          <Box key="row" flexDirection="row" paddingX={1}>
             {label}
             {usage}
             {grow}
-            {buttons}
+            {inlineButtons}
           </Box>
+          {buttonsRowEl}
           {progressRow}
         </Box>
       )
@@ -741,22 +969,29 @@ export const register: Register = on => {
     const cold = mode === 'cold'
     const hue = HUE[mode]
     const mine = mineModel(view)
-    const stored = await read($, fold)
-    // Folding needs the card, and the card is a drawing: the terminal stays folded.
-    const open = Svg !== null && (stored && stored.mode === mode ? stored.open : cold)
-    const toggle = () =>
-      update($, fold, f => ({ mode, open: !(f && f.mode === mode ? f.open : mode === 'cold') }))
 
+    const chip = Svg
+      ? (() => {
+          const c = chipSvg(mode)
+          return <Svg key="chip" source={c.source} alt={WORD[mode]} width={c.w} height={c.h} />
+        })()
+      : <Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode]} `}</Text>
+    // Compact step 3 and up: Robo alone (the terminal: a one-letter chip) in place of the chip.
+    const compactChip =
+      compactStep < 3
+        ? chip
+        : Svg
+          ? <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />
+          : <Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode][0]} `}</Text>
+    // The next message's cost: always at step 0, after that only while cold.
+    const showNext = mine !== undefined && (compactStep === 0 || cold)
     const badge = Svg
       ? [
           <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />,
           <Text key="gap"> </Text>,
-          (() => {
-            const c = chipSvg(mode)
-            return <Svg key="chip" source={c.source} alt={WORD[mode]} width={c.w} height={c.h} />
-          })(),
+          chip,
         ]
-      : [<Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode]} `}</Text>]
+      : [chip]
 
     const summary = cold
       ? [
@@ -766,26 +1001,6 @@ export const register: Register = on => {
         ]
       : [<Text key="left" color={hue} bold>{` ${Math.max(0, TTL_MIN - view.idleMin)}m left`}</Text>]
 
-    const button = Svg ? (
-      <Box key="fold" flexShrink={0} alignItems="flex-start">
-        <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-      </Box>
-    ) : null
-    // The wide row's spare room, counted in columns from what the row says: the bar goes there when it fits.
-    const usedCols =
-      7 +
-      list.reduce((n, w) => {
-        const p = parts(w)
-        return n + p.name.length + 1 + cells + ` ${p.left}% left`.length + (p.left < LOW_AT ? 4 : 0) + (p.reset ? 3 + p.reset.length : 0) + 3
-      }, 0) +
-      (open ? 0 : 12 + (cold ? view.idle.length + 9 : 9)) +
-      (Svg ? 5 : 0) +
-      (keep === null ? 0 : 17) +
-      (wrapButton ? 15 : 0) +
-      (spendBox ? 9 + usd(total).length + (lastText ? 8 + lastText.length : 0) : 0) +
-      2
-    const freeCols = columns - usedCols - words.length
-    const progressInline = isWide && freeCols >= INLINE_MIN_COLS ? progressOf('progress', freeCols * COL_PX, BAR_MAX_PX) : null
 
     let rows
     if (kind === 'wide') {
@@ -793,39 +1008,32 @@ export const register: Register = on => {
         <Box key="row" flexDirection="row" paddingX={1} alignItems="center">
           {label}
           {usage}
-          {open ? null : (
+          {/* WARM or COLD stays in the row whether the card is open or not. */}
+          {(
             <Box key="inline" flexDirection="row" flexShrink={0} marginRight={2} alignItems="center">
               {badge}
               {summary}
             </Box>
           )}
-          {progressInline}
           {grow}
-          {button}
-          {buttons}
+          {inlineButtons}
         </Box>
       )
     } else if (kind === 'stacked') {
-      // The cache becomes a third stacked block, the same shape as 7D and 5H.
+      // Compact: one line, the chip and the next message's cost standing in for the cache block.
       rows = (
-        <Box key="row" flexDirection="row" paddingX={1}>
-          {label}
+        <Box key="row" flexDirection="row" paddingX={1} alignItems="center">
           {usage}
-          {open ? null : (
-            <Box key="block" flexDirection="column" flexShrink={0} marginRight={2}>
-              <Box flexDirection="row" alignItems="center">{badge}</Box>
-              <Text color={hue} bold>{cold ? `${view.idle} idle` : `${Math.max(0, TTL_MIN - view.idleMin)}m left`}</Text>
-              {mine ? (
-                <Box flexDirection="row">
-                  <Text color={TEXT} bold>{usd(costOf(mine, mode, view.tokens))}</Text>
-                  <Text color={MUTED}> next</Text>
-                </Box>
-              ) : null}
+          {(
+            <Box key="block" flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
+              {compactChip}
+              {showNext ? <Text key="next-gap"> </Text> : null}
+              {showNext && mine ? <Text key="next-cost" color={TEXT} bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
+              {showNext ? <Text key="next" color={MUTED}> next</Text> : null}
             </Box>
           )}
           {grow}
-          {button}
-          {buttons}
+          {inlineButtons}
         </Box>
       )
     } else {
@@ -839,15 +1047,14 @@ export const register: Register = on => {
           {badge}
           {summary}
           {grow}
-          {button}
-          {buttons}
+          {inlineButtons}
         </Box>,
       ]
     }
 
     let card = null
     if (open && Svg) {
-      const c = cardSvg(view, kind, bandPx(columns))
+      const c = cardSvg(view, kind, bandPx(columns), list, now)
       card = (
         <Box key="card" flexDirection="row">
           <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={kind !== 'tight'} />
@@ -858,7 +1065,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {rows}
-        {progressInline ? null : progressRow}
+        {buttonsRowEl}
+        {progressRow}
         {card}
       </Box>
     )

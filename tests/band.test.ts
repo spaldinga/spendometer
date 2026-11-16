@@ -39,7 +39,7 @@ test('the band shows percent left for each window once a reading lands', async (
   }
 })
 
-test('in a narrow band each window stacks, with percent left and reset time on their own lines', async ($, on) => {
+test('in a narrow band the windows shrink to their percent left, with no names, dots or reset times', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.parse('2098-12-31T22:00:00Z') })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -55,6 +55,9 @@ test('in a narrow band each window stacks, with percent left and reset time on t
     props: { ...PROPS, bodyColumns: 36 },
   })
   expect(await band.find({ text: '42% left' })).toBeDefined()
-  expect(await band.find({ text: 'resets 2h 0m' })).toBeDefined()
+  const row = String((await band.find({ key: 'row' }))?.text)
+  expect(row).not.toContain('resets')
+  expect(row).not.toContain('5H')
+  expect(row).not.toContain('●')
   await band.unmount()
 })

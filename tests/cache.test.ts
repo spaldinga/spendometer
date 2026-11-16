@@ -63,7 +63,7 @@ test('a cold cache opens the card with the re-cache price, and Hide folds it to 
   await band.unmount()
 })
 
-test('squeezed, the folded cache stacks as a third block, then takes its own row', async ($, on) => {
+test('squeezed, the folded cache shrinks to the chip and the next cost on the one row, then takes its own row', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: NOW })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -72,17 +72,18 @@ test('squeezed, the folded cache stacks as a third block, then takes its own row
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: WARM_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
-  const half = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 53 } })
+  // 60 columns: the compact row (both windows, the chip and the next cost, about 30 columns) plus the fold button fits.
+  const half = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 60 } })
   expect(await half.find({ key: 'block' })).toBeDefined()
-  expect(await half.find({ text: '42m left' })).toBeDefined()
+  expect(String((await half.find({ key: 'row' }))?.text)).not.toContain('m left')
   expect(await half.find({ text: '$0.15' })).toBeDefined()
   await half.unmount()
 
-  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 33 } })
+  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 16 } })
   expect(await narrow.find({ key: 'cache' })).toBeDefined()
   await narrow.press({ key: 'cache-fold' })
-  // Narrow's card is the compact one: 38 columns is a 456 px band.
-  expect(JSON.stringify(await narrow.find({ key: 'card' }))).toContain('width=\\"456\\"')
+  // Narrow's card is the compact one: 16 columns is a 252 px band.
+  expect(JSON.stringify(await narrow.find({ key: 'card' }))).toContain('width=\\"252\\"')
   await narrow.unmount()
 })
 
