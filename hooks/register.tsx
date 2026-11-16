@@ -123,9 +123,20 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
   const hold = await switchOf($, HOLD_KEY, true)
   return (
     `wrapup: ${wrap ? 'on' : 'off'} - a Wrap up button that runs the debrief skill and lets this conversation go cold\n` +
-    `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band`
+    `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
+    widthLine()
   )
 }
+
+/**
+ * The width the band was last drawn at, as the engine gave it, and the layout it chose: shown by the status
+ * command, so a layout that does not fit can be traced to the width the band was given.
+ */
+let lastWidth: { body: number | null; viewport: number | null; used: number; kind: string; need: string } | null = null
+const widthLine = (): string =>
+  lastWidth === null
+    ? 'band: not drawn yet since the mod loaded'
+    : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}`
 
 /** The skill a wrap-up runs, and the window it leaves keep-warm: too short for a ping, so this conversation stops being held. */
 const DEBRIEF = 'debrief'
@@ -760,6 +771,13 @@ export const register: Register = on => {
       buttonsWide: buttonsWideCols,
     }
     const { kind, buttonsRow, compactStep } = layoutOf(columns, need)
+    lastWidth = {
+      body: typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : null,
+      viewport: typeof e.viewport?.columns === 'number' ? e.viewport.columns : null,
+      used: columns,
+      kind: kind === 'stacked' ? `compact step ${compactStep}` : kind,
+      need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}`,
+    }
     const buttons = [keepButton(kind === 'wide'), wrapButton(kind === 'wide')]
     // Buttons that do not fit beside the row take a row of their own, right-aligned, under the band's main rows.
     const buttonsRowEl = buttonsRow ? (
