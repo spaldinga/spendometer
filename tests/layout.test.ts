@@ -256,3 +256,21 @@ test('compact, with the card open, the chip still shows', async ($, on) => {
   expect(await band.find({ key: 'block' })).toBeDefined()
   await band.unmount()
 })
+
+test('the open card names the limits only when the row does not: compact yes, wide no', async ($, on) => {
+  // Idle 70 minutes: cold, so the card is open.
+  const wide = await mountAt($, on, 160, true, 70)
+  const card = await wide.find({ key: 'card' })
+  expect(card).toBeDefined()
+  const svg = JSON.stringify(card)
+  const body = svg.slice(svg.lastIndexOf('</style>') + 1)
+  expect(body).not.toContain('7-DAY LIMIT')
+  await wide.unmount()
+})
+
+test('compact, the open card still names the limits', async ($, on) => {
+  const compact = await mountAt($, on, 68, true, 70)
+  const svg = JSON.stringify(await compact.find({ key: 'card' }))
+  expect(svg.slice(svg.lastIndexOf('</style>') + 1)).toContain('7-DAY LIMIT')
+  await compact.unmount()
+})

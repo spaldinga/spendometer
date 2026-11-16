@@ -1072,7 +1072,9 @@ export const register: Register = on => {
 
     let card = null
     if (open && Svg) {
-      const c = cardSvg(view, kind, bandPx(columns), list, now)
+      // The limits zone names the windows only where the row does not: the wide row already says 7D and 5H with
+      // what is left and when it resets, and repeating it made the open card taller than the band may be.
+      const c = cardSvg(view, kind, bandPx(columns), kind === 'wide' ? [] : list, now)
       card = (
         <Box key="card" flexDirection="row">
           <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={kind !== 'tight'} />
