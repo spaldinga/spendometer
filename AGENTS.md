@@ -19,9 +19,9 @@ button and a hold for risky git commands.
 
 1. Change code in `hooks/`, tests in `tests/`. Write the test first.
 2. `claude plugin test .` (no login needed) and `claude plugin validate .`
-3. To see it in the app: ask the user to run `/reload-plugins` in the open session; fall back to
-   restarting the app. `/reload-plugins` is the documented route but was not yet confirmed in the
-   desktop app on 2026-11-10: note here whether it works once tried.
+3. To see it in the app: ask the user to run `/reload-plugins --force` in the open session; fall
+   back to restarting the app. Confirmed in the desktop app on 2026-11-17: without `--force` the
+   changes were not picked up.
 4. Ship one visible change at a time, so each is seen in the app before the next is built.
 
 A reload re-runs `register`: `$.state` and `$.store` keep their values; module variables and
