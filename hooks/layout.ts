@@ -101,6 +101,12 @@ export const layoutOf = (columns: number, need: Need): Layout => {
 }
 
 /**
+ * A column's real width on the desktop, in px. Measured on 2026-11-16: the band at 69 columns drew about
+ * 600 px wide. Rounded down, so a drawing sized from it never runs past the band.
+ */
+export const DESKTOP_COL_PX = 8.6
+
+/**
  * How many pixels one of the band's rows is on the desktop, for counting a drawing's height in rows.
  * A guess, not measured: a column is about 8.7 px and a line of text about twice that. Kept on the low
  * side, so a drawing counts as more rows and the band gives up a part before it would scroll.

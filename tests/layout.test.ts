@@ -257,14 +257,15 @@ test('compact, with the card open, the chip still shows', async ($, on) => {
   await band.unmount()
 })
 
-test('the open card names the limits only when the row does not: compact yes, wide no', async ($, on) => {
+test('the open card names the limits and when they reset on the wide layout too', async ($, on) => {
   // Idle 70 minutes: cold, so the card is open.
   const wide = await mountAt($, on, 160, true, 70)
   const card = await wide.find({ key: 'card' })
   expect(card).toBeDefined()
   const svg = JSON.stringify(card)
   const body = svg.slice(svg.lastIndexOf('</style>') + 1)
-  expect(body).not.toContain('7-DAY LIMIT')
+  expect(body).toContain('7-DAY LIMIT')
+  expect(body).toContain('resets in')
   await wide.unmount()
 })
 
@@ -294,5 +295,17 @@ test('compact, a low band drops the limits zone from the open card instead of sc
   const svg = JSON.stringify(await band.find({ key: 'card' }))
   expect(svg).toBeDefined()
   expect(svg.slice(svg.lastIndexOf('</style>') + 1)).not.toContain('7-DAY LIMIT')
+  await band.unmount()
+})
+
+test('the card element is sized to the band on screen, so the shrunk drawing leaves no empty space around it', async ($, on) => {
+  const band = await mountAt($, on, 69, true, 70)
+  const svg = (await band.findAll({ type: 'Svg' })).find(s => String(s.props.alt).includes('Cache cold'))
+  expect(svg).toBeDefined()
+  // 69 columns at 8.6 px is 593 px on screen; the height follows the drawing's proportions.
+  expect(svg!.props.width).toBeLessThanOrEqual(594)
+  const src = String(svg!.props.source)
+  const [, dw, dh] = src.match(/viewBox="0 0 (\d+) (\d+)"/)!.map(Number)
+  expect(Math.abs(Number(svg!.props.height) / Number(svg!.props.width) - dh / dw)).toBeLessThan(0.01)
   await band.unmount()
 })

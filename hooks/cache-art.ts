@@ -243,11 +243,11 @@ export const fmtReset = (iso: string | undefined, now: number): string => {
 const LIMIT_LABELS: Record<string, string> = { seven_day: '7-DAY LIMIT', five_hour: '5-HOUR LIMIT' }
 const LIMIT_COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
 const LOW_AT = 15
-/** The limits zone: one block's height, 1 px rule included, on the page and in the narrow card. */
-const LIMIT_H = 133
-const LIMIT_HC = 101
-/** The narrowest a block may be to sit beside another in the narrow card. */
-const LIMIT_MIN_W = 150
+/** One line of the limits strip, its 1 px rule included, and where its text sits. */
+const LIMIT_LINE_H = 34
+const LIMIT_BASE = 22
+/** The narrowest a window's line may be to sit beside another: `5-HOUR LIMIT 96% left · resets in 4h 48m`. */
+const LIMIT_MIN_W = 330
 
 const limitOf = (w: CardWindow, now: number) => {
   const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
@@ -349,49 +349,32 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, windows: readonly C
     return g
   }
 
-  // The usage limits, one block each: what is left, a dot bar of it, and when it resets.
+  // The usage limits as one line each: the name, what is left, and when it resets. Side by side where the
+  // card is wide enough, else one under the other.
   const limits = windows.map(w => limitOf(w, now))
-  const zoneLimit = (l: ReturnType<typeof limitOf>, x: number, y: number, bw: number, o: { compact?: boolean } = {}) => {
-    const k = o.compact ? { lab: 24, big: 56, bs: 26, ts: 14, bar: 72, cap: 92 } : { lab: 30, big: 72, bs: 38, ts: 15, bar: 94, cap: 120 }
-    let g = t(x, y + k.lab, l.label, { ls: 1.4 })
-    g +=
-      `<text x="${x}" y="${y + k.big}" font-weight="600" fill="${l.col}"><tspan font-size="${k.bs}">${l.left}%</tspan>` +
-      `<tspan font-size="${k.ts}" font-weight="500" fill="${MUTED}" dx="7">left</tspan>` +
-      (l.left < LOW_AT ? `<tspan font-size="${k.ts}" font-weight="700" fill="${TEXT}" dx="7">LOW</tspan>` : '') +
-      '</text>'
-    const cols = Math.max(8, Math.min(30, Math.floor((bw - 30) / 9.6)))
-    const lit = Math.round((l.left / 100) * cols)
-    for (let c = 0; c < cols; c++) g += `<circle cx="${x + 3 + c * 9.6}" cy="${y + k.bar}" r="3" fill="${c < lit ? l.col : EMPTY}"/>`
-    if (l.resets) g += t(x, y + k.cap, l.resets, { size: 12, w: 500 })
-    return g
-  }
-  // Side by side like IDLE and IN CACHE, a divider between; one under the other where the narrow card is too thin.
-  const side = (compact: boolean) => {
-    const n = limits.length
-    const bw = (W - 26) / n
-    let g = ''
-    limits.forEach((l, i) => {
-      const left = 13 + i * bw
-      if (i > 0) g += vline(left, 18, (compact ? LIMIT_HC : LIMIT_H) - 37)
-      g += zoneLimit(l, left + (i > 0 ? 26 : 0), 0, bw - (i > 0 ? 26 : 0) - 14, { compact })
-    })
-    return g + hline((compact ? LIMIT_HC : LIMIT_H) - 1)
-  }
+  const lineLimit = (l: ReturnType<typeof limitOf>, x: number, y: number) =>
+    `<text x="${x}" y="${y + LIMIT_BASE}" font-weight="700" fill="${MUTED}">` +
+    `<tspan font-size="11" letter-spacing="1.4">${l.label}</tspan>` +
+    `<tspan font-size="16" font-weight="600" fill="${l.col}" dx="10">${l.left}%</tspan>` +
+    `<tspan font-size="12" font-weight="500" dx="5">left</tspan>` +
+    (l.left < LOW_AT ? `<tspan font-size="12" fill="${TEXT}" dx="6">LOW</tspan>` : '') +
+    (l.resets ? `<tspan font-size="12" font-weight="500" dx="6">· ${l.resets}</tspan>` : '') +
+    '</text>'
   let top = ''
   let topH = 0
   if (limits.length > 0) {
-    if (kind !== 'tight') {
-      top = side(false)
-      topH = LIMIT_H
-    } else if ((W - 26) / limits.length >= LIMIT_MIN_W) {
-      top = side(true)
-      topH = LIMIT_HC
-    } else {
+    const bw = (W - 26) / limits.length
+    if (bw >= LIMIT_MIN_W) {
       limits.forEach((l, i) => {
-        top += zoneLimit(l, 13, i * LIMIT_HC, W - 26, { compact: true }) + hline(i * LIMIT_HC + LIMIT_HC - 1)
+        if (i > 0) top += vline(13 + i * bw, 8, LIMIT_LINE_H - 16)
+        top += lineLimit(l, 13 + i * bw + (i > 0 ? 26 : 0), 0)
       })
-      topH = limits.length * LIMIT_HC
+      topH = LIMIT_LINE_H
+    } else {
+      limits.forEach((l, i) => { top += lineLimit(l, 13, i * LIMIT_LINE_H) })
+      topH = limits.length * LIMIT_LINE_H
     }
+    top += hline(topH - 1)
   }
 
   let H: number

@@ -13,7 +13,7 @@ import {
 import type { CacheView } from './cache-art'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, fitOpen, layoutOf, rowsOf, textCols,
+  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, textCols,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -1073,21 +1073,25 @@ export const register: Register = on => {
     let card = null
     let showProgress = true
     if (open && Svg) {
-      // The limits zone names the windows only where the row does not: the wide row already says 7D and 5H.
-      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the limits zone, then
+      // The card is drawn at W, 12 px a column, but the band is narrower on screen (DESKTOP_COL_PX). Its
+      // element gets the width it is shown at and the height that goes with it: given the drawn height, the
+      // shrunk drawing sat centred in a box too tall for it, with empty bands above and below.
+      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the limits strip, then
       // the progress row, until the open band fits.
       const W = bandPx(columns)
+      const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
+      const shownH = (h: number) => Math.round(h * scale)
       const bare = cardSvg(view, kind, W, [], now)
-      const full = kind === 'wide' || !list.length ? bare : cardSvg(view, kind, W, list, now)
+      const full = list.length ? cardSvg(view, kind, W, list, now) : bare
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
-      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, full.h, bare.h)
+      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(full.h), shownH(bare.h))
       const c = fit.limits ? full : bare
       showProgress = fit.progress
-      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(c.h)} of ${maxRows} rows${fit.limits ? '' : ', limits dropped'}${fit.progress ? '' : ', progress dropped'}`
+      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.limits ? '' : ', limits dropped'}${fit.progress ? '' : ', progress dropped'}`
       card = (
         <Box key="card" flexDirection="row">
-          <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={kind !== 'tight'} />
+          <Svg source={c.source} alt={c.alt} width={Math.round(c.w * scale)} height={shownH(c.h)} isInteractive={kind !== 'tight'} />
         </Box>
       )
     }
