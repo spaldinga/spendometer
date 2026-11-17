@@ -13,7 +13,7 @@ import {
 import type { CacheView } from './cache-art'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, layoutOf, textCols,
+  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, fitOpen, layoutOf, rowsOf, textCols,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -132,11 +132,11 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
  * The width the band was last drawn at, as the engine gave it, and the layout it chose: shown by the status
  * command, so a layout that does not fit can be traced to the width the band was given.
  */
-let lastWidth: { body: number | null; viewport: number | null; used: number; kind: string; need: string } | null = null
+let lastWidth: { body: number | null; viewport: number | null; used: number; kind: string; need: string; fit?: string } | null = null
 const widthLine = (): string =>
   lastWidth === null
     ? 'band: not drawn yet since the mod loaded'
-    : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}`
+    : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}${lastWidth.fit ? `; open card ${lastWidth.fit}` : ''}`
 
 /** The skill a wrap-up runs, and the window it leaves keep-warm: too short for a ping, so this conversation stops being held. */
 const DEBRIEF = 'debrief'
@@ -1071,10 +1071,20 @@ export const register: Register = on => {
     }
 
     let card = null
+    let showProgress = true
     if (open && Svg) {
-      // The limits zone names the windows only where the row does not: the wide row already says 7D and 5H with
-      // what is left and when it resets, and repeating it made the open card taller than the band may be.
-      const c = cardSvg(view, kind, bandPx(columns), kind === 'wide' ? [] : list, now)
+      // The limits zone names the windows only where the row does not: the wide row already says 7D and 5H.
+      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the limits zone, then
+      // the progress row, until the open band fits.
+      const W = bandPx(columns)
+      const bare = cardSvg(view, kind, W, [], now)
+      const full = kind === 'wide' || !list.length ? bare : cardSvg(view, kind, W, list, now)
+      const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
+      const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
+      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, full.h, bare.h)
+      const c = fit.limits ? full : bare
+      showProgress = fit.progress
+      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(c.h)} of ${maxRows} rows${fit.limits ? '' : ', limits dropped'}${fit.progress ? '' : ', progress dropped'}`
       card = (
         <Box key="card" flexDirection="row">
           <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={kind !== 'tight'} />
@@ -1086,7 +1096,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {rows}
         {buttonsRowEl}
-        {progressRow}
+        {showProgress ? progressRow : null}
         {card}
       </Box>
     )

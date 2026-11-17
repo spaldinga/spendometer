@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { layoutOf } from '../hooks/layout'
+import { ROW_PX, fitOpen, layoutOf } from '../hooks/layout'
 
 // The compact row's five variants (each narrower), the fold button and the icon buttons (6 columns each), and the wide row's word buttons.
 const NEED = { wide: 118, compact: [60, 52, 46, 40, 34], tight: 15, buttons: 18, buttonsWide: 4 + 14 + 12 }
@@ -63,7 +63,7 @@ const WINDOWS = [
 ]
 
 /** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
-const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop') => {
+const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40) => {
   mock.clock(on, { now: NOW })
   const kv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]])
   on('session.id', () => ({ value: 'S1' }))
@@ -78,7 +78,7 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   on('command.list', () => ({ value: ['keepwarm', 'cache-tax', 'debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
   await $.session.start({ surface, isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: 200000, model: 'claude-opus-5-5' })
-  return $.ui.mount({ plugin: 'wavebar', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns } })
+  return $.ui.mount({ plugin: 'wavebar', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
 }
 
 test('at 68 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
@@ -273,4 +273,26 @@ test('compact, the open card still names the limits', async ($, on) => {
   const svg = JSON.stringify(await compact.find({ key: 'card' }))
   expect(svg.slice(svg.lastIndexOf('</style>') + 1)).toContain('7-DAY LIMIT')
   await compact.unmount()
+})
+
+test('fitOpen keeps everything that fits, then gives up the limits zone, then the progress row', () => {
+  const card = 10 * ROW_PX
+  const bare = 6 * ROW_PX
+  const bar = 2 * ROW_PX
+  expect(fitOpen(13, 1, bar, card, bare)).toEqual({ limits: true, progress: true })
+  expect(fitOpen(12, 1, bar, card, bare)).toEqual({ limits: false, progress: true })
+  expect(fitOpen(9, 1, bar, card, bare)).toEqual({ limits: false, progress: true })
+  expect(fitOpen(8, 1, bar, card, bare)).toEqual({ limits: false, progress: false })
+  // With no progress row there is nothing to give up but the limits zone.
+  expect(fitOpen(11, 1, 0, card, bare)).toEqual({ limits: true, progress: true })
+  // The card stays even when it alone is taller than the band may be: the person opened it.
+  expect(fitOpen(3, 1, bar, card, bare)).toEqual({ limits: false, progress: false })
+})
+
+test('compact, a low band drops the limits zone from the open card instead of scrolling', async ($, on) => {
+  const band = await mountAt($, on, 68, true, 70, 'desktop', 8)
+  const svg = JSON.stringify(await band.find({ key: 'card' }))
+  expect(svg).toBeDefined()
+  expect(svg.slice(svg.lastIndexOf('</style>') + 1)).not.toContain('7-DAY LIMIT')
+  await band.unmount()
 })

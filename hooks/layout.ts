@@ -99,3 +99,24 @@ export const layoutOf = (columns: number, need: Need): Layout => {
   if (need.compact[last] <= room) return { kind: 'stacked', buttonsRow: b > 0, compactStep: last }
   return { kind: 'tight', buttonsRow: b > 0 && need.tight + b > room, compactStep: 0 }
 }
+
+/**
+ * How many pixels one of the band's rows is on the desktop, for counting a drawing's height in rows.
+ * A guess, not measured: a column is about 8.7 px and a line of text about twice that. Kept on the low
+ * side, so a drawing counts as more rows and the band gives up a part before it would scroll.
+ */
+export const ROW_PX = 18
+/** A drawing's height in rows. */
+export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
+
+/**
+ * What the open band keeps so it stays within `maxRows` and never scrolls. It gives up the card's limits
+ * zone first (the row says the same, shorter), then the progress row. The card itself always stays: the
+ * person opened it.
+ */
+export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, cardPx: number, bareCardPx: number): { limits: boolean; progress: boolean } => {
+  const prog = progressPx > 0 ? rowsOf(progressPx) : 0
+  if (rowsAbove + prog + rowsOf(cardPx) <= maxRows) return { limits: true, progress: true }
+  if (rowsAbove + prog + rowsOf(bareCardPx) <= maxRows) return { limits: false, progress: true }
+  return { limits: false, progress: false }
+}
