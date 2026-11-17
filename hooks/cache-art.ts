@@ -223,10 +223,6 @@ export const roboSvg = (mode: Mode): string => svgDoc(ROBO_SIZE, ROBO_SIZE, robo
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
 
-// ---------- Usage limits: a zone at the top of the card ----------
-/** A usage window as the card draws it. */
-export type CardWindow = { kind: string; percentUsed: number; resetsAt?: string }
-
 /** A reset time written out: 3d 2h, 4h 1m, 35m. */
 export const fmtReset = (iso: string | undefined, now: number): string => {
   if (!iso) return ''
@@ -240,100 +236,87 @@ export const fmtReset = (iso: string | undefined, now: number): string => {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`
 }
 
-const LIMIT_LABELS: Record<string, string> = { seven_day: '7-DAY LIMIT', five_hour: '5-HOUR LIMIT' }
-const LIMIT_COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
-const LOW_AT = 15
-/** One line of the limits strip, its 1 px rule included, and where its text sits. */
-const LIMIT_LINE_H = 34
-const LIMIT_BASE = 22
-/** The narrowest a window's line may be to sit beside another: `5-HOUR LIMIT 96% left · resets in 4h 48m`. */
-const LIMIT_MIN_W = 330
-
-const limitOf = (w: CardWindow, now: number) => {
-  const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
-  const label = LIMIT_LABELS[w.kind] ?? w.kind.replace(/_/g, ' ').toUpperCase()
-  const reset = fmtReset(w.resetsAt, now)
-  const resets = !reset ? '' : reset === 'resetting' ? 'resetting now' : `resets in ${reset}`
-  return { left, label, resets, col: LIMIT_COLORS[w.kind] ?? TEXT }
-}
+/** What this conversation has cost so far, split the way the card shows it. */
+export type CardSpend = { main: number; subs: number }
 
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
 
-export const cardSvg = (v: CacheView, kind: Kind, W: number, windows: readonly CardWindow[] = [], now = 0): { source: string; w: number; h: number; alt: string } => {
+// The card shows what the band's row does not: the size of the cache, what the conversation has
+// cost, and, while the cache is cold, what the next message costs on each model.
+export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
-  const FIRE = HUE.warm
-  const ICE = HUE.cold
   const t = (x: number, y: number, str: string, o: TextOpts = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 11}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
     ` letter-spacing="${o.ls ?? 0}" text-anchor="${o.anchor || 'start'}">${str}</text>`
   const vline = (x: number, y: number, h: number) => `<rect x="${x}" y="${y}" width="1" height="${h}" fill="${LINE}"/>`
   const hline = (y: number) => `<rect x="13" y="${y}" width="${W - 26}" height="1" fill="${LINE}"/>`
 
-  // How long since the last reply, with Robo and the chip in the header.
-  const zoneIdle = (x: number, y: number, w: number, o: { compact?: boolean; header?: boolean } = {}) => {
-    const k = o.compact ? { lab: 24, big: 60, bs: 30, line: 80, cap: 100 } : { lab: 30, big: 72, bs: 38, line: 96, cap: 120 }
-    let g = ''
-    if (o.header) {
-      g += roboShapes(x - 2, y + k.lab - 17, 22, mode)
-      const c = chipShapes(x + 26, y + k.lab - 13, WORD[mode], HUEM, 11, 1)
-      g += c.svg + t(x + 26 + c.w + 8, y + k.lab, 'IDLE', { ls: 1.4 })
-    } else {
-      g += t(x, y + k.lab, 'IDLE', { ls: 1.4 })
-    }
-    g += t(x, y + k.big, v.idle, { size: k.bs, w: 600, fill: TEXT })
-    const ly = y + k.line
-    const x0 = x + 3
-    const x1 = x + w - 14
-    if (cold) {
-      g += `<line x1="${x0}" y1="${ly}" x2="${x0 + 18}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
-      for (let cx = x0 + 30; cx <= x1 - 14; cx += 9) g += `<circle cx="${cx}" cy="${ly}" r="2.2" fill="${ICE}"/>`
-      g += `<circle cx="${x1}" cy="${ly}" r="5.5" fill="${ICE}"/>`
-      g += t(x, y + k.cap, 'warm 1h', { size: 12, w: 600, fill: FIRE })
-      g += t(x1 + 5, y + k.cap, 'cold now', { size: 12, w: 600, fill: ICE, anchor: 'end' })
-    } else {
-      const now = x0 + (x1 - x0) * Math.min(1, v.idleMin / TTL_MIN)
-      g += `<line x1="${x0}" y1="${ly}" x2="${now}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
-      for (let cx = now + 12; cx <= x1 - 12; cx += 9) g += `<circle cx="${cx}" cy="${ly}" r="2.2" fill="${EMPTY}"/>`
-      g += `<circle cx="${x1}" cy="${ly}" r="4.5" fill="none" stroke="${ICE}" stroke-width="2"/>`
-      g += t(x, y + k.cap, 'last reply', { size: 12, w: 500 })
-      g += t(x1 + 5, y + k.cap, `cold in ${Math.max(0, TTL_MIN - v.idleMin)}m`, { size: 12, w: 600, fill: ICE, anchor: 'end' })
-    }
-    return g
+  const mainCost = spend?.main ?? 0
+  const subsCost = spend?.subs ?? 0
+  const total = mainCost + subsCost
+  const free = Math.max(0, v.window - v.tokens)
+  const share = v.window > 0 ? Math.min(1, v.tokens / v.window) : 0
+
+  // A zone's big figure with its small unit after it.
+  const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number) =>
+    `<text x="${x}" y="${yy}" font-weight="600" fill="${TEXT}"><tspan font-size="${bs}">${figure}</tspan>` +
+    (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">${unit}</tspan>` : '') +
+    '</text>'
+  /** Dots in `rows` rows of `cols`, each dot coloured by its index. */
+  const dots = (gx: number, gy: number, cols: number, step: number, rows: number, fill: (i: number) => string) => {
+    let d = ''
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++) d += `<circle cx="${gx + 3 + c * step}" cy="${gy + r * 9}" r="3" fill="${fill(r * cols + c)}"/>`
+    return d
   }
+  // A zone's caption size: a little smaller where the zone is narrow.
+  const capSize = (w: number) => (w < 230 ? 11 : 12)
 
   // The conversation's size, as a dot grid of the context window.
   const zoneSize = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
-    const share = v.window > 0 ? Math.min(1, v.tokens / v.window) : 0
-    let g = t(x, y + (o.compact ? 24 : 30), cold ? 'RE-CACHE' : 'IN CACHE', { ls: 1.4 })
-    const big = (yy: number, bs: number, ts: number) =>
-      `<text x="${x}" y="${yy}" font-weight="600" fill="${TEXT}"><tspan font-size="${bs}">${tok(v.tokens)}</tspan><tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">tokens</tspan></text>`
-    const grid = (gx: number, gy: number, cols: number, step: number) => {
-      let d = ''
+    const caption = `${Math.round(share * 100)}% of the ${tok(v.window)} context · ${tok(free)} free`
+    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { ls: 1.4 })
+    if (o.compact) {
+      const cols = 20
+      const gx = x + w - (cols - 1) * 9.6 - 6
       const lit = Math.round(share * cols * 2)
-      for (let r = 0; r < 2; r++)
-        for (let c = 0; c < cols; c++) d += `<circle cx="${gx + 3 + c * step}" cy="${gy + r * 9}" r="3" fill="${r * cols + c < lit ? HUEM : EMPTY}"/>`
-      return d
+      return g + big(x, y + 56, tok(v.tokens), 26, 'tokens', 14) + dots(gx, y + 42, cols, 9.6, 2, i => (i < lit ? HUEM : EMPTY)) + t(x, y + 76, caption, { size: capSize(w), w: 500 })
+    }
+    // 25 dots a row on the page; fewer only where the band is too narrow for them.
+    const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
+    const lit = Math.round(share * cols * 2)
+    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, i => (i < lit ? HUEM : EMPTY)) + t(x, y + 108, caption, { size: capSize(w), w: 500 })
+  }
+
+  // What this conversation has cost: the total, and the dots split between the main session and subagents.
+  const zoneSpend = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
+    const caption = total > 0 ? `main ${usd(mainCost)} · subagents ${usd(subsCost)}` : ''
+    const g = t(x, y + 24, 'THIS CONVERSATION', { ls: 1.4 })
+    const fig = `≈${usd(total)}`
+    const split = (n: number) => {
+      // The subagents' share, at least one dot once they have cost anything.
+      const subDots = total <= 0 || subsCost <= 0 ? 0 : Math.min(n - 1, Math.max(1, Math.round((subsCost / total) * n)))
+      return (i: number) => (total <= 0 ? EMPTY : i < n - subDots ? HUEM : MUTED)
     }
     if (o.compact) {
       const cols = 20
       const gx = x + w - (cols - 1) * 9.6 - 6
-      return g + big(y + 56, 26, 14) + grid(gx, y + 42, cols, 9.6)
+      return g + big(x, y + 56, fig, 26, '', 14) + dots(gx, y + 42, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 76, caption, { size: capSize(w), w: 500 }) : '')
     }
-    // 25 dots a row on the page; fewer only where the band is too narrow for them.
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
-    return g + big(y + 72, 38, 15) + grid(x, y + 90, cols, 9.6) + t(x, y + 120, `${Math.round(share * 100)}% of the ${tok(v.window)} context`, { size: 12, w: 500 })
+    return g + big(x, y + 62, fig, 38, '', 15) + dots(x, y + 80, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
 
-  // What the next message costs, by model. One scale for both states (the cold
-  // write's top price), so a warm read shows as the tiny bar it is.
+  // What the next message costs, by model; drawn only while the cache is cold, when the choice of
+  // model changes the price. One scale (the cold write's top price).
   const zoneCost = (x: number, y: number, colW: number, o: { compact?: boolean } = {}) => {
     const k = o.compact
       ? { lab: 24, base: 100, rows: 6, step: 7, chip: 58, price: 88, name: 102 }
-      : { lab: 30, base: 116, rows: 8, step: 8, chip: 70, price: 104, name: 120 }
-    let g = t(x, y + k.lab, cold ? 'NEXT MESSAGE COSTS' : 'NEXT MESSAGE COSTS, CACHED', { ls: 1.4 })
+      : { lab: 24, base: 106, rows: 8, step: 8, chip: 60, price: 94, name: 110 }
+    let g = t(x, y + k.lab, 'NEXT MESSAGE COSTS', { ls: 1.4 })
     const top = Math.max(...MODELS.map(m => coldCost(m, v.tokens)))
     MODELS.forEach((m, i) => {
       const mine = m.id === v.mine
@@ -349,68 +332,42 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, windows: readonly C
     return g
   }
 
-  // The usage limits as one line each: the name, what is left, and when it resets. Side by side where the
-  // card is wide enough, else one under the other.
-  const limits = windows.map(w => limitOf(w, now))
-  const lineLimit = (l: ReturnType<typeof limitOf>, x: number, y: number) =>
-    `<text x="${x}" y="${y + LIMIT_BASE}" font-weight="700" fill="${MUTED}">` +
-    `<tspan font-size="11" letter-spacing="1.4">${l.label}</tspan>` +
-    `<tspan font-size="16" font-weight="600" fill="${l.col}" dx="10">${l.left}%</tspan>` +
-    `<tspan font-size="12" font-weight="500" dx="5">left</tspan>` +
-    (l.left < LOW_AT ? `<tspan font-size="12" fill="${TEXT}" dx="6">LOW</tspan>` : '') +
-    (l.resets ? `<tspan font-size="12" font-weight="500" dx="6">· ${l.resets}</tspan>` : '') +
-    '</text>'
-  let top = ''
-  let topH = 0
-  if (limits.length > 0) {
-    const bw = (W - 26) / limits.length
-    if (bw >= LIMIT_MIN_W) {
-      limits.forEach((l, i) => {
-        if (i > 0) top += vline(13 + i * bw, 8, LIMIT_LINE_H - 16)
-        top += lineLimit(l, 13 + i * bw + (i > 0 ? 26 : 0), 0)
-      })
-      topH = LIMIT_LINE_H
-    } else {
-      limits.forEach((l, i) => { top += lineLimit(l, 13, i * LIMIT_LINE_H) })
-      topH = limits.length * LIMIT_LINE_H
-    }
-    top += hline(topH - 1)
-  }
-
   let H: number
   let g: string
   if (kind === 'wide') {
-    H = 132
+    H = 124
     // 92 px a model column on the page's full width; tighter near the switch point,
     // where the last column still needs about 90 px for its price.
     const colW = Math.min(92, Math.floor((W - 640 - 103) / 3))
-    g = zoneIdle(13, 0, 290, { header: true }) + vline(314, 18, H - 36) + zoneSize(340, 0, 260) + vline(614, 18, H - 36) + zoneCost(640, 0, colW)
+    g = zoneSize(13, 0, 290) + vline(314, 18, H - 36) + zoneSpend(340, 0, 260) + (cold ? vline(614, 18, H - 36) + zoneCost(640, 0, colW) : '')
   } else if (kind === 'stacked') {
-    H = 266
-    g =
-      zoneIdle(13, 0, 290, { header: true }) +
-      vline(314, 18, 96) +
-      zoneSize(340, 0, W - 340 - 13) +
-      hline(134) +
-      zoneCost(13, 134, Math.min(160, (W - 26) / 4))
+    const half = Math.floor(W / 2)
+    const zones = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26)
+    if (cold) {
+      H = 248
+      g = zones + hline(124) + zoneCost(13, 126, Math.min(160, (W - 26) / 4))
+    } else {
+      H = 124
+      g = zones
+    }
   } else {
     // Narrow: the cache row above already shows Robo and the chip.
-    H = 296
-    g =
-      zoneIdle(13, 0, W - 26, { compact: true }) +
-      hline(110) +
-      zoneSize(13, 110, W - 26, { compact: true }) +
-      hline(180) +
-      zoneCost(13, 182, (W - 26) / 4, { compact: true })
+    const zones = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true })
+    if (cold) {
+      H = 290
+      g = zones + hline(176) + zoneCost(13, 178, (W - 26) / 4, { compact: true })
+    } else {
+      H = 176
+      g = zones
+    }
   }
-  const h = H + topH + CARD_TOP
-  const inner = topH > 0 ? top + `<g transform="translate(0 ${topH})">${g}</g>` : g
-  const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + inner + '</g>'
-  const limitsAlt = limits.map(l => `${l.label.toLowerCase()} ${l.left}% left${l.resets ? `, ${l.resets}` : ''}. `).join('')
+  const h = H + CARD_TOP
+  const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
   const alt =
-    limitsAlt +
     (cold
       ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
-      : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`)
+      : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`) +
+    ` ${tok(free)} of the context free.` +
+    ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.`
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

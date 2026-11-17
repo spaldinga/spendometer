@@ -2,6 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { ROW_PX, fitOpen, layoutOf } from '../hooks/layout'
 
+import { shown } from './visible'
+
 // The compact row's five variants (each narrower), the fold button and the icon buttons (6 columns each), and the wide row's word buttons.
 const NEED = { wide: 118, compact: [60, 52, 46, 40, 34], tight: 15, buttons: 18, buttonsWide: 4 + 14 + 12 }
 const SLACK = 2
@@ -94,7 +96,7 @@ test('at 68 columns the compact row holds only the essentials, buttons inline as
   expect(await band.find({ text: '$0.04' })).toBeDefined()
   expect(await band.find({ text: ' next' })).toBeDefined()
 
-  const all = String((await band.find({ key: 'row' }))?.text)
+  const all = shown(await band.find({ key: 'row' }))
   expect(JSON.stringify(await band.findAll({ type: 'Svg' }))).toContain('WARM')
   for (const gone of ['7D', '5H', 'COST', 'last $', 'resets', '●', 'm left', 'Robo, bobbing']) expect(all).not.toContain(gone)
   await band.unmount()
@@ -139,7 +141,7 @@ test('at 100 columns, a usual desktop window, everything stays on one wide row',
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
 // step 0: 48, 1: 38 warm (48 cold), 2: 30, 3: 25, 4: 17. With the buttons (18) and 2 columns of slack:
 // step 0 from 68 columns, 1 from 58, 2 from 50, 3 from 45, 4 from 37; under 37 the buttons take a row of their own.
-const row = async (band: Awaited<ReturnType<typeof mountAt>>) => String((await band.find({ key: 'row' }))?.text)
+const row = async (band: Awaited<ReturnType<typeof mountAt>>) => shown(await band.find({ key: 'row' }))
 
 test('the ladder: warm shows the next cost at step 0 (68 columns)', async ($, on) => {
   const band = await mountAt($, on, 68)
@@ -185,7 +187,7 @@ test('the ladder: at 47 columns Robo stands in for the chip', async ($, on) => {
 test('the ladder: at 40 columns the windows read 26% not 26% left, still inline', async ($, on) => {
   const band = await mountAt($, on, 40)
   expect(await band.find({ text: '99%' })).toBeDefined()
-  expect(await band.find({ text: '99% left' })).toBeUndefined()
+  expect(await row(band)).not.toContain('99% left')
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   await band.unmount()
 })
@@ -215,7 +217,7 @@ test('each button carries hover text on the desktop, and none in the terminal', 
   }
   // Hidden until hovered: the box around each text. (The kit does not expose the hover style itself.)
   const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
-  expect(hidden.length).toBe(3)
+  expect(hidden.length).toBe(5)
   await band.unmount()
 })
 
@@ -257,44 +259,84 @@ test('compact, with the card open, the chip still shows', async ($, on) => {
   await band.unmount()
 })
 
-test('the open card names the limits and when they reset on the wide layout too', async ($, on) => {
-  // Idle 70 minutes: cold, so the card is open.
-  const wide = await mountAt($, on, 160, true, 70)
-  const card = await wide.find({ key: 'card' })
-  expect(card).toBeDefined()
-  const svg = JSON.stringify(card)
-  const body = svg.slice(svg.lastIndexOf('</style>') + 1)
-  expect(body).toContain('7-DAY LIMIT')
-  expect(body).toContain('resets in')
-  await wide.unmount()
+test('hovering a usage window on the wide row shows its name, what is left and when it resets', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in 2d 0h$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 82% left · resets in 1h 29m$/ })).toBeDefined()
+  await band.unmount()
 })
 
-test('compact, the open card still names the limits', async ($, on) => {
-  const compact = await mountAt($, on, 68, true, 70)
-  const svg = JSON.stringify(await compact.find({ key: 'card' }))
-  expect(svg.slice(svg.lastIndexOf('</style>') + 1)).toContain('7-DAY LIMIT')
-  await compact.unmount()
+test('hovering a usage window on the compact row shows the same', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in 2d 0h$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 82% left · resets in 1h 29m$/ })).toBeDefined()
+  await band.unmount()
 })
 
-test('fitOpen keeps everything that fits, then gives up the limits zone, then the progress row', () => {
+test('hovering a usage window on a row of three lines shows the same text', async ($, on) => {
+  // Narrow enough for the tight layout, whose windows are blocks of three lines.
+  const band = await mountAt($, on, 20)
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('hovering the compact chip shows the minutes left while warm', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  expect(await band.find({ type: 'Text', text: 'Warm, cold in 38m' })).toBeDefined()
+  await band.unmount()
+})
+
+test('hovering the compact chip shows the idle time once cold', async ($, on) => {
+  const band = await mountAt($, on, 68, true, 125)
+  expect(await band.find({ type: 'Text', text: 'Cold, idle 2h 5m' })).toBeDefined()
+  await band.unmount()
+})
+
+test('the hover boxes are hidden, each inside a visible keyed box', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
+  for (const b of hidden) expect(b.props.key).toBeUndefined()
+  expect(await band.find({ key: 'w-0' })).toBeDefined()
+  await band.unmount()
+})
+
+test('fitOpen keeps the progress row only while it fits with the card', () => {
   const card = 10 * ROW_PX
-  const bare = 6 * ROW_PX
   const bar = 2 * ROW_PX
-  expect(fitOpen(13, 1, bar, card, bare)).toEqual({ limits: true, progress: true })
-  expect(fitOpen(12, 1, bar, card, bare)).toEqual({ limits: false, progress: true })
-  expect(fitOpen(9, 1, bar, card, bare)).toEqual({ limits: false, progress: true })
-  expect(fitOpen(8, 1, bar, card, bare)).toEqual({ limits: false, progress: false })
-  // With no progress row there is nothing to give up but the limits zone.
-  expect(fitOpen(11, 1, 0, card, bare)).toEqual({ limits: true, progress: true })
+  expect(fitOpen(13, 1, bar, card)).toEqual({ progress: true })
+  expect(fitOpen(12, 1, bar, card)).toEqual({ progress: false })
+  // With no progress row there is nothing to give up.
+  expect(fitOpen(11, 1, 0, card)).toEqual({ progress: true })
   // The card stays even when it alone is taller than the band may be: the person opened it.
-  expect(fitOpen(3, 1, bar, card, bare)).toEqual({ limits: false, progress: false })
+  expect(fitOpen(3, 1, bar, card)).toEqual({ progress: false })
 })
 
-test('compact, a low band drops the limits zone from the open card instead of scrolling', async ($, on) => {
+test('the open wide card has no limits strip and no IDLE zone', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  await band.press({ key: 'cache-fold' })
+  const w = JSON.stringify(await band.find({ key: 'card' }))
+  expect(w).toContain('THIS CONVERSATION')
+  expect(w).toContain('800k free')
+  for (const gone of ['LIMIT', 'IDLE']) expect(w.slice(w.lastIndexOf('</style>'))).not.toContain(gone)
+  await band.unmount()
+})
+
+test('the open compact card shows the conversation cost split into main and subagents', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  await band.press({ key: 'cache-fold' })
+  const c = JSON.stringify(await band.find({ key: 'card' }))
+  expect(c).toContain('THIS CONVERSATION')
+  expect(c).toContain('≈$0.49')
+  expect(c).toContain('main $0.46 · subagents $0.03')
+  await band.unmount()
+})
+
+test('compact, a low band drops the progress row from the open band instead of scrolling', async ($, on) => {
+  on('tool.call', () => ({ result: 'ran' }))
   const band = await mountAt($, on, 68, true, 70, 'desktop', 8)
-  const svg = JSON.stringify(await band.find({ key: 'card' }))
-  expect(svg).toBeDefined()
-  expect(svg.slice(svg.lastIndexOf('</style>') + 1)).not.toContain('7-DAY LIMIT')
+  await $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: [{ content: 'Write tests', status: 'in_progress' }] } as never)
+  expect(await band.find({ key: 'card' })).toBeDefined()
+  expect(await band.find({ key: 'progress-row' })).toBeUndefined()
   await band.unmount()
 })
 

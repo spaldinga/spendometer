@@ -116,13 +116,10 @@ export const ROW_PX = 18
 export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
 
 /**
- * What the open band keeps so it stays within `maxRows` and never scrolls. It gives up the card's limits
- * zone first (the row says the same, shorter), then the progress row. The card itself always stays: the
- * person opened it.
+ * What the open band keeps so it stays within `maxRows` and never scrolls: the progress row stays only
+ * if it fits with the card. The card itself always stays: the person opened it.
  */
-export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, cardPx: number, bareCardPx: number): { limits: boolean; progress: boolean } => {
+export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, cardPx: number): { progress: boolean } => {
   const prog = progressPx > 0 ? rowsOf(progressPx) : 0
-  if (rowsAbove + prog + rowsOf(cardPx) <= maxRows) return { limits: true, progress: true }
-  if (rowsAbove + prog + rowsOf(bareCardPx) <= maxRows) return { limits: false, progress: true }
-  return { limits: false, progress: false }
+  return { progress: rowsAbove + prog + rowsOf(cardPx) <= maxRows }
 }

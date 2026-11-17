@@ -155,6 +155,7 @@ const BAR_MIN_PX = 140
 const COL_PX_FULL = 12
 
 const NAMES: Record<string, string> = { seven_day: '7D', five_hour: '5H', spend_limit: 'SPEND' }
+const LONG: Record<string, string> = { seven_day: '7-day limit', five_hour: '5-hour limit', spend_limit: 'Spend limit' }
 const ORDER: Record<string, number> = { seven_day: 0, five_hour: 1 }
 const COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
 
@@ -629,12 +630,12 @@ export const register: Register = on => {
     // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
     // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
     // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
-    const tip = (_key: string, text: string) =>
+    const tip = (_key: string, text: string, side: 'left' | 'right' = 'right') =>
       Svg ? (
         <Box
           position="absolute"
           bottom={1}
-          right={0}
+          {...(side === 'left' ? { left: 0 } : { right: 0 })}
           display="none"
           hover={{ display: 'flex' }}
           flexDirection="column"
@@ -698,7 +699,7 @@ export const register: Register = on => {
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
         <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card.' : "Show the cache card: idle time, context size and what a message costs on each model.")}
+        {tip('fold', open ? 'Hide the cache card.' : "Show the cache card: context size, what this conversation has cost and, while cold, what a message costs on each model.")}
       </Box>
     ) : null
 
@@ -907,6 +908,10 @@ export const register: Register = on => {
         name: NAMES[w.kind] ?? w.kind.toUpperCase(),
         d: dots(left, cells),
         reset: fmtReset(w.resetsAt, now),
+        tip: (() => {
+          const r = fmtReset(w.resetsAt, now)
+          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}`
+        })(),
       }
     }
 
@@ -922,6 +927,7 @@ export const register: Register = on => {
           <Text color={p.col} bold> {p.left}% left</Text>
           {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
           {p.reset ? <Text color={MUTED}> · {p.reset}</Text> : null}
+          {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
     }
@@ -940,6 +946,7 @@ export const register: Register = on => {
             {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
           </Box>
           {p.reset ? <Text color={MUTED}>resets {p.reset}</Text> : null}
+          {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
     }
@@ -951,6 +958,7 @@ export const register: Register = on => {
         <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN}>
           <Text color={p.col} bold>{`${p.left}%${compactStep < 4 ? " left" : ""}`}</Text>
           {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
+          {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
     }
@@ -1048,6 +1056,7 @@ export const register: Register = on => {
               {showNext ? <Text key="next-gap"> </Text> : null}
               {showNext && mine ? <Text key="next-cost" color={TEXT} bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
               {showNext ? <Text key="next" color={MUTED}> next</Text> : null}
+              {tip('chip', cold ? `Cold, idle ${view.idle}` : `Warm, cold in ${Math.max(0, TTL_MIN - view.idleMin)}m`)}
             </Box>
           )}
           {grow}
@@ -1076,19 +1085,17 @@ export const register: Register = on => {
       // The card is drawn at W, 12 px a column, but the band is narrower on screen (DESKTOP_COL_PX). Its
       // element gets the width it is shown at and the height that goes with it: given the drawn height, the
       // shrunk drawing sat centred in a box too tall for it, with empty bands above and below.
-      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the limits strip, then
-      // the progress row, until the open band fits.
+      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the progress row
+      // when the open band would not fit with it.
       const W = bandPx(columns)
       const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
       const shownH = (h: number) => Math.round(h * scale)
-      const bare = cardSvg(view, kind, W, [], now)
-      const full = list.length ? cardSvg(view, kind, W, list, now) : bare
+      const c = cardSvg(view, kind, W, paid ? { main: paid.main, subs: paid.subs } : null)
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
-      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(full.h), shownH(bare.h))
-      const c = fit.limits ? full : bare
+      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
       showProgress = fit.progress
-      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.limits ? '' : ', limits dropped'}${fit.progress ? '' : ', progress dropped'}`
+      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}`
       card = (
         <Box key="card" flexDirection="row">
           <Svg source={c.source} alt={c.alt} width={Math.round(c.w * scale)} height={shownH(c.h)} isInteractive={kind !== 'tight'} />

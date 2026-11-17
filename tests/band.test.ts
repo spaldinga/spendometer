@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { shown } from './visible'
+
 const WINDOWS = [
   { kind: 'five_hour', percentUsed: 58, resetsAt: '2099-01-01T00:00:00Z' },
   { kind: 'seven_day', percentUsed: 12.5 },
@@ -55,7 +57,7 @@ test('in a narrow band the windows shrink to their percent left, with no names, 
     props: { ...PROPS, bodyColumns: 36 },
   })
   expect(await band.find({ text: '42% left' })).toBeDefined()
-  const row = String((await band.find({ key: 'row' }))?.text)
+  const row = shown(await band.find({ key: 'row' }))
   expect(row).not.toContain('resets')
   expect(row).not.toContain('5H')
   expect(row).not.toContain('●')
