@@ -1,69 +1,67 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PACE_MIN_MS, asSample, nextSample, paceOf } from '../hooks/pace'
+import { PACE_MIN_MS, WINDOW_MS, paceOf } from '../hooks/pace'
 
-const RESET = '2098-12-31T23:00:00Z'
-const T0 = Date.parse('2098-12-31T20:00:00Z')
 const MIN = 60_000
-const SAMPLE = { resetsAt: RESET, used0: 10, at0: T0 }
+const HOUR = 60 * MIN
+const FIVE = WINDOW_MS.five_hour
+const NOW = Date.parse('2098-12-31T20:00:00Z')
+/** A window resetting `left` ms after NOW. */
+const resetIn = (left: number) => new Date(NOW + left).toISOString()
 
-test('paceOf: 10 points an hour from 20% leaves 8 hours, and the window resets in 2: it lasts', () => {
-  const now = T0 + 60 * MIN
-  const p = paceOf(SAMPLE, { percentUsed: 20, resetsAt: RESET }, now)!
-  expect(Math.abs(p.lastsMs - 8 * 60 * MIN)).toBeLessThan(1)
-  expect(p.untilResetMs).toBe(2 * 60 * MIN)
+test('the windows are 5 hours and 7 days long', () => {
+  expect(FIVE).toBe(5 * HOUR)
+  expect(WINDOW_MS.seven_day).toBe(7 * 24 * HOUR)
+})
+
+test('paceOf: 20% used 3 hours into a 5-hour window leaves 12 hours, and the reset is 2 hours away: it lasts', () => {
+  const p = paceOf({ percentUsed: 20, resetsAt: resetIn(2 * HOUR) }, FIVE, NOW)!
+  expect(Math.abs(p.lastsMs - 12 * HOUR)).toBeLessThan(1)
+  expect(p.untilResetMs).toBe(2 * HOUR)
   expect(p.ok).toBe(true)
 })
 
 test('paceOf: a fast pace runs out before the reset', () => {
-  const now = T0 + 60 * MIN
-  const p = paceOf(SAMPLE, { percentUsed: 60, resetsAt: RESET }, now)!
-  // 50 points an hour, 40 points left: 48 minutes; the reset is 120 minutes away.
-  expect(Math.abs(p.lastsMs - 48 * MIN)).toBeLessThan(1)
+  // 60% in the first hour: 40% more takes 40 minutes; the reset is 4 hours away.
+  const p = paceOf({ percentUsed: 60, resetsAt: resetIn(4 * HOUR) }, FIVE, NOW)!
+  expect(Math.abs(p.lastsMs - 40 * MIN)).toBeLessThan(1)
+  expect(p.untilResetMs).toBe(4 * HOUR)
   expect(p.ok).toBe(false)
 })
 
-test('paceOf: unknown under 10 minutes, with no growth, for another window, or past the reset', () => {
-  const w = { percentUsed: 20, resetsAt: RESET }
-  expect(paceOf(SAMPLE, w, T0 + PACE_MIN_MS - 1)).toBeNull()
-  expect(paceOf(SAMPLE, w, T0 + PACE_MIN_MS)).not.toBeNull()
-  expect(paceOf(SAMPLE, { percentUsed: 10, resetsAt: RESET }, T0 + 60 * MIN)).toBeNull()
-  expect(paceOf(SAMPLE, { percentUsed: 5, resetsAt: RESET }, T0 + 60 * MIN)).toBeNull()
-  expect(paceOf(SAMPLE, { percentUsed: 20, resetsAt: '2099-01-07T23:00:00Z' }, T0 + 60 * MIN)).toBeNull()
-  expect(paceOf(SAMPLE, { percentUsed: 20 }, T0 + 60 * MIN)).toBeNull()
-  expect(paceOf(null, w, T0 + 60 * MIN)).toBeNull()
-  expect(paceOf(SAMPLE, w, Date.parse(RESET) + MIN)).toBeNull()
+test('paceOf: using exactly what lasts to the reset counts as ok', () => {
+  // Half the window gone, half used: it lasts exactly until the reset.
+  const p = paceOf({ percentUsed: 50, resetsAt: resetIn(2.5 * HOUR) }, FIVE, NOW)!
+  expect(p.ok).toBe(true)
 })
 
-test('nextSample: the first reading starts a sample; the same window keeps it', () => {
-  const first = nextSample(null, { percentUsed: 10, resetsAt: RESET }, T0)!
-  expect(first).toEqual(SAMPLE)
-  expect(nextSample(first, { percentUsed: 30, resetsAt: RESET }, T0 + 60 * MIN)).toBe(first)
+test('paceOf: unknown with no reset time', () => {
+  expect(paceOf({ percentUsed: 20 }, FIVE, NOW)).toBeNull()
 })
 
-test('nextSample: a new window (another reset time) or a fall in the share used replaces the sample', () => {
-  const later = T0 + 6 * 60 * MIN
-  const fresh = nextSample(SAMPLE, { percentUsed: 2, resetsAt: '2099-01-01T04:00:00Z' }, later)!
-  expect(fresh).toEqual({ resetsAt: '2099-01-01T04:00:00Z', used0: 2, at0: later })
-  expect(nextSample(SAMPLE, { percentUsed: 4, resetsAt: RESET }, later)).toEqual({ resetsAt: RESET, used0: 4, at0: later })
+test('paceOf: unknown once the reset has passed, or with a time that is not a date', () => {
+  expect(paceOf({ percentUsed: 20, resetsAt: resetIn(0) }, FIVE, NOW)).toBeNull()
+  expect(paceOf({ percentUsed: 20, resetsAt: resetIn(-MIN) }, FIVE, NOW)).toBeNull()
+  expect(paceOf({ percentUsed: 20, resetsAt: 'soon' }, FIVE, NOW)).toBeNull()
 })
 
-test('nextSample: a window with no reset time keeps no sample', () => {
-  expect(nextSample(SAMPLE, { percentUsed: 0 }, T0)).toBeNull()
+test('paceOf: unknown under 10 minutes into the window', () => {
+  expect(paceOf({ percentUsed: 5, resetsAt: resetIn(FIVE - PACE_MIN_MS + 1) }, FIVE, NOW)).toBeNull()
+  expect(paceOf({ percentUsed: 5, resetsAt: resetIn(FIVE - PACE_MIN_MS) }, FIVE, NOW)).not.toBeNull()
 })
 
-test('asSample trusts only a whole sample', () => {
-  expect(asSample(SAMPLE)).toEqual(SAMPLE)
-  expect(asSample({ resetsAt: RESET })).toBeNull()
-  expect(asSample(null)).toBeNull()
-  expect(asSample('x')).toBeNull()
+test('paceOf: unknown when nothing is used, or the share is not a number', () => {
+  expect(paceOf({ percentUsed: 0, resetsAt: resetIn(2 * HOUR) }, FIVE, NOW)).toBeNull()
+  expect(paceOf({ percentUsed: -3, resetsAt: resetIn(2 * HOUR) }, FIVE, NOW)).toBeNull()
+  expect(paceOf({ percentUsed: NaN, resetsAt: resetIn(2 * HOUR) }, FIVE, NOW)).toBeNull()
 })
 
-test('a reset time that moves by a few minutes is the same window: the sample stays and the pace is known', () => {
-  const moved = '2098-12-31T23:03:00Z'
-  const now = T0 + 60 * MIN
-  expect(nextSample(SAMPLE, { percentUsed: 20, resetsAt: moved }, now)).toBe(SAMPLE)
-  expect(paceOf(SAMPLE, { percentUsed: 20, resetsAt: moved }, now)).not.toBeNull()
-  // An hour apart is a new window.
-  expect(nextSample(SAMPLE, { percentUsed: 20, resetsAt: '2099-01-01T00:00:00Z' }, now)).not.toBe(SAMPLE)
+test('paceOf: a reset further away than the window is long is unknown, not a negative elapsed time', () => {
+  expect(paceOf({ percentUsed: 20, resetsAt: resetIn(FIVE + HOUR) }, FIVE, NOW)).toBeNull()
+})
+
+test('paceOf: a window already full runs out now', () => {
+  const p = paceOf({ percentUsed: 100, resetsAt: resetIn(2 * HOUR) }, FIVE, NOW)!
+  expect(p.lastsMs).toBe(0)
+  expect(p.ok).toBe(false)
 })

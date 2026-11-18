@@ -21,7 +21,7 @@ same band while Claude works.*
 | Part | What you see | Where it comes from |
 |---|---|---|
 | **Usage** | 7-day and 5-hour limits as dot bars, percent left and reset time; `LOW` under 15% | Claude Code's own rate-limit figures |
-| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what this conversation has cost (main and subagents) and, while cold, the next message's price per model. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
+| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, the next message's price per model. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
 | **Progress** | The robot surfing a line with a mark per step, plus `3/7 · Run tests` | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: the robot pacing, `working · 4 steps · 1m 12s` | Turn events |
 | **Subagents** | One small robot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |

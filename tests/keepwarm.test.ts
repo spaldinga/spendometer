@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On, Plugin } from 'claude-code'
 
 import { turnCost, usd } from '../hooks/cache-art'
+import { dayKey } from '../hooks/days'
 import { pingKeptCacheWarm } from '../hooks/register'
 
 /** The brown the band used to paint behind itself. */
@@ -471,4 +472,136 @@ test('a command that fails to register does not stop the rest of session start',
   on('tool.register', ($, e) => { registered.push(e.name); return { value: { tool: `mcp__wavebar__${e.name}` } } })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   expect(registered).toEqual(['progress'])
+})
+
+const stored = (store: Map<string, unknown>) => store.get('spend:S1') as { main: number; subs: number; pings?: number; saved?: number }
+/** The main thread's request number `index`: the engine beneath just stops. */
+const step = async ($: Parameters<Parameters<typeof test>[1]>[0], index: number) => {
+  for await (const c of $.turn.step({ turnId: 'T' + index, index, model: 'claude-opus-5-5', messageCount: 4 })) void c
+}
+const stopStep = (on: On) =>
+  on('turn.step', async function* ($, e) {
+    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+  })
+
+test("a finished turn also goes onto today's total, across sessions: a day key holds a number of dollars", async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  await seed($, 18)
+  await done($, { usage: USED })
+  await done($, { usage: { ...USED, model: 'claude-haiku-5-5' }, agentId: 'sub1' })
+  expect(usd(store.get(dayKey(NOW)) as number)).toBe(usd(36.5))
+  // A turn with no cost writes nothing more.
+  await done($, { usage: null })
+  expect(usd(store.get(dayKey(NOW)) as number)).toBe(usd(36.5))
+})
+
+test('another session\'s spend earlier today is added to, not replaced', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, prefill: { [dayKey(NOW)]: 10 } })
+  await seed($, 18)
+  await done($, { usage: USED })
+  expect(usd(store.get(dayKey(NOW)) as number)).toBe(usd(42.4))
+})
+
+test('at session start the old pace samples go, day totals older than 30 days go, and recent ones stay', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, {
+    keep: true,
+    prefill: {
+      'pace:five_hour': { resetsAt: '2099-01-01T00:00:00Z', used0: 1, at0: NOW },
+      'pace:seven_day': 'anything',
+      [dayKey(NOW - 31 * DAY)]: 5,
+      [dayKey(NOW - 29 * DAY)]: 6,
+      [dayKey(NOW)]: 7,
+    },
+  })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  expect(store.has('pace:five_hour')).toBe(false)
+  expect(store.has('pace:seven_day')).toBe(false)
+  expect(store.has(dayKey(NOW - 31 * DAY))).toBe(false)
+  expect(store.get(dayKey(NOW - 29 * DAY))).toBe(6)
+  expect(store.get(dayKey(NOW))).toBe(7)
+})
+
+test('no pace key is written, even with the card open', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } })
+  await band.press({ key: 'cache-fold' })
+  expect([...store.keys()].filter(k => k.startsWith('pace:'))).toEqual([])
+  await band.unmount()
+})
+
+test('a ping that kept the cache warm adds its cost to the session record, not to the total', { plugins: [pinger] }, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
+  await seed($, 0)
+  await clock.advance(50 * MIN)
+  await $.command.run({ command: 'ping', args: '', ...RUN })
+  // Opus: 2 in at $4, 1 out at $20, 200k read at $0.20, per million.
+  const first = stored(store)
+  expect(Math.abs(first.pings! - (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
+  expect(first.main + first.subs).toBe(0)
+  await $.command.run({ command: 'ping', args: '', ...RUN })
+  expect(Math.abs(stored(store).pings! - 2 * (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
+})
+
+test('a ping that found the cache gone costs nothing in the record', { plugins: [pinger] }, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, fork: { read: 0, write: 200000 } })
+  await seed($, 0)
+  await clock.advance(50 * MIN)
+  await $.command.run({ command: 'ping', args: '', ...RUN })
+  expect(store.has('spend:S1')).toBe(false)
+})
+
+test('a turn that begins after the hour on a cache the pings kept warm records what it saved', { plugins: [pinger] }, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
+  stopStep(on)
+  await seed($, 0)
+  await step($, 0)
+  await clock.advance(50 * MIN)
+  await $.command.run({ command: 'ping', args: '', ...RUN })
+  await clock.advance(30 * MIN)
+  await step($, 0)
+  // 200k tokens on Opus: a cold write is $4 x 2 a million, a read $0.20 a million.
+  expect(Math.abs(stored(store).saved! - (1.6 - 0.04))).toBeLessThan(1e-9)
+  // Right after, the cache is the turn's own: another request saves nothing more.
+  await clock.advance(MIN)
+  await step($, 1)
+  await step($, 0)
+  expect(Math.abs(stored(store).saved! - (1.6 - 0.04))).toBeLessThan(1e-9)
+})
+
+test('no savings without pings, or when the gap since the last real request is under the hour', { plugins: [pinger] }, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
+  stopStep(on)
+  await seed($, 0)
+  await step($, 0)
+  // Cold: no ping kept it.
+  await clock.advance(80 * MIN)
+  await step($, 0)
+  expect(store.get('spend:S1')).toBeUndefined()
+  // A ping and a request inside the hour: the cache would have been warm anyway.
+  await clock.advance(30 * MIN)
+  await $.command.run({ command: 'ping', args: '', ...RUN })
+  await clock.advance(10 * MIN)
+  await step($, 0)
+  expect(stored(store).saved).toBeUndefined()
+})
+
+test('a session record without the keep-warm figures still reads, and keeps its figures when they are added', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, prefill: { 'spend:S1': FRESH(2, 1, 0.5) } })
+  await seed($, 18)
+  await done($, { usage: USED })
+  const s = stored(store)
+  expect(usd(s.main)).toBe(usd(34.4))
+  expect(s.pings).toBeUndefined()
+  expect(s.saved).toBeUndefined()
 })

@@ -16,6 +16,8 @@ export const ORANGE = '#ff6b1a'
 export const YELLOW = '#f5a623'
 /** A window that runs out before it resets. */
 export const DANGER = '#e24b4a'
+/** A window that lasts until it resets: a muted green beside DANGER. */
+export const OK = '#6fbf73'
 
 // The cache's two states in a muted shade: desaturated so they sit
 // beside the band's own orange and yellow.
@@ -271,8 +273,12 @@ export const fmtReset = (iso: string | undefined, now: number): string => {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`
 }
 
-/** What this conversation has cost so far, split the way the card shows it. */
-export type CardSpend = { main: number; subs: number }
+/**
+ * What this conversation has cost so far, split the way the card shows it; `days` is the account's daily
+ * spend for the last 7 days, oldest first, today last; `saved` and `pings` are what keep-warm pings saved
+ * and cost in this conversation.
+ */
+export type CardSpend = { main: number; subs: number; days?: number[]; saved?: number; pings?: number }
 
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
@@ -326,10 +332,32 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, i => (i < lit ? HUEM : EMPTY)) + t(x, y + 108, caption, { size: capSize(w), w: 500 })
   }
 
-  // What this conversation has cost: the total, and the dots split between the main session and subagents.
+  // The account's spend over the last 7 days, when the card knows it and any of it is above zero.
+  const days = spend?.days && spend.days.some(d => d > 0) ? spend.days.slice(-7) : null
+  const today = days ? days[days.length - 1] : 0
+  const week = days ? days.reduce((a, b) => a + b, 0) : 0
+  const daysCaption = days ? `today ${usd(today)} · week ${usd(week)}` : ''
+
+  /** One bar a day, oldest to today, scaled to the busiest; today in the mode hue, a day with no spend a 2 px stub. */
+  const dayBars = (x: number, base: number, w: number, maxH: number) => {
+    if (!days) return ''
+    const gap = 4
+    const bw = Math.max(4, Math.floor((Math.min(w, 240) - gap * (days.length - 1)) / days.length))
+    const top = Math.max(...days)
+    return days
+      .map((d, i) => {
+        const h = d > 0 ? Math.max(3, Math.round((d / top) * maxH)) : 2
+        const fill = d <= 0 ? EMPTY : i === days.length - 1 ? HUEM : MUTED
+        return `<rect x="${x + i * (bw + gap)}" y="${base - h}" width="${bw}" height="${h}" rx="1" fill="${fill}"/>`
+      })
+      .join('')
+  }
+
+  // What is spent: this thread's total, and either the last 7 days as bars or, with no daily figures, dots
+  // split between the main session and subagents.
   const zoneSpend = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
-    const caption = total > 0 ? `main ${usd(mainCost)} · subagents ${usd(subsCost)}` : ''
-    const g = t(x, y + 24, 'THIS CONVERSATION', { ls: 1.4 })
+    const caption = days ? daysCaption : total > 0 ? `main ${usd(mainCost)} · subagents ${usd(subsCost)}` : ''
+    const g = t(x, y + 24, 'SPEND', { ls: 1.4 })
     const fig = `≈${usd(total)}`
     const split = (n: number) => {
       // The subagents' share, at least one dot once they have cost anything.
@@ -342,7 +370,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       return g + big(x, y + 56, fig, 26, '', 14) + dots(gx, y + 42, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 76, caption, { size: capSize(w), w: 500 }) : '')
     }
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
-    return g + big(x, y + 62, fig, 38, '', 15) + dots(x, y + 80, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
+    const chart = days ? dayBars(x, y + 94, w, 16) : dots(x, y + 80, cols, 9.6, 2, split(cols * 2))
+    return g + big(x, y + 62, fig, 38, 'this thread', 15) + chart + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
 
   // What the next message costs, by model; drawn only while the cache is cold, when the choice of
@@ -375,11 +404,19 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     // The break-even line only where there is room for it, and only when it is under a day: both costs grow
     // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
     // always says ">24h" tells nothing.
+    const saved = spend?.saved ?? 0
+    const pings = spend?.pings ?? 0
+    const last =
+      saved > 0 || pings > 0
+        ? t(x, y + 108, `saved ${usd(saved)} · pings ${usd(pings)}`, { size: capSize(w), w: 500 })
+        : w >= 200 && kw.breakEvenH <= 24
+          ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 })
+          : ''
     return (
       g +
       big(x, y + 62, usd(kw.perHour), 38, '/h', 15) +
       t(x, y + 88, `${cold ? 're-caching now costs' : 'going cold costs'} ${usd(kw.cold)}`, { size: capSize(w), w: 500 }) +
-      (w >= 200 && kw.breakEvenH <= 24 ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 }) : '')
+      last
     )
   }
 
@@ -389,8 +426,10 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     const tx = x + 34
     const tw = w - 34
     if (pace.length === 0) return g + t(x, y + 62, 'no usage windows reported', { size: 12, w: 500 })
+    // Each window: its label and track (the bar is the time left at this pace, the tick the reset), then
+    // what the pace means in words under the bar.
     pace.slice(0, 2).forEach((r, i) => {
-      const top = y + 48 + i * 30
+      const top = y + 36 + i * 32
       g += t(x, top + 12, r.label, { size: 12, fill: r.color })
       g += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
       if (r.pace) {
@@ -398,13 +437,16 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
         const bw = Math.max(3, Math.round((r.pace.lastsMs / scale) * tw))
         g += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace.ok ? r.color : DANGER}"/>`
         g += `<rect x="${tx + Math.round((r.pace.untilResetMs / scale) * tw) - 1}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
-        g += t(tx, top - 2, `~${fmtIdle(r.pace.lastsMs)} at this pace`, { size: 10, w: 500 })
+        const reset = fmtIdle(r.pace.untilResetMs)
+        g += r.pace.ok
+          ? t(tx, top + 26, `lasts until reset · resets in ${reset}`, { size: 10, w: 500 })
+          : t(tx, top + 26, `runs out in ~${fmtIdle(r.pace.lastsMs)} · resets in ${reset}`, { size: 10, w: 500, fill: DANGER })
       } else {
         if (r.untilResetMs !== null) g += `<rect x="${tx + tw - 2}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
-        g += t(tx, top - 2, 'pace unknown', { size: 10, w: 500 })
+        g += t(tx, top + 26, 'pace unknown', { size: 10, w: 500 })
       }
     })
-    return g + t(x, y + 108, w >= 240 ? 'bar: time left at this pace · line: reset' : 'bar: time left · line: reset', { size: 10, w: 500 })
+    return g + t(x, y + 114, w >= 240 ? 'bar: time left at this pace · line: reset' : 'bar: time left · line: reset', { size: 10, w: 500 })
   }
 
   // The same two facts as text lines, for the layouts with no room for the drawing.
@@ -413,12 +455,18 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     const r = riskiest(pace)
     let paceText = 'pace unknown'
     let paceFill = MUTED
+    let paceDot = MUTED
     if (r) {
       const reset = fmtIdle(r.pace.untilResetMs)
       paceText = r.pace.ok ? `${r.label} ✓ lasts until reset · resets in ${reset}` : `${r.label} runs out in ~${fmtIdle(r.pace.lastsMs)} · resets in ${reset}`
       paceFill = r.pace.ok ? TEXT : DANGER
+      paceDot = r.pace.ok ? OK : DANGER
     }
-    return t(x, y, keep, { size, w: 600, fill: TEXT }) + t(x, y + size + 9, paceText, { size, w: 600, fill: paceFill })
+    // A small status dot before each line, the text shifted right to make room for it.
+    const dot = (yy: number, fill: string) => `<circle cx="${x + 4}" cy="${yy - Math.round(size * 0.36)}" r="4" fill="${fill}"/>`
+    const tx = x + 14
+    const y2 = y + size + 9
+    return dot(y, HUEM) + t(tx, y, keep, { size, w: 600, fill: TEXT }) + dot(y2, paceDot) + t(tx, y2, paceText, { size, w: 600, fill: paceFill })
   }
 
   // The first row of every layout is 124 px; the text lines under it take 54 more, the cost row 124.
@@ -427,20 +475,17 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   let H: number
   let g: string
   if (kind === 'wide') {
-    // Four columns. IN CACHE keeps its 290 px (its dot grid), the conversation 240; the other two share the rest.
-    const rest = W - 26 - 290 - 240 - 3 * 26
-    const kwW = Math.floor(rest * 0.4)
-    const spendX = 13 + 290 + 26
-    const keepX = spendX + 240 + 26
-    const paceX = keepX + kwW + 26
+    // Four equal columns with 26 px between them.
+    const colW = Math.floor((W - 26 - 3 * 26) / 4)
+    const colX = (i: number) => 13 + i * (colW + 26)
     const row =
-      zoneSize(13, 0, 290) +
-      vline(spendX - 13, 18, 88) +
-      zoneSpend(spendX, 0, 240) +
-      vline(keepX - 13, 18, 88) +
-      zoneKeep(keepX, 0, kwW) +
-      vline(paceX - 13, 18, 88) +
-      zonePace(paceX, 0, W - 13 - paceX)
+      zoneSize(colX(0), 0, colW) +
+      vline(colX(1) - 13, 18, 88) +
+      zoneSpend(colX(1), 0, colW) +
+      vline(colX(2) - 13, 18, 88) +
+      zoneKeep(colX(2), 0, colW) +
+      vline(colX(3) - 13, 18, 88) +
+      zonePace(colX(3), 0, colW)
     if (cold) {
       H = ROW * 2
       g = row + hline(ROW) + zoneCost(13, ROW + 2, Math.min(160, (W - 26) / 4))
@@ -480,6 +525,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`) +
     ` ${tok(free)} of the context free.` +
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
+    (days ? ` Spend today ${usd(today)}, this week ${usd(week)}.` : '') +
+    ((spend?.saved ?? 0) > 0 ? ` Keep-warm pings have saved about ${usd(spend!.saved!)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? 're-caching now costs' : 'going cold costs'} ${usd(kw.cold)}.` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { dayKey } from '../hooks/days'
 import { ROW_PX, fitOpen, layoutOf } from '../hooks/layout'
 
 import { shown } from './visible'
@@ -318,7 +319,7 @@ test('the open wide card has no limits strip and no IDLE zone', async ($, on) =>
   const band = await mountAt($, on, 160)
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
-  expect(w).toContain('THIS CONVERSATION')
+  expect(w).toContain('SPEND')
   expect(w).toContain('800k free')
   for (const gone of ['LIMIT', 'IDLE']) expect(w.slice(w.lastIndexOf('</style>'))).not.toContain(gone)
   await band.unmount()
@@ -328,7 +329,7 @@ test('the open compact card shows the conversation cost split into main and suba
   const band = await mountAt($, on, 68)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  expect(c).toContain('THIS CONVERSATION')
+  expect(c).toContain('SPEND')
   expect(c).toContain('≈$0.49')
   expect(c).toContain('main $0.46 · subagents $0.03')
   await band.unmount()
@@ -377,18 +378,29 @@ test('a window whose reset time has passed shows 100% left, not the old share an
   await band.unmount()
 })
 
-test('a render keeps each window\'s first sample in the store, one key per window kind for the account', async ($, on) => {
+test('a render keeps no pace samples in the store: the pace comes from the window itself', async ($, on) => {
   const band = await mountAt($, on, 160)
-  expect(lastKv.get('pace:five_hour')).toEqual({ resetsAt: '2098-12-31T23:29:00Z', used0: 18, at0: NOW })
-  expect(lastKv.get('pace:seven_day')).toEqual({ resetsAt: '2099-01-02T22:00:00Z', used0: 1, at0: NOW })
+  await band.press({ key: 'cache-fold' })
+  expect([...lastKv.keys()].filter(k => k.startsWith('pace:'))).toEqual([])
   await band.unmount()
 })
 
-test('the open wide card shows keep warm and the pace, and pace unknown on the first reading', async ($, on) => {
+test('the open wide card shows keep warm and the pace from the first reading, with the forecast under each bar', async ($, on) => {
   const band = await mountAt($, on, 160)
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['KEEP WARM', 'PACE VS RESET', 'pace unknown', 'going cold costs']) expect(w).toContain(z)
+  for (const z of ['KEEP WARM', 'PACE VS RESET', 'lasts until reset · resets in 1h 29m', 'going cold costs']) expect(w).toContain(z)
+  expect(w).not.toContain('pace unknown')
+  await band.unmount()
+})
+
+test('the open wide card draws the last seven days of spend from the store, today in the hue', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  lastKv.set(dayKey(NOW), 3)
+  lastKv.set(dayKey(NOW - 24 * 3600_000), 1.5)
+  await band.press({ key: 'cache-fold' })
+  const w = JSON.stringify(await band.find({ key: 'card' }))
+  expect(w).toContain('today $3.00 · week $4.50')
   await band.unmount()
 })
 
@@ -397,6 +409,6 @@ test('the open compact card ends in the keep warm and pace text lines', async ($
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).toContain('keep warm $')
-  expect(c).toContain('pace unknown')
+  expect(c).toContain('5H ✓ lasts until reset · resets in 1h 29m')
   await band.unmount()
 })

@@ -8,11 +8,11 @@ import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, MUTED, ORANGE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
-  bandPx, cardSvg, chipSvg, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd,
+  MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceRow } from './cache-art'
-import { PACE_PREFIX, asSample, nextSample, paceOf } from './pace'
-import type { PaceSample } from './pace'
+import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
+import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
   CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, textCols,
@@ -49,6 +49,10 @@ const SPEND_PREFIX = 'spend:'
 const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 /** The cache facts per conversation, so a resume that never reaches the band (state is cleared) still knows them. */
 const CACHE_PREFIX = 'cache:'
+/** Pace records an older version kept per window kind; no longer used, deleted at session start. */
+const OLD_PACE_PREFIX = 'pace:'
+/** Daily totals (`day:YYYY-MM-DD`) older than this are dropped at session start. */
+const DAY_KEEP_DAYS = 30
 
 const windows = atom({ plugin: 'wavebar', key: 'windows' } as const, [] as Window[])
 const cache = atom({ plugin: 'wavebar', key: 'cache' } as const, null as CacheFacts | null)
@@ -59,6 +63,8 @@ const crew = atom({ plugin: 'wavebar', key: 'crew' } as const, [] as Worker[])
 const ending = atom({ plugin: 'wavebar', key: 'ending' } as const, null as Ending)
 /** Subagent cost since the last main turn finished: it joins the next main turn's `last`. */
 const subsSince = atom({ plugin: 'wavebar', key: 'subsSince' } as const, 0)
+/** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
+const realAt = atom({ plugin: 'wavebar', key: 'realAt' } as const, null as number | null)
 
 /** The conversation's cost as one line for the transcript, so a debrief can quote it instead of leaving cost empty. */
 export const spendLine = (s: Spend): string =>
@@ -70,10 +76,48 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
   try {
     const s = (await $.store.get(SPEND_PREFIX + (await $.session.id()))) as Partial<Spent> | null | undefined
     if (!s || typeof s.main !== 'number' || typeof s.subs !== 'number') return null
-    return { main: s.main, subs: s.subs, last: typeof s.last === 'number' ? s.last : 0, at: typeof s.at === 'number' ? s.at : 0 }
+    const out: Spent = { main: s.main, subs: s.subs, last: typeof s.last === 'number' ? s.last : 0, at: typeof s.at === 'number' ? s.at : 0 }
+    // Records from before keep-warm savings were tracked have neither field.
+    if (typeof s.pings === 'number') out.pings = s.pings
+    if (typeof s.saved === 'number') out.saved = s.saved
+    return out
   } catch {
     return null
   }
+}
+
+/** A session record from `was`, its keep-warm figures carried over, stamped `at`. */
+const recordOf = (was: Spent | null, at: number): Spent => {
+  const next: Spent = { main: was?.main ?? 0, subs: was?.subs ?? 0, last: was?.last ?? 0, at }
+  if (was?.pings !== undefined) next.pings = was.pings
+  if (was?.saved !== undefined) next.saved = was.saved
+  return next
+}
+
+/** Adds keep-warm figures (what a ping cost, what a ping saved) to this session's record. Never touches the total. */
+const addKeepWarm = async ($: EngineInterface, add: { pings?: number; saved?: number }): Promise<void> => {
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const next = recordOf(await readSpend($), await $.clock.now())
+    if (add.pings) next.pings = (next.pings ?? 0) + add.pings
+    if (add.saved) next.saved = (next.saved ?? 0) + add.saved
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the card shows no savings; the ping goes on */ }
+}
+
+/** The last seven days' totals, oldest first, 0 for a day with none (or an unreadable one). */
+const readDays = async ($: EngineInterface, now: number): Promise<number[]> => {
+  const out: number[] = []
+  for (const key of lastDays(now)) {
+    try {
+      const v = await $.store.get(key)
+      out.push(typeof v === 'number' && v > 0 ? v : 0)
+    } catch {
+      out.push(0)
+    }
+  }
+  return out
 }
 
 /** Adds a finished turn's cost to this session's saved figures. A failing store or id loses the figure, never the turn. */
@@ -81,7 +125,15 @@ const addSpend = async ($: EngineInterface, paid: number, isMain: boolean): Prom
   try {
     const key = SPEND_PREFIX + (await $.session.id())
     const was = await readSpend($)
-    const next: Spent = { main: was?.main ?? 0, subs: was?.subs ?? 0, last: was?.last ?? 0, at: await $.clock.now() }
+    const now = await $.clock.now()
+    const next = recordOf(was, now)
+    // Today's total across sessions. Read-modify-write: when two sessions write at the same moment one
+    // of the two additions is lost, which is acceptable for a figure that is an estimate anyway.
+    try {
+      const dk = dayKey(now)
+      const today = await $.store.get(dk)
+      await $.store.set(dk, (typeof today === 'number' ? today : 0) + paid)
+    } catch { /* the day's total misses this turn */ }
     if (isMain) {
       next.main += paid
       next.last = paid + (await read($, subsSince))
@@ -167,28 +219,16 @@ const clean = (list: readonly Window[]): Window[] =>
     .sort((a, b) => (ORDER[a.kind] ?? 9) - (ORDER[b.kind] ?? 9))
 
 
-/**
- * Keeps each window's first sample in the store (account-wide, one key per window kind) and returns the
- * rows the card draws. A failing store leaves the pace unknown, never the band blank.
- */
-const trackPace = async ($: EngineInterface, list: readonly Window[], now: number): Promise<PaceRow[]> => {
+/** The rows the card draws: each window with a colour, its time to reset and its pace over the window so far. */
+const trackPace = (list: readonly Window[], now: number): PaceRow[] => {
   const rows: PaceRow[] = []
   for (const w of list) {
     if (!COLORS[w.kind]) continue
-    let sample: PaceSample | null = null
-    if (w.resetsAt) {
-      try {
-        const key = PACE_PREFIX + w.kind
-        const prev = asSample(await $.store.get(key))
-        sample = nextSample(prev, w, now)
-        if (sample && sample !== prev) await $.store.set(key, sample)
-      } catch { /* no sample: the pace stays unknown */ }
-    }
     rows.push({
       label: NAMES[w.kind],
       color: COLORS[w.kind],
       untilResetMs: w.resetsAt ? Date.parse(w.resetsAt) - now : null,
-      pace: paceOf(sample, w, now),
+      pace: WINDOW_MS[w.kind] ? paceOf(w, WINDOW_MS[w.kind], now) : null,
     })
   }
   return rows
@@ -258,6 +298,9 @@ const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFa
     if (c) await $.store.set(key, { lastAt: c.lastAt, tokens: c.tokens, window: c.window, model: c.model })
   } catch { /* the facts stay in the atom for this run */ }
 }
+
+/** The cache facts as the band holds them now: the atom, else the saved entry. */
+const cacheFacts = async ($: EngineInterface): Promise<CacheFacts | null> => (await read($, cache)) ?? (await readStoredCache($))
 
 /** The usage windows straight from the engine, or none when it cannot say. */
 const liveWindows = async ($: EngineInterface): Promise<Window[]> => {
@@ -436,16 +479,21 @@ export const register: Register = on => {
     } catch { /* without the command the settings keep their defaults */ }
     // Saved costs of sessions not touched for a month are dropped.
     try {
-      const cutoff = (await $.clock.now()) - SPEND_KEEP_MS
+      const nowMs = await $.clock.now()
+      const cutoff = nowMs - SPEND_KEEP_MS
       for (const key of await $.store.keys()) {
         if (key.startsWith(CACHE_PREFIX)) {
           const c = (await $.store.get(key)) as Partial<CacheFacts> | null | undefined
           if (c && typeof c.lastAt === 'number' && c.lastAt < cutoff) await $.store.delete(key)
           continue
         }
-        if (key.startsWith(PACE_PREFIX)) {
-          const p = asSample(await $.store.get(key))
-          if (p && p.at0 < cutoff) await $.store.delete(key)
+        // Pace samples are no longer kept: the pace comes from the window's own length.
+        if (key.startsWith(OLD_PACE_PREFIX)) {
+          await $.store.delete(key)
+          continue
+        }
+        if (key.startsWith(DAY_PREFIX)) {
+          if (isOldDay(key, nowMs, DAY_KEEP_DAYS)) await $.store.delete(key)
           continue
         }
         if (!key.startsWith(SPEND_PREFIX)) continue
@@ -511,7 +559,11 @@ export const register: Register = on => {
     const r = await next(e)
     const reply = r && typeof r === 'object' && 'value' in r ? r.value : r
     if (reply && reply.isAnswered !== false && pingKeptCacheWarm(reply.usage)) {
+      // What the ping cost, in this session's record: priced as the model of the cache facts, as it forked that request.
+      const facts = await cacheFacts($)
+      const cost = turnCost(reply.usage, facts?.model)
       await putCache($, c => (c ? { ...c, lastAt: sentAt } : c))
+      if (cost !== null && cost > 0) await addKeepWarm($, { pings: cost })
     }
     return r
   })
@@ -562,6 +614,16 @@ export const register: Register = on => {
     arm($)
     if (!e.agentId) {
       const now = await $.clock.now()
+      // Read before putCache overwrites lastAt. A turn that begins after the cache's hour would have found
+      // it cold, but pings kept it warm: the difference between a cold re-cache and a cache read is saved.
+      const before = e.index === 0 ? await cacheFacts($) : null
+      const was = await read($, realAt)
+      await update($, realAt, () => now)
+      if (before && was !== null && now - was >= TTL_MS && now - before.lastAt < TTL_MS) {
+        const m = MODELS.find(x => x.id === familyOf(before.model))
+        const saved = m ? coldCost(m, before.tokens) - warmCost(m, before.tokens) : 0
+        if (saved > 0) await addKeepWarm($, { saved })
+      }
       await putCache($, c => ({ lastAt: now, tokens: c?.tokens ?? 0, window: c?.window ?? 0, model: c?.model ?? null }))
       // A turn's first request starts its clock, and a list finished last turn has had its moment.
       if (e.index === 0) {
@@ -1118,10 +1180,10 @@ export const register: Register = on => {
     }
 
     let card = null
-    // Every render keeps the samples, open or not: the pace needs the time since a window was first seen.
-    const paceRows = await trackPace($, list, now)
     let showProgress = true
     if (open && Svg) {
+      const paceRows = trackPace(list, now)
+      const days = await readDays($, now)
       // The card is drawn at W, 12 px a column, but the band is narrower on screen (DESKTOP_COL_PX). Its
       // element gets the width it is shown at and the height that goes with it: given the drawn height, the
       // shrunk drawing sat centred in a box too tall for it, with empty bands above and below.
@@ -1130,7 +1192,7 @@ export const register: Register = on => {
       const W = bandPx(columns)
       const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
       const shownH = (h: number) => Math.round(h * scale)
-      const c = cardSvg(view, kind, W, paid ? { main: paid.main, subs: paid.subs } : null, paceRows)
+      const c = cardSvg(view, kind, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows)
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))

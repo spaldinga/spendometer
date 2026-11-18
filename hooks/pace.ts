@@ -1,54 +1,29 @@
-// How fast a usage window is being used up, from samples kept in the store. Pure: the band reads
-// and writes the store, this decides what a sample means.
+// How fast a usage window is being used up, from its own average since the window began. Pure: it
+// needs no history, only the share used, the window's length and the time left.
 
-/** Where a window's own record lives in the store, one per window kind, for the whole account: `pace:five_hour`. */
-export const PACE_PREFIX = 'pace:'
-/** Under this long since the first sample the rate is too noisy to show. */
+/** Under this long into a window the rate is too noisy to show. */
 export const PACE_MIN_MS = 10 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
 
-/** The first reading seen of a window: when it resets (names the window), the share used then, and the time. */
-export type PaceSample = { resetsAt: string; used0: number; at0: number }
+/** How long each usage window is; a kind not listed has no pace. */
+export const WINDOW_MS: Record<string, number> = { five_hour: 5 * HOUR_MS, seven_day: 7 * 24 * HOUR_MS }
+
 /** A window as the band holds it. */
 export type PaceWindow = { percentUsed: number; resetsAt?: string }
 /** When the window runs out at the pace so far, against when it resets; `ok` when it lasts until the reset. */
 export type Pace = { lastsMs: number; untilResetMs: number; ok: boolean }
 
 /**
- * The sample to keep after seeing `w` at `now`: the old one while it is still this window, a new one for a
- * new window (the reset time differs) or when the share used fell. Null when the window has no reset time to
- * name it by. The same object comes back when nothing changed, so the caller writes only on a difference.
+ * The pace of a window over its whole length so far, or null while it is unknown: no reset time, a reset
+ * that has passed or is further away than the window is long, under 10 minutes into the window, or nothing used.
  */
-/**
- * Whether two reset times name the same window. Within 10 minutes counts as the same: the windows are hours
- * or days long, and a reset time that moves a little between readings must not restart the sample each time.
- */
-export const sameWindow = (a: string, b: string): boolean => {
-  const d = Math.abs(Date.parse(a) - Date.parse(b))
-  return a === b || d < PACE_MIN_MS
-}
-
-export const nextSample = (prev: PaceSample | null | undefined, w: PaceWindow, now: number): PaceSample | null => {
+export const paceOf = (w: PaceWindow, windowMs: number, now: number): Pace | null => {
   if (!w.resetsAt) return null
-  if (prev && sameWindow(prev.resetsAt, w.resetsAt) && w.percentUsed >= prev.used0) return prev
-  return { resetsAt: w.resetsAt, used0: w.percentUsed, at0: now }
-}
-
-/** The pace of a window, or null while it is unknown: no sample for this window, under 10 minutes, or no growth. */
-export const paceOf = (sample: PaceSample | null | undefined, w: PaceWindow, now: number): Pace | null => {
-  if (!sample || !w.resetsAt || !sameWindow(sample.resetsAt, w.resetsAt)) return null
-  const elapsed = now - sample.at0
-  if (!(elapsed >= PACE_MIN_MS) || !(w.percentUsed > sample.used0)) return null
   const untilResetMs = Date.parse(w.resetsAt) - now
-  if (Number.isNaN(untilResetMs) || untilResetMs <= 0) return null
-  const rate = (w.percentUsed - sample.used0) / elapsed
+  if (Number.isNaN(untilResetMs) || untilResetMs <= 0 || untilResetMs > windowMs) return null
+  const elapsed = windowMs - untilResetMs
+  if (!(elapsed >= PACE_MIN_MS) || !(w.percentUsed > 0)) return null
+  const rate = w.percentUsed / elapsed
   const lastsMs = Math.max(0, 100 - w.percentUsed) / rate
   return { lastsMs, untilResetMs, ok: lastsMs >= untilResetMs }
-}
-
-/** Whether a stored value is a sample worth trusting. */
-export const asSample = (v: unknown): PaceSample | null => {
-  const s = v as Partial<PaceSample> | null | undefined
-  return s && typeof s.resetsAt === 'string' && typeof s.used0 === 'number' && typeof s.at0 === 'number'
-    ? { resetsAt: s.resetsAt, used0: s.used0, at0: s.at0 }
-    : null
 }

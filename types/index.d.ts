@@ -32,8 +32,12 @@ export type Worker = { id: string; type: string; steps: number; isDone: boolean 
 /** What this conversation has cost so far at list prices, in dollars: the main session's turns and its subagents'. */
 export type Spend = { main: number; subs: number }
 
-/** What the store keeps per session under `spend:<session id>`: the totals, the latest turn's cost, and when it was written (clock ms). */
-export type Spent = Spend & { last: number; at: number }
+/**
+ * What the store keeps per session under `spend:<session id>`: the totals, the latest turn's cost, and when it was written (clock ms).
+ * `pings` is what keep-warm pings that kept the cache alive cost, `saved` what they saved against a cold re-cache; both are
+ * left out of older records and of the conversation's total.
+ */
+export type Spent = Spend & { last: number; at: number; pings?: number; saved?: number }
 
 /** Wrapping up a conversation: asked for by the button, then running once the debrief's turn has started. */
 export type Ending = 'asked' | 'running' | null
@@ -49,6 +53,7 @@ declare module 'claude-code' {
       crew: Worker[]
       ending: Ending
       subsSince: number
+      realAt: number | null
     }
   }
 }
