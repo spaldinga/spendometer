@@ -173,10 +173,10 @@ test('the spend zone draws seven day bars, today in orange and a day with no spe
     const bars = zone.match(/<rect [^>]*rx="1"[^>]*\/>/g)!
     expect(bars.length).toBe(7)
     expect(bars[6]).toContain('fill="#ff6b1a"')
-    expect(bars[6]).toContain('height="18"')
+    expect(bars[6]).toContain('height="15"')
     expect(bars[0]).toContain('height="2"')
     expect(bars[0]).toContain('fill="#4a463b"')
-    expect(bars[4]).toContain('height="24"')
+    expect(bars[4]).toContain('height="20"')
     expect(bars[4]).toContain('fill="#8d8775"')
     expect(zone).toContain('today $3.00 · week $11.00')
     expect(zone).toContain('this thread')

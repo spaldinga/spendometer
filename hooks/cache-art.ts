@@ -314,12 +314,13 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     return d
   }
   // A zone's caption size: a little smaller where the zone is narrow.
-  const capSize = (w: number) => (w < 230 ? 11 : 12)
+  // Drawn at 12 px a column, shown at DESKTOP_COL_PX (8.6): about 70%. 18 shows as about 13 px, the band's own text size.
+  const capSize = (w: number) => (w < 230 ? 16 : 18)
 
   // The conversation's size, as a dot grid of the context window.
   const zoneSize = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
     const caption = `${Math.round(share * 100)}% of the ${tok(v.window)} context · ${tok(free)} free`
-    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { ls: 1.4 })
+    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { size: 14, ls: 1.4 })
     if (o.compact) {
       const cols = 20
       const gx = x + w - (cols - 1) * 9.6 - 6
@@ -357,7 +358,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   // split between the main session and subagents.
   const zoneSpend = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
     const caption = days ? daysCaption : total > 0 ? `main ${usd(mainCost)} · subagents ${usd(subsCost)}` : ''
-    const g = t(x, y + 24, 'SPEND', { ls: 1.4 })
+    const g = t(x, y + 24, 'SPEND', { size: 14, ls: 1.4 })
     const fig = `≈${usd(total)}`
     const split = (n: number) => {
       // The subagents' share, at least one dot once they have cost anything.
@@ -370,7 +371,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       return g + big(x, y + 56, fig, 26, '', 14) + dots(gx, y + 42, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 76, caption, { size: capSize(w), w: 500 }) : '')
     }
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
-    const chart = days ? dayBars(x, y + 95, 24) : dots(x, y + 80, cols, 9.6, 2, split(cols * 2))
+    const chart = days ? dayBars(x, y + 90, 20) : dots(x, y + 80, cols, 9.6, 2, split(cols * 2))
     return g + big(x, y + 62, fig, 38, 'this thread', 15) + chart + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
 
@@ -380,7 +381,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     const k = o.compact
       ? { lab: 24, base: 100, rows: 6, step: 7, chip: 58, price: 88, name: 102 }
       : { lab: 24, base: 106, rows: 8, step: 8, chip: 60, price: 94, name: 110 }
-    let g = t(x, y + k.lab, 'NEXT MESSAGE COSTS', { ls: 1.4 })
+    let g = t(x, y + k.lab, 'NEXT MESSAGE COSTS', { size: 14, ls: 1.4 })
     const top = Math.max(...MODELS.map(m => coldCost(m, v.tokens)))
     MODELS.forEach((m, i) => {
       const mine = m.id === v.mine
@@ -399,8 +400,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   // What keeping the cache warm costs an hour, and what letting it go cold costs.
   const kw = keepWarmCost(v)
   const zoneKeep = (x: number, y: number, w: number) => {
-    const g = t(x, y + 24, 'KEEP WARM', { ls: 1.4 })
-    if (!kw) return g + t(x, y + 62, 'model not priced', { size: 16, w: 500 })
+    const g = t(x, y + 24, 'KEEP WARM', { size: 14, ls: 1.4 })
+    if (!kw) return g + t(x, y + 62, 'model not priced', { size: 18, w: 500 })
     // The break-even line only where there is room for it, and only when it is under a day: both costs grow
     // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
     // always says ">24h" tells nothing.
@@ -424,20 +425,20 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
 
   // Per usage window, a track on one scale: the bar is the time left at this pace, the tick is the reset.
   const zonePace = (x: number, y: number, w: number) => {
-    let g = t(x, y + 24, 'PACE VS RESET', { ls: 1.4 })
+    let g = t(x, y + 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
     const tx = x + 34
     const tw = w - 34
     if (pace.length === 0) return g + t(x, y + 62, 'no usage windows reported', { size: 12, w: 500 })
     // Each window: its label and track (the bar is the time left at this pace, the tick the reset), then
-    // the forecast in words under the bar. The desktop draws the card at about 70%, so the words are 13 px
-    // here to read as about 9; no legend, the words say what the bar does.
+    // the forecast in words under the bar. The desktop draws the card at about 70%, so the words are 18 px
+    // here to read as about 13, the band's own size; no legend, the words say what the bar does.
     const words = (yy: number, lead: string, leadFill: string, rest: string, mark = '') =>
-      `<text x="${tx}" y="${yy}" font-size="13" font-weight="500" fill="${MUTED}"><tspan fill="${leadFill}">${lead}</tspan>${rest}` +
+      `<text x="${tx}" y="${yy}" font-size="18" font-weight="500" fill="${MUTED}"><tspan fill="${leadFill}">${lead}</tspan>${rest}` +
       (mark ? `<tspan fill="${OK}" font-weight="700" dx="4">${mark}</tspan>` : '') +
       '</text>'
     pace.slice(0, 2).forEach((r, i) => {
       const top = y + 36 + i * 40
-      g += t(x, top + 12, r.label, { size: 13, fill: r.color })
+      g += t(x, top + 12, r.label, { size: 16, fill: r.color })
       g += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
       if (r.pace) {
         const scale = Math.max(r.pace.lastsMs, r.pace.untilResetMs)
@@ -503,7 +504,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     }
   } else if (kind === 'stacked') {
     const half = Math.floor(W / 2)
-    const row = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 18, 13)
+    const row = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 20, 18)
     const rowH = ROW + TEXT_ROWS
     if (cold) {
       H = rowH + ROW
@@ -514,7 +515,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     }
   } else {
     // Narrow: the cache row above already shows Robo and the chip.
-    const size = W < 300 ? 10 : 11
+    const size = W < 300 ? 14 : 15
     const zones = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true }) + hline(176) + textLines(13, 198, size)
     const rowH = 176 + 46
     if (cold) {
