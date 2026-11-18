@@ -58,3 +58,12 @@ test('asSample trusts only a whole sample', () => {
   expect(asSample(null)).toBeNull()
   expect(asSample('x')).toBeNull()
 })
+
+test('a reset time that moves by a few minutes is the same window: the sample stays and the pace is known', () => {
+  const moved = '2098-12-31T23:03:00Z'
+  const now = T0 + 60 * MIN
+  expect(nextSample(SAMPLE, { percentUsed: 20, resetsAt: moved }, now)).toBe(SAMPLE)
+  expect(paceOf(SAMPLE, { percentUsed: 20, resetsAt: moved }, now)).not.toBeNull()
+  // An hour apart is a new window.
+  expect(nextSample(SAMPLE, { percentUsed: 20, resetsAt: '2099-01-01T00:00:00Z' }, now)).not.toBe(SAMPLE)
+})

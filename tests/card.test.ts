@@ -98,7 +98,8 @@ test('the warm wide card has four columns, and the cold one adds the model costs
   for (const z of ['>IN CACHE<', '>THIS CONVERSATION<', '>KEEP WARM<', '>PACE VS RESET<']) expect(warm).toContain(z)
   expect(warm).toContain('$0.06')
   expect(warm).toContain('going cold costs $1.92')
-  expect(warm).toContain('warm is cheaper if back within &gt;24h'.replace('&gt;', '>'))
+  // At today's prices the break-even is over a day, so the card leaves the line out.
+  expect(warm).not.toContain('warm is cheaper')
   expect(warm).toContain('bar: time left at this pace · line: reset')
   expect(warm).not.toContain('NEXT MESSAGE')
   // IN CACHE keeps its dot grid: 25 dots a row, two rows.
@@ -141,4 +142,12 @@ test('an unpriced model leaves keep warm without figures', () => {
   const v = { ...WARM, mine: null }
   expect(body(cardSvg(v, 'wide', 1300, SPEND).source)).toContain('model not priced')
   expect(body(cardSvg(v, 'stacked', 800, SPEND).source)).toContain('keep warm: model not priced')
+})
+
+test('while cold, the keep-warm caption says what re-caching costs now, not what going cold would', () => {
+  const wide = body(cardSvg(COLD, 'wide', 1300, SPEND, [PACE_OK]).source)
+  expect(wide).toContain('re-caching now costs $')
+  expect(wide).not.toContain('going cold')
+  const stacked = body(cardSvg(COLD, 'stacked', 800, SPEND, [PACE_OK]).source)
+  expect(stacked).toContain('re-cache now $')
 })

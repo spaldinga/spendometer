@@ -372,12 +372,14 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   const zoneKeep = (x: number, y: number, w: number) => {
     const g = t(x, y + 24, 'KEEP WARM', { ls: 1.4 })
     if (!kw) return g + t(x, y + 62, 'model not priced', { size: 16, w: 500 })
-    // The break-even line only where there is room for it.
+    // The break-even line only where there is room for it, and only when it is under a day: both costs grow
+    // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
+    // always says ">24h" tells nothing.
     return (
       g +
       big(x, y + 62, usd(kw.perHour), 38, '/h', 15) +
-      t(x, y + 88, `going cold costs ${usd(kw.cold)}`, { size: capSize(w), w: 500 }) +
-      (w >= 200 ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 }) : '')
+      t(x, y + 88, `${cold ? 're-caching now costs' : 'going cold costs'} ${usd(kw.cold)}`, { size: capSize(w), w: 500 }) +
+      (w >= 200 && kw.breakEvenH <= 24 ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 }) : '')
     )
   }
 
@@ -407,7 +409,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
 
   // The same two facts as text lines, for the layouts with no room for the drawing.
   const textLines = (x: number, y: number, size: number) => {
-    const keep = kw ? `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` : 'keep warm: model not priced'
+    const keep = kw ? `keep warm ${usd(kw.perHour)}/h · ${cold ? 're-cache now' : 'going cold'} ${usd(kw.cold)}` : 'keep warm: model not priced'
     const r = riskiest(pace)
     let paceText = 'pace unknown'
     let paceFill = MUTED
@@ -478,6 +480,6 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`) +
     ` ${tok(free)} of the context free.` +
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
-    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; going cold costs ${usd(kw.cold)}.` : '')
+    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? 're-caching now costs' : 'going cold costs'} ${usd(kw.cold)}.` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

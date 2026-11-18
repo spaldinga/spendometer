@@ -18,15 +18,24 @@ export type Pace = { lastsMs: number; untilResetMs: number; ok: boolean }
  * new window (the reset time differs) or when the share used fell. Null when the window has no reset time to
  * name it by. The same object comes back when nothing changed, so the caller writes only on a difference.
  */
+/**
+ * Whether two reset times name the same window. Within 10 minutes counts as the same: the windows are hours
+ * or days long, and a reset time that moves a little between readings must not restart the sample each time.
+ */
+export const sameWindow = (a: string, b: string): boolean => {
+  const d = Math.abs(Date.parse(a) - Date.parse(b))
+  return a === b || d < PACE_MIN_MS
+}
+
 export const nextSample = (prev: PaceSample | null | undefined, w: PaceWindow, now: number): PaceSample | null => {
   if (!w.resetsAt) return null
-  if (prev && prev.resetsAt === w.resetsAt && w.percentUsed >= prev.used0) return prev
+  if (prev && sameWindow(prev.resetsAt, w.resetsAt) && w.percentUsed >= prev.used0) return prev
   return { resetsAt: w.resetsAt, used0: w.percentUsed, at0: now }
 }
 
 /** The pace of a window, or null while it is unknown: no sample for this window, under 10 minutes, or no growth. */
 export const paceOf = (sample: PaceSample | null | undefined, w: PaceWindow, now: number): Pace | null => {
-  if (!sample || !w.resetsAt || sample.resetsAt !== w.resetsAt) return null
+  if (!sample || !w.resetsAt || !sameWindow(sample.resetsAt, w.resetsAt)) return null
   const elapsed = now - sample.at0
   if (!(elapsed >= PACE_MIN_MS) || !(w.percentUsed > sample.used0)) return null
   const untilResetMs = Date.parse(w.resetsAt) - now
