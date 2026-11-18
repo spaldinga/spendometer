@@ -7,21 +7,25 @@ import type { Kind } from './cache-art'
 export const ROW_PAD = 2
 /**
  * How many columns one character of text takes. In the terminal a character is a column. On the
- * desktop a column is 12 px, but the app's text runs about 6 px a character: measured from
- * screenshots on 2026-11-12, a usage window of 30 characters drew 174 px and a 24-character cost
- * line 151 px. Margins and padding are in columns on both surfaces and are not scaled.
+ * desktop a column is about 8.6 px (DESKTOP_COL_PX), not the 12 px first assumed. Measured on
+ * 2026-11-18 at 104 columns: `7D ●…● 80% left · 4d 1h` (30 characters) 23.6 columns, the 5H window
+ * (34) 26.9, `COST ≈$12.57 · last $0.46` (25) 17.3: about 0.78. Margins and padding are in columns on
+ * both surfaces and are not scaled.
  */
-export const DESKTOP_CHAR_COLS = 0.5
+export const DESKTOP_CHAR_COLS = 0.78
 /** A text's width in columns at `k` columns a character. */
 export const textCols = (s: string, k = 1): number => Math.ceil(s.length * k)
-/** A Button draws its label plus this many columns of frame (measured about 2.5 on the desktop). */
-export const BUTTON_CHROME = 3
+/**
+ * A Button draws its label plus this many columns of frame. Measured on 2026-11-18: `🔥 Keep warm`
+ * 13.75 columns, `🎌 Wrap up` about 13, the fold button 4.
+ */
+export const BUTTON_CHROME = 4
 /** The Button groups on the band sit one column apart. */
 export const BUTTON_GAP = 1
 /** The fold button's `+` or `−`: its frame and the one character. */
 export const FOLD_COLS = 1 + BUTTON_CHROME
-/** Robo, a space and the chip, as drawings: about 26 + 8 + 63 px. */
-export const ROBO_CHIP_COLS = 8
+/** Robo, a space and the chip, as drawings: measured 10 columns on 2026-11-18. */
+export const ROBO_CHIP_COLS = 10
 /** The terminal's chip: ` WARM ` as text. */
 export const TEXT_CHIP_COLS = 6
 /**
@@ -47,7 +51,7 @@ export const COMPACT_STEPS = 5
 /** A compact row's right margin between its groups. */
 export const COMPACT_MARGIN = 2
 /** The USAGE label, without its right margin. */
-export const LABEL_COLS = 5
+export const LABEL_COLS = 6
 /** A block's right margin: usage windows, cost. */
 export const BLOCK_MARGIN = 3
 /** The wide row's label and the cache block's right margin. */

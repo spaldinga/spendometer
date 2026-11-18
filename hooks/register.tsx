@@ -622,8 +622,12 @@ export const register: Register = on => {
     // The atom is cleared by a resume and refilled only by events that may not come: an empty one asks the engine.
     arm($)
     const kept = await read($, windows)
-    const list = kept.length > 0 ? kept : await liveWindows($)
     const now = await $.clock.now()
+    // A window whose reset time has passed is a new window: the stored share used is from the old one.
+    // Shown as 100% left with no reset time until the next reply brings the real figures.
+    const list = (kept.length > 0 ? kept : await liveWindows($)).map(w =>
+      w.resetsAt && Date.parse(w.resetsAt) <= now ? { ...w, percentUsed: 0, resetsAt: undefined } : w,
+    )
     const view = viewOf((await read($, cache)) ?? (await readStoredCache($)), now)
 
     const keep = await keepState($)

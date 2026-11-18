@@ -9,7 +9,7 @@ const PROPS = {
   hasSurvey: false,
   isWorking: false,
   maxRows: 12,
-  bodyColumns: 80,
+  bodyColumns: 140,
   scroll: { offset: 0, bodyRows: 12 },
   view: {},
 } as const
@@ -52,8 +52,8 @@ test('a cold cache opens the card with the re-cache price, and Hide folds it to 
   const card = await band.find({ key: 'card' })
   expect(card).toBeDefined()
   expect(JSON.stringify(card)).toContain('Cache cold. Idle 3d 9h. Next message re-caches 770k tokens.')
-  // The page's width: 80 columns is a 1020 px band.
-  expect(JSON.stringify(card)).toContain('width=\\"1020\\"')
+  // The page's width: 140 columns is a 1740 px band, drawn at 12 px a column.
+  expect(JSON.stringify(card)).toContain('width=\\"1740\\"')
 
   await band.press({ key: 'cache-fold' })
   expect(await band.find({ key: 'card' })).toBeUndefined()

@@ -65,8 +65,8 @@ const WINDOWS = [
 ]
 
 /** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
-const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40) => {
-  mock.clock(on, { now: NOW })
+const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW) => {
+  mock.clock(on, { now })
   const kv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]])
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: kv.get(e.key) }))
@@ -349,5 +349,27 @@ test('the card element is sized to the band on screen, so the shrunk drawing lea
   const src = String(svg!.props.source)
   const [, dw, dh] = src.match(/viewBox="0 0 (\d+) (\d+)"/)!.map(Number)
   expect(Math.abs(Number(svg!.props.height) / Number(svg!.props.width) - dh / dw)).toBeLessThan(0.01)
+  await band.unmount()
+})
+
+test('at 104 columns, with a cold cache idle 18 hours, the wide row and its word buttons no longer fit', async ($, on) => {
+  // Measured on 2026-11-18: at 104 columns the wide row cut off the minutes and pushed the buttons out of view.
+  const band = await mountAt($, on, 104, true, 18 * 60 + 18)
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  await band.unmount()
+})
+
+test('at 150 columns the same row stays wide, the buttons with their words', async ($, on) => {
+  const band = await mountAt($, on, 150, true, 18 * 60 + 18)
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
+  await band.unmount()
+})
+
+test('a window whose reset time has passed shows 100% left, not the old share and "resetting"', async ($, on) => {
+  // Two hours on: the 5-hour window reset at 23:29, the 7-day one has not.
+  const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW + 2 * 3600_000)
+  const row = shown((await band.find({ key: 'row' }))!)
+  expect(row).toContain('100% left')
+  expect(row).not.toContain('resetting')
   await band.unmount()
 })

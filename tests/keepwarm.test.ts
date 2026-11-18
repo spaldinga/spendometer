@@ -225,7 +225,7 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
   })
   await seed($, 18)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } })
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
 
   await band.press({ key: 'wrap-up' })
