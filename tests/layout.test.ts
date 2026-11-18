@@ -64,10 +64,13 @@ const WINDOWS = [
   { kind: 'seven_day', percentUsed: 1, resetsAt: '2099-01-02T22:00:00Z' },
 ]
 
+/** The store of the last mountAt, for tests that read what the band wrote. */
+let lastKv = new Map<string, unknown>()
+
 /** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
 const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW) => {
   mock.clock(on, { now })
-  const kv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]])
+  const kv = (lastKv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: kv.get(e.key) }))
   on('store.set', ($, e) => { kv.set(e.key, e.value); return { value: undefined } })
@@ -371,5 +374,29 @@ test('a window whose reset time has passed shows 100% left, not the old share an
   const row = shown((await band.find({ key: 'row' }))!)
   expect(row).toContain('100% left')
   expect(row).not.toContain('resetting')
+  await band.unmount()
+})
+
+test('a render keeps each window\'s first sample in the store, one key per window kind for the account', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  expect(lastKv.get('pace:five_hour')).toEqual({ resetsAt: '2098-12-31T23:29:00Z', used0: 18, at0: NOW })
+  expect(lastKv.get('pace:seven_day')).toEqual({ resetsAt: '2099-01-02T22:00:00Z', used0: 1, at0: NOW })
+  await band.unmount()
+})
+
+test('the open wide card shows keep warm and the pace, and pace unknown on the first reading', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  await band.press({ key: 'cache-fold' })
+  const w = JSON.stringify(await band.find({ key: 'card' }))
+  for (const z of ['KEEP WARM', 'PACE VS RESET', 'pace unknown', 'going cold costs']) expect(w).toContain(z)
+  await band.unmount()
+})
+
+test('the open compact card ends in the keep warm and pace text lines', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  await band.press({ key: 'cache-fold' })
+  const c = JSON.stringify(await band.find({ key: 'card' }))
+  expect(c).toContain('keep warm $')
+  expect(c).toContain('pace unknown')
   await band.unmount()
 })

@@ -2,6 +2,7 @@
 // hands to Svg. Nothing here touches the engine.
 
 import { SANS } from './font'
+import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'
 export type Kind = 'wide' | 'stacked' | 'tight'
@@ -13,6 +14,8 @@ export const EMPTY = '#4a463b'
 export const LINE = '#36332b'
 export const ORANGE = '#ff6b1a'
 export const YELLOW = '#f5a623'
+/** A window that runs out before it resets. */
+export const DANGER = '#e24b4a'
 
 // The cache's two states in a muted shade: desaturated so they sit
 // beside the band's own orange and yellow.
@@ -106,6 +109,38 @@ export type CacheView = {
 }
 
 export const mineModel = (v: CacheView): Model | undefined => MODELS.find(m => m.id === v.mine)
+
+/** cache-tax pings once per 50 idle minutes: 1.2 pings an hour, each reading the whole context. */
+export const PINGS_PER_HOUR = 1.2
+
+/**
+ * What keeping the cache warm costs, against letting it go cold: dollars an hour of pings (cache reads of
+ * the context, no output), the cold re-cache cost of the next message, and the idle hours at which the
+ * two are equal. Null for a model the table doesn't price.
+ */
+export const keepWarmCost = (v: CacheView): { perHour: number; cold: number; breakEvenH: number } | null => {
+  const m = mineModel(v)
+  if (!m) return null
+  const perHour = costOf(m, 'warm', v.tokens) * PINGS_PER_HOUR
+  const cold = costOf(m, 'cold', v.tokens)
+  return { perHour, cold, breakEvenH: perHour > 0 ? cold / perHour : Infinity }
+}
+
+/** The break-even as the card writes it: ~3h, or >24h when it is longer than a day. */
+export const fmtBreakEven = (h: number): string => (h > 24 ? '>24h' : `~${Math.max(1, Math.round(h))}h`)
+
+/** A usage window as the pace zone draws it: its label and colour, when it resets and its pace (null while unknown). */
+export type PaceRow = { label: string; color: string; untilResetMs: number | null; pace: Pace | null }
+
+/** The window most at risk: the one with the least time to spare past its reset (a negative margin runs out first). */
+export const riskiest = (rows: readonly PaceRow[]): (PaceRow & { pace: Pace }) | null => {
+  let best: (PaceRow & { pace: Pace }) | null = null
+  for (const r of rows) {
+    if (!r.pace) continue
+    if (!best || r.pace.lastsMs - r.pace.untilResetMs < best.pace.lastsMs - best.pace.untilResetMs) best = r as PaceRow & { pace: Pace }
+  }
+  return best
+}
 
 // ---------- SVG helpers ----------
 export const svgDoc = (w: number, h: number, body: string, font: boolean): string =>
@@ -244,7 +279,7 @@ const CARD_TOP = 6
 
 // The card shows what the band's row does not: the size of the cache, what the conversation has
 // cost, and, while the cache is cold, what the next message costs on each model.
-export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null): { source: string; w: number; h: number; alt: string } => {
+export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = []): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -332,32 +367,106 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     return g
   }
 
+  // What keeping the cache warm costs an hour, and what letting it go cold costs.
+  const kw = keepWarmCost(v)
+  const zoneKeep = (x: number, y: number, w: number) => {
+    const g = t(x, y + 24, 'KEEP WARM', { ls: 1.4 })
+    if (!kw) return g + t(x, y + 62, 'model not priced', { size: 16, w: 500 })
+    // The break-even line only where there is room for it.
+    return (
+      g +
+      big(x, y + 62, usd(kw.perHour), 38, '/h', 15) +
+      t(x, y + 88, `going cold costs ${usd(kw.cold)}`, { size: capSize(w), w: 500 }) +
+      (w >= 200 ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 }) : '')
+    )
+  }
+
+  // Per usage window, a track on one scale: the bar is the time left at this pace, the tick is the reset.
+  const zonePace = (x: number, y: number, w: number) => {
+    let g = t(x, y + 24, 'PACE VS RESET', { ls: 1.4 })
+    const tx = x + 34
+    const tw = w - 34
+    if (pace.length === 0) return g + t(x, y + 62, 'no usage windows reported', { size: 12, w: 500 })
+    pace.slice(0, 2).forEach((r, i) => {
+      const top = y + 48 + i * 30
+      g += t(x, top + 12, r.label, { size: 12, fill: r.color })
+      g += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
+      if (r.pace) {
+        const scale = Math.max(r.pace.lastsMs, r.pace.untilResetMs)
+        const bw = Math.max(3, Math.round((r.pace.lastsMs / scale) * tw))
+        g += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace.ok ? r.color : DANGER}"/>`
+        g += `<rect x="${tx + Math.round((r.pace.untilResetMs / scale) * tw) - 1}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+        g += t(tx, top - 2, `~${fmtIdle(r.pace.lastsMs)} at this pace`, { size: 10, w: 500 })
+      } else {
+        if (r.untilResetMs !== null) g += `<rect x="${tx + tw - 2}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+        g += t(tx, top - 2, 'pace unknown', { size: 10, w: 500 })
+      }
+    })
+    return g + t(x, y + 108, w >= 240 ? 'bar: time left at this pace · line: reset' : 'bar: time left · line: reset', { size: 10, w: 500 })
+  }
+
+  // The same two facts as text lines, for the layouts with no room for the drawing.
+  const textLines = (x: number, y: number, size: number) => {
+    const keep = kw ? `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` : 'keep warm: model not priced'
+    const r = riskiest(pace)
+    let paceText = 'pace unknown'
+    let paceFill = MUTED
+    if (r) {
+      const reset = fmtIdle(r.pace.untilResetMs)
+      paceText = r.pace.ok ? `${r.label} ✓ lasts until reset · resets in ${reset}` : `${r.label} runs out in ~${fmtIdle(r.pace.lastsMs)} · resets in ${reset}`
+      paceFill = r.pace.ok ? TEXT : DANGER
+    }
+    return t(x, y, keep, { size, w: 600, fill: TEXT }) + t(x, y + size + 9, paceText, { size, w: 600, fill: paceFill })
+  }
+
+  // The first row of every layout is 124 px; the text lines under it take 54 more, the cost row 124.
+  const ROW = 124
+  const TEXT_ROWS = 54
   let H: number
   let g: string
   if (kind === 'wide') {
-    H = 124
-    // 92 px a model column on the page's full width; tighter near the switch point,
-    // where the last column still needs about 90 px for its price.
-    const colW = Math.min(92, Math.floor((W - 640 - 103) / 3))
-    g = zoneSize(13, 0, 290) + vline(314, 18, H - 36) + zoneSpend(340, 0, 260) + (cold ? vline(614, 18, H - 36) + zoneCost(640, 0, colW) : '')
+    // Four columns. IN CACHE keeps its 290 px (its dot grid), the conversation 240; the other two share the rest.
+    const rest = W - 26 - 290 - 240 - 3 * 26
+    const kwW = Math.floor(rest * 0.4)
+    const spendX = 13 + 290 + 26
+    const keepX = spendX + 240 + 26
+    const paceX = keepX + kwW + 26
+    const row =
+      zoneSize(13, 0, 290) +
+      vline(spendX - 13, 18, 88) +
+      zoneSpend(spendX, 0, 240) +
+      vline(keepX - 13, 18, 88) +
+      zoneKeep(keepX, 0, kwW) +
+      vline(paceX - 13, 18, 88) +
+      zonePace(paceX, 0, W - 13 - paceX)
+    if (cold) {
+      H = ROW * 2
+      g = row + hline(ROW) + zoneCost(13, ROW + 2, Math.min(160, (W - 26) / 4))
+    } else {
+      H = ROW
+      g = row
+    }
   } else if (kind === 'stacked') {
     const half = Math.floor(W / 2)
-    const zones = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26)
+    const row = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 18, 13)
+    const rowH = ROW + TEXT_ROWS
     if (cold) {
-      H = 248
-      g = zones + hline(124) + zoneCost(13, 126, Math.min(160, (W - 26) / 4))
+      H = rowH + ROW
+      g = row + hline(rowH) + zoneCost(13, rowH + 2, Math.min(160, (W - 26) / 4))
     } else {
-      H = 124
-      g = zones
+      H = rowH
+      g = row
     }
   } else {
     // Narrow: the cache row above already shows Robo and the chip.
-    const zones = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true })
+    const size = W < 300 ? 10 : 11
+    const zones = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true }) + hline(176) + textLines(13, 198, size)
+    const rowH = 176 + 46
     if (cold) {
-      H = 290
-      g = zones + hline(176) + zoneCost(13, 178, (W - 26) / 4, { compact: true })
+      H = rowH + 114
+      g = zones + hline(rowH) + zoneCost(13, rowH + 2, (W - 26) / 4, { compact: true })
     } else {
-      H = 176
+      H = rowH
       g = zones
     }
   }
@@ -368,6 +477,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
       : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`) +
     ` ${tok(free)} of the context free.` +
-    ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.`
+    ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
+    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; going cold costs ${usd(kw.cold)}.` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

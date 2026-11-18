@@ -10,7 +10,9 @@ import {
   EMPTY, HUE, INK, MUTED, ORANGE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
   bandPx, cardSvg, chipSvg, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd,
 } from './cache-art'
-import type { CacheView } from './cache-art'
+import type { CacheView, PaceRow } from './cache-art'
+import { PACE_PREFIX, asSample, nextSample, paceOf } from './pace'
+import type { PaceSample } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
   CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, textCols,
@@ -164,6 +166,33 @@ const clean = (list: readonly Window[]): Window[] =>
     .map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt }))
     .sort((a, b) => (ORDER[a.kind] ?? 9) - (ORDER[b.kind] ?? 9))
 
+
+/**
+ * Keeps each window's first sample in the store (account-wide, one key per window kind) and returns the
+ * rows the card draws. A failing store leaves the pace unknown, never the band blank.
+ */
+const trackPace = async ($: EngineInterface, list: readonly Window[], now: number): Promise<PaceRow[]> => {
+  const rows: PaceRow[] = []
+  for (const w of list) {
+    if (!COLORS[w.kind]) continue
+    let sample: PaceSample | null = null
+    if (w.resetsAt) {
+      try {
+        const key = PACE_PREFIX + w.kind
+        const prev = asSample(await $.store.get(key))
+        sample = nextSample(prev, w, now)
+        if (sample && sample !== prev) await $.store.set(key, sample)
+      } catch { /* no sample: the pace stays unknown */ }
+    }
+    rows.push({
+      label: NAMES[w.kind],
+      color: COLORS[w.kind],
+      untilResetMs: w.resetsAt ? Date.parse(w.resetsAt) - now : null,
+      pace: paceOf(sample, w, now),
+    })
+  }
+  return rows
+}
 const dots = (left: number, cells: number): { on: string; off: string } => {
   const n = Math.max(0, Math.min(cells, Math.round((left / 100) * cells)))
   return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
@@ -412,6 +441,11 @@ export const register: Register = on => {
         if (key.startsWith(CACHE_PREFIX)) {
           const c = (await $.store.get(key)) as Partial<CacheFacts> | null | undefined
           if (c && typeof c.lastAt === 'number' && c.lastAt < cutoff) await $.store.delete(key)
+          continue
+        }
+        if (key.startsWith(PACE_PREFIX)) {
+          const p = asSample(await $.store.get(key))
+          if (p && p.at0 < cutoff) await $.store.delete(key)
           continue
         }
         if (!key.startsWith(SPEND_PREFIX)) continue
@@ -1084,6 +1118,8 @@ export const register: Register = on => {
     }
 
     let card = null
+    // Every render keeps the samples, open or not: the pace needs the time since a window was first seen.
+    const paceRows = await trackPace($, list, now)
     let showProgress = true
     if (open && Svg) {
       // The card is drawn at W, 12 px a column, but the band is narrower on screen (DESKTOP_COL_PX). Its
@@ -1094,7 +1130,7 @@ export const register: Register = on => {
       const W = bandPx(columns)
       const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
       const shownH = (h: number) => Math.round(h * scale)
-      const c = cardSvg(view, kind, W, paid ? { main: paid.main, subs: paid.subs } : null)
+      const c = cardSvg(view, kind, W, paid ? { main: paid.main, subs: paid.subs } : null, paceRows)
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
