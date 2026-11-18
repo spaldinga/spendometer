@@ -97,10 +97,10 @@ test('the warm wide card has four columns, and the cold one adds the model costs
   const warm = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK, PACE_LOW]).source)
   for (const z of ['>IN CACHE<', '>SPEND<', '>KEEP WARM<', '>PACE VS RESET<']) expect(warm).toContain(z)
   expect(warm).toContain('$0.06')
-  expect(warm).toContain('going cold costs $1.92')
+  expect(warm).toContain('going cold costs <tspan fill="#6aaabd" font-weight="700">$1.92</tspan>')
   // At today's prices the break-even is over a day, so the card leaves the line out.
   expect(warm).not.toContain('warm is cheaper')
-  expect(warm).toContain('bar: time left at this pace · line: reset')
+  expect(warm).not.toContain('bar: time left')
   expect(warm).not.toContain('NEXT MESSAGE')
   // IN CACHE keeps its dot grid: 25 dots a row, two rows.
   const inCache = warm.slice(warm.indexOf('>IN CACHE<'), warm.indexOf('>SPEND<'))
@@ -115,7 +115,7 @@ test('the pace bar is the window colour when it lasts to the reset and red when 
   const s = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK, PACE_LOW]).source)
   expect(s).toContain('height="6" rx="3" fill="#ff6b1a"')
   expect(s).toContain(`height="6" rx="3" fill="${DANGER}"`)
-  expect(s).toContain('runs out in ~2h 40m · resets in 3h 20m')
+  expect(s).toContain(`<tspan fill="${DANGER}">runs out in ~2h 40m</tspan> · resets 3h 20m`)
 })
 
 test('the wide card says so when the pace is unknown for every window', () => {
@@ -146,7 +146,7 @@ test('an unpriced model leaves keep warm without figures', () => {
 
 test('while cold, the keep-warm caption says what re-caching costs now, not what going cold would', () => {
   const wide = body(cardSvg(COLD, 'wide', 1300, SPEND, [PACE_OK]).source)
-  expect(wide).toContain('re-caching now costs $')
+  expect(wide).toContain('re-caching now costs <tspan')
   expect(wide).not.toContain('going cold')
   const stacked = body(cardSvg(COLD, 'stacked', 800, SPEND, [PACE_OK]).source)
   expect(stacked).toContain('re-cache now $')
@@ -166,22 +166,21 @@ test('the warm wide card has four equal columns: the titles are evenly spaced', 
   }
 })
 
-test('the spend zone draws seven day bars, today in the mode hue and a day with no spend as a 2 px stub', () => {
-  for (const [v, hue] of [[WARM, '#cc6363'], [COLD, '#6aaabd']] as const) {
+test('the spend zone draws seven day bars, today in orange and a day with no spend as a 2 px stub', () => {
+  for (const v of [WARM, COLD]) {
     const s = body(cardSvg(v, 'wide', 1300, WITH_DAYS).source)
     const zone = s.slice(s.indexOf('>SPEND<'), s.indexOf('>KEEP WARM<'))
     const bars = zone.match(/<rect [^>]*rx="1"[^>]*\/>/g)!
     expect(bars.length).toBe(7)
-    expect(bars[6]).toContain(`fill="${hue}"`)
-    expect(bars[6]).toContain('height="12"')
+    expect(bars[6]).toContain('fill="#ff6b1a"')
+    expect(bars[6]).toContain('height="18"')
     expect(bars[0]).toContain('height="2"')
     expect(bars[0]).toContain('fill="#4a463b"')
-    expect(bars[4]).toContain('height="16"')
+    expect(bars[4]).toContain('height="24"')
     expect(bars[4]).toContain('fill="#8d8775"')
     expect(zone).toContain('today $3.00 · week $11.00')
     expect(zone).toContain('this thread')
     expect(zone).not.toContain('main $7.40')
-    expect(zone.includes(`fill="${hue}"`)).toBe(true)
   }
 })
 
@@ -237,21 +236,21 @@ test('the alt text names today and the week, and the savings when above zero', (
   expect(plain).not.toContain('saved')
 })
 
-test('the stacked and tight text lines have a status dot: the hue for keep warm, green, red or grey for the pace', () => {
+test('the stacked and tight text lines have a status dot: green or the cold hue for keep warm, green, red or grey for the pace', () => {
   for (const kind of ['stacked', 'tight'] as const) {
     const at = (rows: PaceRow[]) => body(cardSvg(WARM, kind, WIDTH[kind], SPEND, rows).source)
     const dotsOf = (s: string) => s.match(/<circle [^>]*r="4" fill="[^"]+"/g)!.map(d => /fill="([^"]+)"/.exec(d)![1])
-    expect(dotsOf(at([PACE_OK]))).toEqual(['#cc6363', OK])
-    expect(dotsOf(at([PACE_LOW]))).toEqual(['#cc6363', DANGER])
-    expect(dotsOf(at([PACE_NONE]))).toEqual(['#cc6363', '#8d8775'])
+    expect(dotsOf(at([PACE_OK]))).toEqual([OK, OK])
+    expect(dotsOf(at([PACE_LOW]))).toEqual([OK, DANGER])
+    expect(dotsOf(at([PACE_NONE]))).toEqual([OK, '#8d8775'])
     expect(dotsOf(body(cardSvg(COLD, kind, WIDTH[kind], SPEND, [PACE_OK]).source))[0]).toBe('#6aaabd')
   }
 })
 
 test('the wide pace zone writes the forecast under each bar', () => {
   const s = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK, PACE_LOW, PACE_NONE]).source)
-  expect(s).toContain('lasts until reset · resets in 3h 0m')
-  expect(s).toContain('runs out in ~2h 40m · resets in 3h 20m')
+  expect(s).toContain(`>lasts ~5h 0m</tspan> · resets 3h 0m<tspan fill="${OK}"`)
+  expect(s).toContain('>runs out in ~2h 40m</tspan> · resets 3h 20m')
   expect(s).not.toContain('pace unknown')
   expect(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_NONE]).source)).toContain('>pace unknown<')
 })

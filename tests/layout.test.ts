@@ -389,7 +389,7 @@ test('the open wide card shows keep warm and the pace from the first reading, wi
   const band = await mountAt($, on, 160)
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['KEEP WARM', 'PACE VS RESET', 'lasts until reset · resets in 1h 29m', 'going cold costs']) expect(w).toContain(z)
+  for (const z of ['KEEP WARM', 'PACE VS RESET', ' · resets 1h 29m', 'going cold costs']) expect(w).toContain(z)
   expect(w).not.toContain('pace unknown')
   await band.unmount()
 })
