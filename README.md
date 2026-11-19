@@ -13,8 +13,44 @@ calls a model by itself.
 state, and the buttons. The progress line, the subagents and a held git command appear in the
 same band while Claude works.*
 
-<!-- Still to add: assets/wavebar-progress.png (the surfer on the progress line),
-     assets/wavebar-card.png (cache card open) and assets/wavebar-held.png (a held git command). -->
+### The open card
+
+Press `+` on the band to open the card. These are mockups with example numbers, shown in your
+GitHub theme (dark or light). In the app the card follows the system's light or dark setting.
+
+**Wide and warm.** Four columns, from about 108 columns: the cache, the spend (this thread and
+the last seven days, today in orange), what keeping the cache warm costs and saved, and the pace of
+each usage window against its reset. The row under them shows the cache hit rate, the cost per turn
+(red when the last turn cost three times the average or more), the turns of context left, and what
+subagents have cost.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-wide-warm-dark.svg">
+  <img alt="The open card, wide and warm: 190k tokens in cache, $16.61 spent in this thread with seven day bars, keep warm $0.05 an hour with $4.20 saved, the 7-day window lasting past its reset and the 5-hour window running out in about 2h 40m, and a row with a 96% cache hit, $0.38 a turn, about 40 turns of context left and $5.14 on subagents" src="assets/card-wide-warm-light.svg">
+</picture>
+
+**Wide and cold.** The cache has gone cold: the third column says what re-caching costs on this
+model and on the cheaper ones.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-wide-cold-dark.svg">
+  <img alt="The open card, wide and cold: re-caching now costs $1.52 on Opus, $0.76 on Sonnet and $0.19 on Haiku" src="assets/card-wide-cold-light.svg">
+</picture>
+
+**Compact.** On a narrower band: the cache and the spend, then two lines with a status dot, keep
+warm (or re-cache) and the usage window most at risk.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-compact-warm-dark.svg">
+  <img alt="The compact card, warm: the cache and the spend, then keep warm $0.05 an hour with $4.20 saved, and the 5-hour window running out in about 2h 40m" src="assets/card-compact-warm-light.svg" width="49%">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-compact-cold-dark.svg">
+  <img alt="The compact card, cold: re-cache $1.52 on Opus, with Sonnet and Haiku cheaper" src="assets/card-compact-cold-light.svg" width="49%">
+</picture>
+
+<!-- Still to add: assets/wavebar-progress.png (the surfer on the progress line) and
+     assets/wavebar-held.png (a held git command). -->
 
 ## What it shows
 
