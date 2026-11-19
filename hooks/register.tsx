@@ -207,7 +207,7 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 const settingsAnswer = async ($: EngineInterface, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} [status] | cost | progress [id] | wrapup on|off | hold on|off`
+  const usage = `Usage: /${SETTINGS} [status] | cost | fold | progress [id] | wrapup on|off | hold on|off`
   const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
@@ -218,6 +218,11 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
   if (name === 'cost' && value === undefined) {
     const s = await readSpend($)
     return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
+  }
+  // The same toggle as the band's fold button and its `f` key, for anyone who would rather type it.
+  if (name === 'fold' && value === undefined) {
+    const now = await toggleFold($)
+    return now === null ? 'no cache card yet: it comes with the first reply' : `cache card: ${now ? 'open' : 'closed'}`
   }
   if (name === 'progress' && rest.length === 0) {
     const picked = value === undefined ? null : themeIdOf(value)
@@ -358,6 +363,23 @@ const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFa
 
 /** The cache facts as the band holds them now: the atom, else the saved entry. */
 const cacheFacts = async ($: EngineInterface): Promise<CacheFacts | null> => (await read($, cache)) ?? (await readStoredCache($))
+
+/**
+ * Opens the cache card if it is closed, closes it if open: the fold button, its `f` key and `/wavebar fold`.
+ * The fold is kept per cache state (a cold cache opens by default), as the button has always done. Returns
+ * whether the card is now open, or null while there is no card yet.
+ */
+const toggleFold = async ($: EngineInterface): Promise<boolean | null> => {
+  const view = viewOf(await cacheFacts($), await $.clock.now())
+  if (!view) return null
+  let open = false
+  await update($, fold, f => {
+    open = !(f && f.mode === view.mode ? f.open : view.mode === 'cold')
+    return { mode: view.mode, open }
+  })
+  $.ui.invalidate('ui.render')
+  return open
+}
 
 /** The usage windows straight from the engine, or none when it cannot say. */
 const liveWindows = async ($: EngineInterface): Promise<Window[]> => {
@@ -530,7 +552,7 @@ export const register: Register = on => {
       await $.command.register({
         name: SETTINGS,
         description: "Settings for the band above the prompt: the progress row's look, the Wrap up button and the hold for risky git commands",
-        argumentHint: '[status] | cost | progress [id] | wrapup on|off | hold on|off',
+        argumentHint: '[status] | cost | fold | progress [id] | wrapup on|off | hold on|off',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
@@ -852,13 +874,12 @@ export const register: Register = on => {
     // Folding needs the card, and the card is a drawing: the terminal stays hasCache.
     const stored = await read($, fold)
     const open = view !== null && Svg !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
-    const toggle = () => {
-      if (view) update($, fold, f => ({ mode: view.mode, open: !(f && f.mode === view.mode ? f.open : view.mode === 'cold') }))
-    }
+    const toggle = () => toggleFold($)
+    // `f` presses it while the band has the focus (a click on the band, or ctrl+x tab in a terminal).
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
-        <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card.' : "Show the cache card: context size, what this conversation has cost and, while cold, what a message costs on each model.")}
+        <Button key="cache-fold" label={open ? '−' : '+'} hotkey="f" onPress={toggle} />
+        {tip('fold', open ? 'Hide the cache card (f, or /wavebar fold).' : 'Show the cache card (f, or /wavebar fold): the cache, the spend, keep warm, pace and the metrics.')}
       </Box>
     ) : null
 

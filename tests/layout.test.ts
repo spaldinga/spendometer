@@ -438,3 +438,20 @@ test('at 68 columns the open card stays two columns with the text lines', async 
   expect(c).toContain('keep warm $')
   await band.unmount()
 })
+
+test('the fold button answers to f, and /wavebar fold opens and closes the card like it', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  expect((await band.find({ key: 'cache-fold' }))?.props.hotkey).toBe('f')
+  const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
+  const fold = async () => ((await $.command.run({ command: 'wavebar', args: 'fold', ...RUN })) as { text: string }).text
+  // Warm: the card starts closed.
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  expect(await fold()).toBe('cache card: open')
+  expect(await band.find({ key: 'card' })).toBeDefined()
+  expect(await fold()).toBe('cache card: closed')
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  // The button and the command share one state.
+  await band.press({ key: 'cache-fold' })
+  expect(await fold()).toBe('cache card: closed')
+  await band.unmount()
+})

@@ -114,7 +114,8 @@ Remove it with `/plugin uninstall wavebar@wavebar`.
 ```
 /wavebar status        show the settings
 /wavebar cost          print this conversation's cost (Wrap up runs it for the debrief)
-/wavebar progress      list the progress row themes (segments, heartbeat, console, wave, pie, comet)
+/wavebar fold          open or close the cache card (or press f with the band in focus)
+/wavebar progress      list the progress row themes (comet, calm, vitals, bridge, wake, dial)
 /wavebar progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
 /wavebar wrapup on     show the Wrap up button (default: off)
 /wavebar hold off      stop holding risky git commands (default: on)
