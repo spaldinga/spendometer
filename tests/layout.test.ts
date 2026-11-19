@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { dayKey } from '../hooks/days'
-import { ROW_PX, fitOpen, layoutOf } from '../hooks/layout'
+import { ROW_PX, cardKindOf, fitOpen, layoutOf } from '../hooks/layout'
 
 import { shown } from './visible'
 
@@ -410,5 +410,31 @@ test('the open compact card ends in the keep warm and pace text lines', async ($
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).toContain('keep warm $')
   expect(c).toContain('5H ✓ lasts until reset · resets in 1h 29m')
+  await band.unmount()
+})
+
+test('cardKindOf: four columns from 1360 px drawn, whatever the row; else the row, a too-narrow wide row stacked', () => {
+  expect(cardKindOf('stacked', 1360)).toBe('wide')
+  expect(cardKindOf('tight', 1500)).toBe('wide')
+  expect(cardKindOf('stacked', 1359)).toBe('stacked')
+  expect(cardKindOf('wide', 1300)).toBe('stacked')
+  expect(cardKindOf('tight', 800)).toBe('tight')
+})
+
+test('at 120 columns the row is compact but the open card has its four columns and the metric row', async ($, on) => {
+  const band = await mountAt($, on, 120)
+  await band.press({ key: 'cache-fold' })
+  const c = JSON.stringify(await band.find({ key: 'card' }))
+  for (const z of ['KEEP WARM', 'PACE VS RESET']) expect(c).toContain(z)
+  expect(await row(band)).not.toContain('USAGE')
+  await band.unmount()
+})
+
+test('at 68 columns the open card stays two columns with the text lines', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  await band.press({ key: 'cache-fold' })
+  const c = JSON.stringify(await band.find({ key: 'card' }))
+  expect(c).not.toContain('PACE VS RESET')
+  expect(c).toContain('keep warm $')
   await band.unmount()
 })

@@ -116,6 +116,20 @@ export const DESKTOP_COL_PX = 8.6
  * side, so a drawing counts as more rows and the band gives up a part before it would scroll.
  */
 export const ROW_PX = 18
+/**
+ * The drawn width (px) from which the card has room for its four columns: each column needs about 315 px for
+ * its longest caption at 18 px, plus the margins and gaps. About 108 columns, well below the 141 or so the wide
+ * row needs for its words on one line.
+ */
+export const WIDE_CARD_PX = 1360
+
+/**
+ * The card's own layout: four columns wherever they fit, even under a compact row (the row has to fit on one
+ * line; the card is a drawing scaled to the band); else the row's layout, with a wide row that is too narrow
+ * for the card stacked.
+ */
+export const cardKindOf = (row: Kind, drawnPx: number): Kind => (drawnPx >= WIDE_CARD_PX ? 'wide' : row === 'wide' ? 'stacked' : row)
+
 /** A drawing's height in rows. */
 export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
 
