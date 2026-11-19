@@ -25,7 +25,8 @@ const ITEMS = [
 type T$ = Parameters<Parameters<typeof test>[1]>[0]
 
 const engine = (on: On) => {
-  mock.store(on, { keep: true })
+  // These tests are about the segmented bar (calm); the default theme has its own test below.
+  mock.store(on, { keep: true, progressTheme: 'calm' })
   const registered: string[] = []
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: [] } }))
@@ -408,10 +409,10 @@ test('a themed band draws the theme, names the step in the drawing and leaves th
   await band.unmount()
 })
 
-test('with no saved theme the band keeps the segments and the words with the step', async ($, on) => {
+test('with no saved theme the band draws the comet, with the step named in the drawing and not in the words', async ($, on) => {
   const band = await themed($, on, undefined, true, ITEMS)
-  expect(await barSource(band)).not.toContain('Write tests')
-  expect(await band.find({ text: ' · Write tests' })).toBeDefined()
+  expect(await barSource(band)).toContain('Write tests')
+  expect(await band.find({ text: ' · Write tests' })).toBeUndefined()
   await band.unmount()
 })
 

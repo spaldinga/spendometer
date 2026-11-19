@@ -689,10 +689,10 @@ test('/wavebar progress lists the themes, sets one account-wide, and answers a w
   const { store } = engine(on, { keep: true })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
-  expect(await text('status')).toContain('progress: calm')
+  expect(await text('status')).toContain('progress: comet')
   const list = await text('progress')
-  expect(list).toContain('* calm')
-  for (const id of ['vitals', 'bridge', 'wake', 'dial', 'comet']) expect(list).toContain(`  ${id} - `)
+  expect(list).toContain('* comet')
+  for (const id of ['calm', 'vitals', 'bridge', 'wake', 'dial']) expect(list).toContain(`  ${id} - `)
   expect(store.has('progressTheme')).toBe(false)
   expect(await text('progress dial')).toBe('progress: dial')
   expect(store.get('progressTheme')).toBe('dial')
@@ -710,6 +710,6 @@ test('an unknown saved progress theme is the default', async ($, on) => {
   engine(on, { keep: true, prefill: { progressTheme: 'gone' } })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
-  expect(await text('status')).toContain('progress: calm')
-  expect(await text('progress')).toContain('* calm')
+  expect(await text('status')).toContain('progress: comet')
+  expect(await text('progress')).toContain('* comet')
 })

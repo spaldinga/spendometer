@@ -42,7 +42,7 @@ const outside = (svg: string, width: number): string[] => {
 
 test('the themes are the six ids, segments first and the default; anything else is not an id', () => {
   expect([...THEME_IDS]).toEqual(['calm', 'vitals', 'bridge', 'wake', 'dial', 'comet'])
-  expect(DEFAULT_THEME).toBe('calm')
+  expect(DEFAULT_THEME).toBe('comet')
   expect(Object.keys(THEMES)).toEqual([...THEME_IDS])
   expect(isThemeId('dial')).toBe(true)
   expect(isThemeId('pie')).toBe(false)
