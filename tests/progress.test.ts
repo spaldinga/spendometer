@@ -253,6 +253,30 @@ test('a background subagent still shows after the main turn has stopped working'
   await band.unmount()
 })
 
+test('on the desktop, a background subagent after the main turn has ended keeps the working bar beside it, with no turn time', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  on('agent.spawn', ($, e) => ({ model: 'claude-sonnet-5-5', agentId: `a-${e.subagentType}` }))
+  await start($)
+  await $.agent.spawn(spawn('sonnet-coder') as never)
+  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  const alts = (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
+  expect(alts).toContain('Working')
+  expect(alts).toContain('1 subagent working')
+  expect(await band.find({ text: ' ×1' })).toBeDefined()
+  expect(await band.find({ text: /working ·/ })).toBeUndefined()
+  await band.unmount()
+})
+
+test('with nothing working and no subagents, there is no bar', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await start($)
+  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  expect(await band.find({ key: 'bar' })).toBeUndefined()
+  await band.unmount()
+})
+
 const OR = '#ff6b1a'
 const EM = '#4a463b'
 const PULSE_RE = /<animate attributeName="opacity" values="1;\.3;1" dur="1\.4s" repeatCount="indefinite"\/>/

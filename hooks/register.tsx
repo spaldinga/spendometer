@@ -977,6 +977,9 @@ export const register: Register = on => {
     const prog = await read($, progress)
     const walking = prog && prog.total > 0 ? prog : null
     const pacing = !walking && e.props.isWorking ? await read($, turn) : null
+    // Subagents still working after the main turn ended (a background agent): the work goes on, so the bar sweeps
+    // beside them, without the turn's step count and time, which have stopped.
+    const sweeping = !!pacing || (!walking && running.length > 0)
     const said = walking ? labelOf(walking) : null
     const note = said && said.note.length > NOTE_MAX ? said.note.slice(0, NOTE_MAX - 1) + '…' : (said?.note ?? '')
     // The theme draws the step's name (and the idle line) itself on the desktop; the words beside the bar then leave them out.
@@ -987,7 +990,7 @@ export const register: Register = on => {
     // The progress row's words are measured like the compact row's: about 0.85 columns a character on the desktop.
     const charPx = COL_PX_FULL * (Svg ? COMPACT_CHAR_COLS : 1)
     const crewDrawPx = running.length && Svg ? crewSvg(Math.min(CREW_SHOWN, running.length)).w : 0
-    const crewPx = running.length ? crewDrawPx + (crewWords.length + (walking || pacing ? 2 : 0)) * charPx : 0
+    const crewPx = running.length ? crewDrawPx + (crewWords.length + (walking || sweeping ? 2 : 0)) * charPx : 0
     // What the words need beside the bar, apart from the step's name: the count (or nothing) and the crew.
     const fixedPx = (walking ? (` ${said!.count}`.length) * charPx : 0) + crewPx
     const fitChars = (s: string, chars: number) => (s.length <= chars ? s : chars >= 2 ? s.slice(0, chars - 1) + '…' : '')
@@ -1013,7 +1016,7 @@ export const register: Register = on => {
      * and dropped when nothing is, so the row never wraps past the band.
      */
     const progressOf = (key: string, availPx: number, max: number) => {
-      if (!walking && !pacing && !running.length) return null
+      if (!walking && !sweeping) return null
       const wordsPx = (s: string) => s.length * charPx
       // The text wanted beside the bar: the step's name (with its dot) or the pulse line.
       const wanted = walking ? (note && !inDrawing ? ` · ${note}` : '') : pulse
@@ -1023,7 +1026,7 @@ export const register: Register = on => {
       const shown = !wanted ? '' : fitChars(wanted, Math.floor(left / charPx + 1e-6))
       const noteShown = walking ? (shown.length > 3 ? shown.slice(3) : '') : shown
       const w = Math.round(barPx)
-      const drawing = !walking && !pacing ? null : !Svg ? (
+      const drawing = !walking && !sweeping ? null : !Svg ? (
         walking ? <Text key="bar" color={ORANGE}>{barText(walking, kind === 'tight' ? TIGHT_CELLS : CELLS)}</Text> : null
       ) : walking ? (
         <Svg
@@ -1043,7 +1046,7 @@ export const register: Register = on => {
           {walking ? <Text key="count" color="text" bold>{` ${said!.count}`}</Text> : null}
           {walking && noteShown ? <Text key="note" color="subtle" wrap="truncate-end">{` · ${noteShown}`}</Text> : null}
           {pacing && shown ? <Text key="pulse" color="subtle" wrap="truncate-end">{shown}</Text> : null}
-          {crewBits.length && (walking || pacing) ? <Text key="crew-gap">{'  '}</Text> : null}
+          {crewBits.length && (walking || sweeping) ? <Text key="crew-gap">{'  '}</Text> : null}
           {crewBits}
         </Box>
       )
