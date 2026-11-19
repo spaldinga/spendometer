@@ -422,30 +422,38 @@ const cometPace = (W: number): string =>
 
 // ---------- The themes ----------
 
-export const THEME_IDS = ['segments', 'heartbeat', 'console', 'wave', 'pie', 'comet'] as const
+export const THEME_IDS = ['calm', 'vitals', 'bridge', 'wake', 'dial', 'comet'] as const
 export type ThemeId = (typeof THEME_IDS)[number]
-export const DEFAULT_THEME: ThemeId = 'segments'
+export const DEFAULT_THEME: ThemeId = 'calm'
+/** What `/wavebar progress` lists for each theme: its name and what it does. */
 export const THEME_NAMES: Record<ThemeId, string> = {
-  segments: 'Segments',
-  heartbeat: 'Heartbeat',
-  console: 'Console',
-  wave: 'Wave + breadcrumbs',
-  pie: 'Pie',
-  comet: 'Comet + stepper',
+  calm: 'Calm: one quiet segment per step, the current one breathing. The least motion',
+  vitals: 'Vitals: a monitor pen writes each finished step as a heartbeat; a heart beats at the step in progress',
+  bridge: "Bridge: a starship console, every step a labelled panel, the active one blinking",
+  wake: 'Wake: the step names as breadcrumbs, riding a wave that swells under the current step',
+  dial: 'Dial: every step a dial that fills like a clock hand; full dials are done',
+  comet: 'Comet: a comet streaks to the current step and sets it ringing',
 }
 
 export const THEMES: Record<ThemeId, Theme> = {
-  segments: {
+  calm: {
     walk: (p, W) => walkSvg(p.done, p.total, W, p.hasCurrent, p.isFinished),
     pace: W => paceSvg(W),
     names: false,
     info: false,
   },
-  heartbeat: { walk: heartWalk, pace: heartPace, names: true, info: false },
-  console: { walk: consoleWalk, pace: consolePace, names: true, info: true },
-  wave: { walk: waveWalk, pace: wavePace, names: true, info: false },
-  pie: { walk: pieWalk, pace: piePace, names: true, info: false },
+  vitals: { walk: heartWalk, pace: heartPace, names: true, info: false },
+  bridge: { walk: consoleWalk, pace: consolePace, names: true, info: true },
+  wake: { walk: waveWalk, pace: wavePace, names: true, info: false },
+  dial: { walk: pieWalk, pace: piePace, names: true, info: false },
   comet: { walk: cometWalk, pace: cometPace, names: true, info: false },
 }
 
+/** The ids the first version used, still accepted: a saved choice or a typed one keeps working. */
+const OLD_IDS: Record<string, ThemeId> = { segments: 'calm', heartbeat: 'vitals', console: 'bridge', wave: 'wake', pie: 'dial' }
+
 export const isThemeId = (v: unknown): v is ThemeId => typeof v === 'string' && (THEME_IDS as readonly string[]).includes(v)
+
+/** A theme id from what was saved or typed, old ids included; null for anything else. */
+export const themeIdOf = (v: unknown): ThemeId | null =>
+  isThemeId(v) ? v : typeof v === 'string' && Object.prototype.hasOwnProperty.call(OLD_IDS, v) ? OLD_IDS[v] : null

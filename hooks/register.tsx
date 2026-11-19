@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { CacheFacts, Ending, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
 import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, fmtElapsed, labelOf, pulseText } from './progress'
 import { BAR_H, crewSvg } from './progress-art'
-import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, isThemeId } from './progress-themes'
+import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
@@ -195,7 +195,7 @@ const switchOf = async ($: EngineInterface, key: string, fallback: boolean): Pro
 const themeOf = async ($: EngineInterface): Promise<ThemeId> => {
   try {
     const v = await $.store.get(THEME_KEY)
-    return isThemeId(v) ? v : DEFAULT_THEME
+    return themeIdOf(v) ?? DEFAULT_THEME
   } catch {
     return DEFAULT_THEME
   }
@@ -220,10 +220,11 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
     return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
   }
   if (name === 'progress' && rest.length === 0) {
-    if (value !== undefined && isThemeId(value)) {
-      await $.store.set(THEME_KEY, value)
+    const picked = value === undefined ? null : themeIdOf(value)
+    if (picked) {
+      await $.store.set(THEME_KEY, picked)
       $.ui.invalidate('ui.render')
-      return `progress: ${value}`
+      return `progress: ${picked}`
     }
     return themeList(await themeOf($))
   }

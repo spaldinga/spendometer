@@ -399,7 +399,7 @@ const barSource = async (band: Awaited<ReturnType<typeof themed>>) =>
   String((await band.findAll({ type: 'Svg' })).find(s => ['Progress', 'Working'].some(a => String(s.props.alt).startsWith(a)))?.props.source)
 
 test('a themed band draws the theme, names the step in the drawing and leaves the note out of the words', async ($, on) => {
-  const band = await themed($, on, 'pie', true, ITEMS)
+  const band = await themed($, on, 'dial', true, ITEMS)
   const src = await barSource(band)
   expect(src).toContain('Write tests')
   expect(src).toContain('values="0 17.3;17.3 0"')
@@ -416,7 +416,7 @@ test('with no saved theme the band keeps the segments and the words with the ste
 })
 
 test('the console theme draws the idle line itself, so the words beside it leave it out', async ($, on) => {
-  const band = await themed($, on, 'console', true)
+  const band = await themed($, on, 'bridge', true)
   const src = await barSource(band)
   expect(src).toContain('WORKING')
   expect(src).toContain('1 STEP')
@@ -425,7 +425,7 @@ test('the console theme draws the idle line itself, so the words beside it leave
 })
 
 test('the wave theme keeps the words with the idle line', async ($, on) => {
-  const wave = await themed($, on, 'wave', true)
+  const wave = await themed($, on, 'wake', true)
   expect(await barSource(wave)).toContain('stroke="#4a463b"')
   expect(await wave.find({ text: / working · 1 step/ })).toBeDefined()
   await wave.unmount()
