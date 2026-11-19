@@ -219,7 +219,7 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
     const s = await readSpend($)
     return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
   }
-  // The same toggle as the band's fold button and its `f` key, for anyone who would rather type it.
+  // The same toggle as the band's fold button, for the keyboard: a mod cannot catch a key typed in the prompt.
   if (name === 'fold' && value === undefined) {
     const now = await toggleFold($)
     return now === null ? 'no cache card yet: it comes with the first reply' : `cache card: ${now ? 'open' : 'closed'}`
@@ -365,7 +365,7 @@ const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFa
 const cacheFacts = async ($: EngineInterface): Promise<CacheFacts | null> => (await read($, cache)) ?? (await readStoredCache($))
 
 /**
- * Opens the cache card if it is closed, closes it if open: the fold button, its `f` key and `/wavebar fold`.
+ * Opens the cache card if it is closed, closes it if open: the fold button and `/wavebar fold`.
  * The fold is kept per cache state (a cold cache opens by default), as the button has always done. Returns
  * whether the card is now open, or null while there is no card yet.
  */
@@ -875,11 +875,10 @@ export const register: Register = on => {
     const stored = await read($, fold)
     const open = view !== null && Svg !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
     const toggle = () => toggleFold($)
-    // `f` presses it while the band has the focus (a click on the band, or ctrl+x tab in a terminal).
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
-        <Button key="cache-fold" label={open ? '−' : '+'} hotkey="f" onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card (f, or /wavebar fold).' : 'Show the cache card (f, or /wavebar fold): the cache, the spend, keep warm, pace and the metrics.')}
+        <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
+        {tip('fold', open ? 'Hide the cache card (or /wavebar fold).' : 'Show the cache card (or /wavebar fold): the cache, the spend, keep warm, pace and the metrics.')}
       </Box>
     ) : null
 

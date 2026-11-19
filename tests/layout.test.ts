@@ -439,9 +439,8 @@ test('at 68 columns the open card stays two columns with the text lines', async 
   await band.unmount()
 })
 
-test('the fold button answers to f, and /wavebar fold opens and closes the card like it', async ($, on) => {
+test('/wavebar fold opens and closes the card like the fold button', async ($, on) => {
   const band = await mountAt($, on, 160)
-  expect((await band.find({ key: 'cache-fold' }))?.props.hotkey).toBe('f')
   const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
   const fold = async () => ((await $.command.run({ command: 'wavebar', args: 'fold', ...RUN })) as { text: string }).text
   // Warm: the card starts closed.
