@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, EMPTY, HUE, ICE, INK, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
+import { DANGER, EMPTY, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
 import type { CacheView, Kind, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 
@@ -406,7 +406,7 @@ test('every drawing carries the light-scheme style, with the font or without', (
 test('the light map covers every colour the drawings use, for fill and for stroke', () => {
   const doc = svgDoc(10, 10, '', false)
   const css = doc.slice(doc.indexOf('@media'), doc.indexOf('</style>'))
-  for (const dark of [TEXT, MUTED, EMPTY, LINE, ORANGE, YELLOW, HUE.warm, HUE.cold, OK, DANGER, INK, ICE, '#fff']) {
+  for (const dark of [TEXT, MUTED, EMPTY, LINE, ORANGE, YELLOW, HUE.warm, HUE.cold, OK, DANGER, INK, ICE, '#fff', LC_OR, LC_PE, LC_TA, LC_LA, LC_BL, LC_INK]) {
     expect(Object.keys(LIGHT)).toContain(dark)
   }
   for (const [dark, light] of Object.entries(LIGHT)) {
@@ -416,6 +416,8 @@ test('the light map covers every colour the drawings use, for fill and for strok
   }
   expect(LIGHT[TEXT]).toBe('#2b2a26')
   expect(LIGHT[INK]).toBe('#ffffff')
+  expect([LC_OR, LC_PE, LC_TA, LC_LA, LC_BL, LC_INK]).toEqual(['#ff9900', '#ffcc99', '#cc9966', '#cc99cc', '#9999ff', '#000000'])
+  expect([LC_OR, LC_PE, LC_TA, LC_LA, LC_BL, LC_INK].map(c => LIGHT[c])).toEqual(['#c06f00', '#b8743a', '#8a5a2b', '#8e5a8e', '#5555bb', '#ffffff'])
 })
 
 test('every colour a drawing paints is in the map, or is the translucent black left on purpose', () => {

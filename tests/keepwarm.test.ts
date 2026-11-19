@@ -683,3 +683,33 @@ test('a session record without the keep-warm figures still reads, and keeps its 
   expect(s.pings).toBeUndefined()
   expect(s.saved).toBeUndefined()
 })
+
+test('/wavebar progress lists the themes, sets one account-wide, and answers a wrong id with the list', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
+  expect(await text('status')).toContain('progress: segments')
+  const list = await text('progress')
+  expect(list).toContain('* segments')
+  for (const id of ['heartbeat', 'console', 'wave', 'pie', 'comet']) expect(list).toContain(`  ${id} - `)
+  expect(store.has('progressTheme')).toBe(false)
+  expect(await text('progress pie')).toBe('progress: pie')
+  expect(store.get('progressTheme')).toBe('pie')
+  expect(await text('status')).toContain('progress: pie')
+  expect(await text('progress')).toContain('* pie')
+  const wrong = await text('progress nonsense')
+  expect(wrong).toContain('* pie')
+  expect(wrong).toContain('segments')
+  expect(store.get('progressTheme')).toBe('pie')
+  expect(await text('nonsense')).toContain('progress [id]')
+})
+
+test('an unknown saved progress theme is the default', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { keep: true, prefill: { progressTheme: 'gone' } })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
+  expect(await text('status')).toContain('progress: segments')
+  expect(await text('progress')).toContain('* segments')
+})

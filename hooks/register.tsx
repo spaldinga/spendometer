@@ -2,8 +2,10 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CacheFacts, Ending, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
-import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, labelOf, pulseText } from './progress'
-import { BAR_H, crewSvg, paceSvg, walkSvg } from './progress-art'
+import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, fmtElapsed, labelOf, pulseText } from './progress'
+import { BAR_H, crewSvg } from './progress-art'
+import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, isThemeId } from './progress-themes'
+import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
 import {
@@ -45,6 +47,8 @@ const KEEP_KEY = 'keep'
 const SETTINGS = 'wavebar'
 const WRAP_KEY = 'wrapUp'
 const HOLD_KEY = 'hold'
+/** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
+const THEME_KEY = 'progressTheme'
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
 const SPEND_PREFIX = 'spend:'
 const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
@@ -187,10 +191,23 @@ const switchOf = async ($: EngineInterface, key: string, fallback: boolean): Pro
   }
 }
 
+/** The progress theme in the store: an id it knows, else the default. */
+const themeOf = async ($: EngineInterface): Promise<ThemeId> => {
+  try {
+    const v = await $.store.get(THEME_KEY)
+    return isThemeId(v) ? v : DEFAULT_THEME
+  } catch {
+    return DEFAULT_THEME
+  }
+}
+
+const themeList = (now: ThemeId): string =>
+  'progress themes:\n' + THEME_IDS.map(id => `${id === now ? '*' : ' '} ${id} - ${THEME_NAMES[id]}${id === DEFAULT_THEME ? ' (default)' : ''}`).join('\n')
+
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 const settingsAnswer = async ($: EngineInterface, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} [status] | cost | wrapup on|off | hold on|off`
+  const usage = `Usage: /${SETTINGS} [status] | cost | progress [id] | wrapup on|off | hold on|off`
   const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
@@ -202,12 +219,21 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
     const s = await readSpend($)
     return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
   }
+  if (name === 'progress' && rest.length === 0) {
+    if (value !== undefined && isThemeId(value)) {
+      await $.store.set(THEME_KEY, value)
+      $.ui.invalidate('ui.render')
+      return `progress: ${value}`
+    }
+    return themeList(await themeOf($))
+  }
   if (name !== '' && name !== 'status') return usage
   const wrap = await switchOf($, WRAP_KEY, false)
   const hold = await switchOf($, HOLD_KEY, true)
   return (
     `wrapup: ${wrap ? 'on' : 'off'} - a Wrap up button that runs the debrief skill and lets this conversation go cold\n` +
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
+    `progress: ${await themeOf($)}\n` +
     widthLine()
   )
 }
@@ -502,8 +528,8 @@ export const register: Register = on => {
     try {
       await $.command.register({
         name: SETTINGS,
-        description: "Settings for the band above the prompt: the Wrap up button and the hold for risky git commands",
-        argumentHint: '[status] | cost | wrapup on|off | hold on|off',
+        description: "Settings for the band above the prompt: the progress row's look, the Wrap up button and the hold for risky git commands",
+        argumentHint: '[status] | cost | progress [id] | wrapup on|off | hold on|off',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
@@ -932,7 +958,11 @@ export const register: Register = on => {
     const pacing = !walking && e.props.isWorking ? await read($, turn) : null
     const said = walking ? labelOf(walking) : null
     const note = said && said.note.length > NOTE_MAX ? said.note.slice(0, NOTE_MAX - 1) + '…' : (said?.note ?? '')
-    const pulse = pacing ? ` ${pulseText(pacing, now)}` : ''
+    // The theme draws the step's name (and the idle line) itself on the desktop; the words beside the bar then leave them out.
+    const theme = THEMES[await themeOf($)]
+    const inDrawing = !!Svg && theme.names
+    const pulse = pacing && !(Svg && theme.info) ? ` ${pulseText(pacing, now)}` : ''
+    const paceInfo = pacing ? `${pacing.steps} ${pacing.steps === 1 ? 'step' : 'steps'} · ${fmtElapsed(now - pacing.startedAt)}` : ''
     // The progress row's words are measured like the compact row's: about 0.85 columns a character on the desktop.
     const charPx = COL_PX_FULL * (Svg ? COMPACT_CHAR_COLS : 1)
     const crewDrawPx = running.length && Svg ? crewSvg(Math.min(CREW_SHOWN, running.length)).w : 0
@@ -965,7 +995,7 @@ export const register: Register = on => {
       if (!walking && !pacing && !running.length) return null
       const wordsPx = (s: string) => s.length * charPx
       // The text wanted beside the bar: the step's name (with its dot) or the pulse line.
-      const wanted = walking ? (note ? ` · ${note}` : '') : pulse
+      const wanted = walking ? (note && !inDrawing ? ` · ${note}` : '') : pulse
       const room = availPx - fixedPx
       const barPx = Math.max(BAR_MIN_PX, Math.min(max, room - wordsPx(wanted)))
       const left = room - barPx
@@ -977,14 +1007,14 @@ export const register: Register = on => {
       ) : walking ? (
         <Svg
           key="bar"
-          source={walkSvg(walking.done, walking.total, w, walking.hasCurrent, walking.isFinished)}
+          source={theme.walk(walking, w)}
           alt={walking.isFinished ? `Progress: all ${walking.total} done` : `Progress: ${walking.done} of ${walking.total} done.${note ? ` Now: ${note}` : ''}`}
           width={w}
           height={BAR_H}
           isInteractive
         />
       ) : (
-        <Svg key="bar" source={paceSvg(w)} alt="Working" width={w} height={BAR_H} isInteractive />
+        <Svg key="bar" source={theme.pace(w, paceInfo)} alt="Working" width={w} height={BAR_H} isInteractive />
       )
       return (
         <Box key={key} flexDirection="row" flexShrink={0} alignItems="center" paddingX={1}>

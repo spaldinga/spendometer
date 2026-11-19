@@ -370,3 +370,63 @@ test('at 160 columns the step name shows in full, up to the note limit', async (
   expect(await band.find({ text: ` · ${LONG.slice(0, 31)}…` })).toBeDefined()
   await band.unmount()
 })
+
+/** The progress row's drawing, with `theme` saved in the store. */
+const themed = async ($: T$, on: On, theme: string | undefined, isWorking: boolean, items?: unknown[]) => {
+  mock.clock(on, { now: NOW })
+  mock.store(on, theme ? { keep: true, progressTheme: theme } : { keep: true })
+  engine2(on)
+  await start($)
+  if (items) await $.tool.call({ tool: PLAN, items } as never)
+  else await step($, 0)
+  return $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(isWorking) })
+}
+/** The progress tests' engine, without its own store (the test sets one). */
+const engine2 = (on: On) => {
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: [] } }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('command.list', () => ({ value: [] }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__wavebar__${e.name}` } }))
+  on('tool.call', () => ({ result: 'beneath' }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('turn.step', async function* ($, e) {
+    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+  })
+}
+const barSource = async (band: Awaited<ReturnType<typeof themed>>) =>
+  String((await band.findAll({ type: 'Svg' })).find(s => ['Progress', 'Working'].some(a => String(s.props.alt).startsWith(a)))?.props.source)
+
+test('a themed band draws the theme, names the step in the drawing and leaves the note out of the words', async ($, on) => {
+  const band = await themed($, on, 'pie', true, ITEMS)
+  const src = await barSource(band)
+  expect(src).toContain('Write tests')
+  expect(src).toContain('values="0 17.3;17.3 0"')
+  expect(await band.find({ text: ' 1/4' })).toBeDefined()
+  expect(await band.find({ text: / · Write tests/ })).toBeUndefined()
+  await band.unmount()
+})
+
+test('with no saved theme the band keeps the segments and the words with the step', async ($, on) => {
+  const band = await themed($, on, undefined, true, ITEMS)
+  expect(await barSource(band)).not.toContain('Write tests')
+  expect(await band.find({ text: ' · Write tests' })).toBeDefined()
+  await band.unmount()
+})
+
+test('the console theme draws the idle line itself, so the words beside it leave it out', async ($, on) => {
+  const band = await themed($, on, 'console', true)
+  const src = await barSource(band)
+  expect(src).toContain('WORKING')
+  expect(src).toContain('1 STEP')
+  expect(await band.find({ text: / working · / })).toBeUndefined()
+  await band.unmount()
+})
+
+test('the wave theme keeps the words with the idle line', async ($, on) => {
+  const wave = await themed($, on, 'wave', true)
+  expect(await barSource(wave)).toContain('stroke="#4a463b"')
+  expect(await wave.find({ text: / working · 1 step/ })).toBeDefined()
+  await wave.unmount()
+})

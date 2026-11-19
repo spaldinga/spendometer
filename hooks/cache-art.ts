@@ -28,6 +28,15 @@ export const HUE: Record<Mode, string> = { warm: '#cc6363', cold: '#6aaabd' }
 export const INK = '#1c1a16'
 export const WORD: Record<Mode, string> = { warm: 'WARM', cold: 'COLD' }
 
+// The console progress theme's palette, after a Star Trek-like panel: dark values here, light ones in LIGHT.
+export const LC_OR = '#ff9900'
+export const LC_PE = '#ffcc99'
+export const LC_TA = '#cc9966'
+export const LC_LA = '#cc99cc'
+export const LC_BL = '#9999ff'
+/** Text on the console's blocks. */
+export const LC_INK = '#000000'
+
 /** The prompt cache lives an hour after the last request that read or wrote it. */
 export const TTL_MIN = 60
 export const TTL_MS = TTL_MIN * 60 * 1000
@@ -177,6 +186,13 @@ export const LIGHT: Record<string, string> = {
   // The frozen Robo: pale on dark, a mid blue on light, with its white glints as a light blue so they still show.
   [ICE]: '#3a86a0',
   '#fff': '#8fc1d2',
+  // The console theme of the progress row: orange, peach, tan, lavender and blue blocks with black ink.
+  [LC_OR]: '#c06f00',
+  [LC_PE]: '#b8743a',
+  [LC_TA]: '#8a5a2b',
+  [LC_LA]: '#8e5a8e',
+  [LC_BL]: '#5555bb',
+  [LC_INK]: '#ffffff',
 }
 
 const LIGHT_CSS =
