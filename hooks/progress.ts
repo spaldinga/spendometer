@@ -98,8 +98,8 @@ export const afterReport = (prev: Progress | null, input: Record<string, unknown
 }
 
 /**
- * How far along the bar Robo stands, 0 to 1. A step in progress counts as half done,
- * so Robo is between two marks while working and on a mark when a step lands.
+ * How far along the text bar is, 0 to 1. A step in progress counts as half done,
+ * so the bar is between two steps while working and on a step when it lands.
  */
 export const ratioOf = (p: Progress): number => {
   if (p.isFinished) return 1

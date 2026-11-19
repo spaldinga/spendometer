@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { afterListCall, afterReport, fromSteps, pulseText, ratioOf } from '../hooks/progress'
-import { paceSvg, walkSvg } from '../hooks/progress-art'
+import { crewSvg, paceSvg, walkSvg } from '../hooks/progress-art'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const PLAN = 'mcp__ccd_turn__update_plan'
@@ -50,7 +50,7 @@ const start = ($: T$) => $.session.start({ surface: 'desktop', isInteractive: tr
 test('a whole list counts what is done and names the step in progress', () => {
   const p = afterListCall(null, PLAN, { items: ITEMS })
   expect(p).toMatchObject({ done: 1, total: 4, note: 'Write tests', hasCurrent: true, isFinished: false })
-  // One done and one under way of four: Robo is between the first and second marks.
+  // One done and one under way of four: the first step is done and the second is under way.
   expect(ratioOf(p!)).toBe(0.375)
 })
 
@@ -104,7 +104,7 @@ test('the pulse line says how many requests and how long', () => {
   expect(pulseText({ startedAt: NOW, steps: 4 }, NOW + 72000)).toBe('working · 4 steps · 1m 12s')
 })
 
-test('the desktop band draws Robo on the bar from the task list, and lets the call through', async ($, on) => {
+test('the desktop band draws the segmented bar from the task list, and lets the call through', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on)
   await start($)
@@ -161,7 +161,7 @@ test('a subagent keeping its own list does not move the bar', async ($, on) => {
   await band.unmount()
 })
 
-test('with no list, a working turn shows Robo pacing with steps and time; an idle one shows nothing', async ($, on) => {
+test('with no list, a working turn shows the sweeping segment with steps and time; an idle one shows nothing', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   engine(on)
   await start($)
@@ -252,24 +252,74 @@ test('a background subagent still shows after the main turn has stopped working'
   await band.unmount()
 })
 
-test('the bar starts at the left edge and keeps Robo inside the drawing at both ends', async () => {
+const OR = '#ff6b1a'
+const EM = '#4a463b'
+const PULSE_RE = /<animate attributeName="opacity" values="1;\.3;1" dur="1\.4s" repeatCount="indefinite"\/>/
+const rects = (s: string) => s.match(/<rect [^>]*?(?:\/>|>.*?<\/rect>)/g) ?? []
+const fillOf = (r: string) => /fill="([^"]+)"/.exec(r)?.[1]
+const light = '@media (prefers-color-scheme: light)'
 
-  for (const ratio of [0, 1]) {
-    const s = walkSvg(ratio, 3, 200, ratio === 1)
-    expect(s).toContain('<rect x="0" y="20" width="195"')
-    expect(s).not.toMatch(/translate\(-/)
-  }
+test('walkSvg draws a segment per step: done and current orange, the rest empty, the pulse on the current one only', () => {
+  const rs = rects(walkSvg(1, 4, 200, true, false))
+  expect(rs.length).toBe(4)
+  expect(rs.map(fillOf)).toEqual([OR, OR, EM, EM])
+  expect(rs.map(r => PULSE_RE.test(r))).toEqual([false, true, false, false])
+  expect(rs[0]).toContain('x="0"')
+  expect(rs[0]).toContain('height="6"')
+  expect(rs[0]).toContain('rx="2"')
 })
 
-test('pacing mirrors the surfer for the return leg; a real position does not', () => {
-  const dur = /<animateTransform[^>]*type="translate"[^>]*dur="([^"]+)"/.exec(paceSvg(200))?.[1]
-  expect(dur).toBe('3.2s')
-  const flip = /<animateTransform[^>]*type="scale"[^>]*>/.exec(paceSvg(200))?.[0] ?? ''
-  expect(flip).toContain('calcMode="discrete"')
-  expect(flip).toContain('values="1 1;-1 1;1 1"')
-  expect(flip).toContain(`dur="${dur}"`)
-  expect(flip).toContain('repeatCount="indefinite"')
-  expect(walkSvg(0.5, 3, 200, false)).not.toContain('type="scale"')
+test('a step list with nothing under way pulses nothing; a finished one is all orange and still', () => {
+  const idle = walkSvg(2, 4, 200, false, false)
+  expect(rects(idle).map(fillOf)).toEqual([OR, OR, EM, EM])
+  expect(idle).not.toContain('<animate')
+  const fin = walkSvg(4, 4, 200, false, true)
+  expect(rects(fin).map(fillOf)).toEqual([OR, OR, OR, OR])
+  expect(fin).not.toContain('<animate')
+})
+
+test('above 24 steps one continuous track fills to the share done, with the pulse on its head', () => {
+  const s = walkSvg(10, 30, 300, true, false)
+  const rs = rects(s)
+  expect(rs.length).toBe(3)
+  expect(fillOf(rs[0])).toBe(EM)
+  expect(rs[0]).toContain('width="300"')
+  expect(fillOf(rs[1])).toBe(OR)
+  expect(rs[1]).toContain('width="100"')
+  expect(PULSE_RE.test(rs[2])).toBe(true)
+  expect(s.match(/<animate/g)?.length).toBe(1)
+  const fin = walkSvg(30, 30, 300, false, true)
+  expect(fin).not.toContain('<animate')
+  expect(rects(fin).map(fillOf)).toEqual([EM, OR])
+})
+
+test('paceSvg is a row of empty segments with one orange segment sweeping end to end and back', () => {
+  const s = paceSvg(300)
+  const rs = rects(s)
+  expect(rs.filter(r => fillOf(r) === EM).length).toBe(7)
+  const lit = rs.filter(r => fillOf(r) === OR)
+  expect(lit.length).toBe(1)
+  expect(lit[0]).toContain('attributeName="x"')
+  expect(lit[0]).toContain('dur="2.4s"')
+  expect(lit[0]).toContain('repeatCount="indefinite"')
+  // A narrow row has fewer, but never thinner than 24 px.
+  expect(rects(paceSvg(60)).filter(r => fillOf(r) === EM).length).toBe(2)
+})
+
+test('crewSvg draws a dot a head and widens with them', () => {
+  const one = crewSvg(1)
+  const three = crewSvg(3)
+  expect(one.source.match(/<circle/g)?.length).toBe(1)
+  expect(three.source.match(/<circle/g)?.length).toBe(3)
+  expect(three.source).toContain('r="3.5"')
+  expect(three.w).toBeGreaterThan(one.w)
+  expect(three.w - one.w).toBe(20)
+})
+
+test('every progress drawing carries the light-mode style', () => {
+  for (const s of [walkSvg(1, 4, 200, true, false), walkSvg(10, 30, 300, true, false), paceSvg(200), crewSvg(2).source]) {
+    expect(s).toContain(light)
+  }
 })
 
 const LONG = 'Fetch my assigned work items and read every one of their linked pull requests'

@@ -2,7 +2,7 @@
 
 A band above the Claude Code prompt that shows where you stand: usage left, whether the prompt
 cache is warm, how far the current request has come, which subagents are running, and what the
-conversation has cost so far. A small robot surfs the progress line.
+conversation has cost so far. The progress line is a row of segments, one per step.
 
 wavebar is a [Claude Code mod](https://code.claude.com/docs). It draws and listens; it never
 calls a model by itself.
@@ -49,7 +49,7 @@ warm (or re-cache) and the usage window most at risk.
   <img alt="The compact card, cold: re-cache $1.52 on Opus, with Sonnet and Haiku cheaper" src="assets/card-compact-cold-light.svg" width="49%">
 </picture>
 
-<!-- Still to add: assets/wavebar-progress.png (the surfer on the progress line) and
+<!-- Still to add: assets/wavebar-progress.png (the segmented progress line) and
      assets/wavebar-held.png (a held git command). -->
 
 ## What it shows
@@ -58,9 +58,9 @@ warm (or re-cache) and the usage window most at risk.
 |---|---|---|
 | **Usage** | 7-day and 5-hour limits as dot bars, percent left and reset time; `LOW` under 15% | Claude Code's own rate-limit figures |
 | **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, what re-caching costs on this model and the cheaper ones. On a wide band a second row shows the cache hit rate, the average and last turn's cost, how many turns of context are left at the current growth, and what subagents have cost. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
-| **Progress** | The robot surfing a line with a mark per step, plus `3/7 · Run tests` | The task list Claude already keeps, or the `progress` tool (below) |
-| **Activity** | With no task list: the robot pacing, `working · 4 steps · 1m 12s` | Turn events |
-| **Subagents** | One small robot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |
+| **Progress** | A row of segments, one per step (done in orange, the current one pulsing), plus `3/7 · Run tests` | The task list Claude already keeps, or the `progress` tool (below) |
+| **Activity** | With no task list: one segment sweeping a row, `working · 4 steps · 1m 12s` | Turn events |
+| **Subagents** | One small orange dot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |
 | **Cost** | `COST ≈$12.40 · last $0.35`: the conversation so far and the latest turn | Token counts per finished turn at list prices |
 
 ## What it does
@@ -126,8 +126,8 @@ The Keep warm switch is the button in the band. Settings are saved for every ses
   turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm switch
   (cache-tax's pings cost tokens) and Wrap up (runs your debrief).
 - **Progress without tokens.** The bar follows the task-list tool calls Claude makes
-  (`TodoWrite`, the Task tools, the desktop app's plan). A step in progress counts as half, so
-  the robot stands between two marks while working and on a mark when a step lands.
+  (`TodoWrite`, the Task tools, the desktop app's plan). The text bar counts a step in progress as half; the drawn bar
+  pulses the step in progress and turns it solid when it lands.
 - **Cost is an estimate, not a bill.** Each finished turn's tokens are priced from a built-in
   list-price table (input, output, cache reads, cache writes at the 1-hour rate) and kept per
   session, so the total survives a restart.
@@ -172,7 +172,7 @@ hooks/
   cache-art.ts       colours (dark and light), prices, the cache card and the robot
   metrics.ts         the card's metric row: hit rate, runway, outlier (pure)
   progress.ts        task list and report tracking (pure)
-  progress-art.ts    the progress line and the surfer
+  progress-art.ts    the progress line, the sweep and the subagent dots
   guard.ts           risky git commands: classify and measure
   font.ts            Outfit, embedded so the drawings render anywhere
 tests/               one file per area

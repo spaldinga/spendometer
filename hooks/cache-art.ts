@@ -159,8 +159,8 @@ export const ICE = mix(HUE.cold, '#ffffff', 0.5)
 /**
  * The drawings' colours on a light background, by the dark colour each replaces: the one place both palettes
  * live. A drawing is painted in the dark palette; svgDoc adds a light-scheme style that swaps each colour by
- * attribute, so no drawing code knows about themes. Left alone on purpose: `#000` (the shadow under Robo and the
- * passed mark on the progress track, both translucent black, which read on light as well as on dark).
+ * attribute, so no drawing code knows about themes. Left alone on purpose: `#000` (the shadow under Robo,
+ * translucent black, which reads on light as well as on dark).
  */
 export const LIGHT: Record<string, string> = {
   [TEXT]: '#2b2a26',

@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CacheFacts, Ending, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
-import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, labelOf, pulseText, ratioOf } from './progress'
+import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, labelOf, pulseText } from './progress'
 import { BAR_H, crewSvg, paceSvg, walkSvg } from './progress-art'
 import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
@@ -925,8 +925,8 @@ export const register: Register = on => {
     const running = (await read($, crew)).filter(w => !w.isDone)
     const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
 
-    // Where the request is: Robo on the bar when there is a list or a report to measure
-    // against, Robo pacing while a turn works with neither, nothing when idle.
+    // Where the request is: a segment per step when there is a list or a report to measure
+    // against, one segment sweeping while a turn works with neither, nothing when idle.
     const prog = await read($, progress)
     const walking = prog && prog.total > 0 ? prog : null
     const pacing = !walking && e.props.isWorking ? await read($, turn) : null
@@ -977,7 +977,7 @@ export const register: Register = on => {
       ) : walking ? (
         <Svg
           key="bar"
-          source={walkSvg(ratioOf(walking), walking.total, w, walking.isFinished)}
+          source={walkSvg(walking.done, walking.total, w, walking.hasCurrent, walking.isFinished)}
           alt={walking.isFinished ? `Progress: all ${walking.total} done` : `Progress: ${walking.done} of ${walking.total} done.${note ? ` Now: ${note}` : ''}`}
           width={w}
           height={BAR_H}
