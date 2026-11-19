@@ -16,16 +16,26 @@ numbers, shown in your GitHub theme.
 
 ## Install
 
-In Claude Code:
+One line in a terminal (bash, zsh or PowerShell 7):
+
+```bash
+claude plugin marketplace add spaldinga/wavebar && claude plugin install wavebar@wavebar
+```
+
+Then, in a Claude Code session that is already open, run `/reload-plugins --force` (a new session
+picks it up by itself). That's it: the band appears above the prompt.
+
+Or from inside Claude Code:
 
 ```
 /plugin marketplace add spaldinga/wavebar
 /plugin install wavebar@wavebar
-/reload-plugins
+/reload-plugins --force
 ```
 
-That's it: the band appears above the prompt. Needs Claude Code 2.1.287 or later; more under
-[Requirements](#requirements).
+No script is downloaded or run: both ways use Claude Code's own plugin commands. Needs Claude Code
+2.1.287 or later; more under [Requirements](#requirements). In Windows PowerShell 5.1, use `;`
+instead of `&&`.
 
 ## What you get
 
