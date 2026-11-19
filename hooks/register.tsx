@@ -7,10 +7,11 @@ import { BAR_H, crewSvg, paceSvg, walkSvg } from './progress-art'
 import { classify, measure as measureRisk, refusal } from './guard'
 import type { Report, Risk } from './guard'
 import {
-  EMPTY, HUE, INK, MUTED, ORANGE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
+  EMPTY, HUE, INK, ORANGE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD, YELLOW,
   MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
-import type { CacheView, PaceRow } from './cache-art'
+import type { CacheView, PaceRow, TurnUsage } from './cache-art'
+import { metricsOf, nextGrowth } from './metrics'
 import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
@@ -80,17 +81,23 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
     // Records from before keep-warm savings were tracked have neither field.
     if (typeof s.pings === 'number') out.pings = s.pings
     if (typeof s.saved === 'number') out.saved = s.saved
+    // The metric figures arrived later still; each is kept only when it is a number.
+    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth'] as const) if (typeof s[k] === 'number') out[k] = s[k]
+    if (s.byType && typeof s.byType === 'object') {
+      const by: Record<string, number> = {}
+      for (const [k, c] of Object.entries(s.byType)) if (typeof c === 'number') by[k] = c
+      out.byType = by
+    }
     return out
   } catch {
     return null
   }
 }
 
-/** A session record from `was`, its keep-warm figures carried over, stamped `at`. */
+/** A session record from `was`, its keep-warm and metric figures carried over, stamped `at`. */
 const recordOf = (was: Spent | null, at: number): Spent => {
-  const next: Spent = { main: was?.main ?? 0, subs: was?.subs ?? 0, last: was?.last ?? 0, at }
-  if (was?.pings !== undefined) next.pings = was.pings
-  if (was?.saved !== undefined) next.saved = was.saved
+  const next: Spent = { ...(was ?? { main: 0, subs: 0, last: 0 }), at }
+  if (was?.byType) next.byType = { ...was.byType }
   return next
 }
 
@@ -121,7 +128,7 @@ const readDays = async ($: EngineInterface, now: number): Promise<number[]> => {
 }
 
 /** Adds a finished turn's cost to this session's saved figures. A failing store or id loses the figure, never the turn. */
-const addSpend = async ($: EngineInterface, paid: number, isMain: boolean): Promise<void> => {
+const addSpend = async ($: EngineInterface, paid: number, isMain: boolean, usage?: TurnUsage | null, type = 'agent'): Promise<void> => {
   try {
     const key = SPEND_PREFIX + (await $.session.id())
     const was = await readSpend($)
@@ -136,15 +143,38 @@ const addSpend = async ($: EngineInterface, paid: number, isMain: boolean): Prom
     } catch { /* the day's total misses this turn */ }
     if (isMain) {
       next.main += paid
+      // The metric row's figures: the priced main turns, what they cost and the input they read.
+      next.turns = (next.turns ?? 0) + 1
+      next.paidTurns = (next.paidTurns ?? 0) + paid
+      const cached = usage?.cache_read_input_tokens || 0
+      next.readTok = (next.readTok ?? 0) + cached
+      next.inTok = (next.inTok ?? 0) + (usage?.input_tokens || 0) + cached + (usage?.cache_creation_input_tokens || 0)
       next.last = paid + (await read($, subsSince))
       await update($, subsSince, () => 0)
     } else {
       next.subs += paid
+      next.byType = { ...next.byType, [type]: (next.byType?.[type] ?? 0) + paid }
       await update($, subsSince, n => n + paid)
     }
     await $.store.set(key, next)
     $.ui.invalidate('ui.render')
   } catch { /* the band shows no cost; the turn goes on */ }
+}
+
+/** Notes the context size at the end of a main turn, and how fast it grows: the moving average of its increases. */
+const addContext = async ($: EngineInterface): Promise<void> => {
+  try {
+    const tokens = (await cacheFacts($))?.tokens ?? 0
+    if (tokens <= 0) return
+    const was = await readSpend($)
+    // A conversation with no priced turn yet has nothing to attach the context to.
+    if (!was) return
+    const next = recordOf(was, await $.clock.now())
+    const growth = nextGrowth(next.growth, next.ctxPrev, tokens)
+    if (growth !== undefined) next.growth = growth
+    next.ctxPrev = tokens
+    await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
+  } catch { /* the runway waits for the next turn */ }
 }
 
 /** A switch kept in the store: its saved value, or `fallback` when none was saved or the store cannot be read. */
@@ -662,11 +692,12 @@ export const register: Register = on => {
     const paid = turnCost(e.usage) ?? 0
     if (e.agentId) {
       const id = e.agentId
+      const type = (await read($, crew)).find(w => w.id === id)?.type ?? 'agent'
       await update($, crew, list => list.map(w => (w.id === id ? { ...w, isDone: true } : w)))
-      if (paid > 0) await addSpend($, paid, false)
+      if (paid > 0) await addSpend($, paid, false, e.usage, type)
       return r
     }
-    if (paid > 0) await addSpend($, paid, true)
+    if (paid > 0) await addSpend($, paid, true, e.usage)
     if ((await read($, ending)) === 'running') {
       await update($, ending, () => null)
       // The debrief is in: stop holding this conversation's cache. The switch stays on for the next one.
@@ -678,6 +709,7 @@ export const register: Register = on => {
     const lastAt = !c || now - c.lastAt > e.durationMs ? now : c.lastAt
     try { await pull($) } catch { /* the figures come with the next reading */ }
     await measure($, lastAt, e.usage?.model ?? null)
+    await addContext($)
     return r
   })
 
@@ -699,7 +731,7 @@ export const register: Register = on => {
         <Box key="held" flexDirection="column" paddingX={1}>
           <Box flexDirection="row" alignItems="center">
             <Text key="held-chip" backgroundColor={ORANGE} color={INK} bold>{' HELD '}</Text>
-            <Text key="held-command" color={TEXT} bold>{` ${shown}`}</Text>
+            <Text key="held-command" color="text" bold>{` ${shown}`}</Text>
             <Box key="grow" flexGrow={1} />
             <Box key="held-no" flexShrink={0} marginLeft={1}>
               <Button key="held-cancel" label="Cancel" onPress={() => { holding.decision = 'cancel' }} />
@@ -709,9 +741,9 @@ export const register: Register = on => {
             </Box>
           </Box>
           <Text key="held-summary" color={YELLOW} bold>{`Would ${rep.summary}`}</Text>
-          {rep.lines.map((l, i) => <Text key={`held-line-${i}`} color={TEXT}>{`  ${l}`}</Text>)}
-          {rep.more > 0 ? <Text key="held-more" color={MUTED}>{`  and ${rep.more} more`}</Text> : null}
-          {rep.note ? <Text key="held-note" color={MUTED}>{rep.note}</Text> : null}
+          {rep.lines.map((l, i) => <Text key={`held-line-${i}`} color="text">{`  ${l}`}</Text>)}
+          {rep.more > 0 ? <Text key="held-more" color="subtle">{`  and ${rep.more} more`}</Text> : null}
+          {rep.note ? <Text key="held-note" color="subtle">{rep.note}</Text> : null}
         </Box>
       )
     }
@@ -921,8 +953,8 @@ export const register: Register = on => {
               isInteractive
             />
           ) : null,
-          <Text key="crew-count" color={TEXT} bold>{` ×${running.length}`}</Text>,
-          <Text key="crew-names" color={MUTED}>{` ${crewText(running)}`}</Text>,
+          <Text key="crew-count" color="text" bold>{` ×${running.length}`}</Text>,
+          <Text key="crew-names" color="subtle">{` ${crewText(running)}`}</Text>,
         ]
     /**
      * The bar, its words and the crew in `availPx` of room, the bar's drawing at most `max` wide; null when
@@ -957,9 +989,9 @@ export const register: Register = on => {
       return (
         <Box key={key} flexDirection="row" flexShrink={0} alignItems="center" paddingX={1}>
           {drawing}
-          {walking ? <Text key="count" color={TEXT} bold>{` ${said!.count}`}</Text> : null}
-          {walking && noteShown ? <Text key="note" color={MUTED} wrap="truncate-end">{` · ${noteShown}`}</Text> : null}
-          {pacing && shown ? <Text key="pulse" color={MUTED} wrap="truncate-end">{shown}</Text> : null}
+          {walking ? <Text key="count" color="text" bold>{` ${said!.count}`}</Text> : null}
+          {walking && noteShown ? <Text key="note" color="subtle" wrap="truncate-end">{` · ${noteShown}`}</Text> : null}
+          {pacing && shown ? <Text key="pulse" color="subtle" wrap="truncate-end">{shown}</Text> : null}
           {crewBits.length && (walking || pacing) ? <Text key="crew-gap">{'  '}</Text> : null}
           {crewBits}
         </Box>
@@ -973,13 +1005,13 @@ export const register: Register = on => {
     const isCompact = kind === 'stacked'
     const spendBox = total <= 0 || (isCompact && compactStep >= 2) ? null : isCompact ? (
       <Box key="spend" flexShrink={0} marginRight={COMPACT_MARGIN}>
-        <Text key="spend-total" color={TEXT} bold>{`≈${usd(total)}`}</Text>
+        <Text key="spend-total" color="text" bold>{`≈${usd(total)}`}</Text>
       </Box>
     ) : (
       <Box key="spend" flexDirection={isWide ? 'row' : 'column'} flexShrink={0} marginRight={3}>
-        <Text color={MUTED} bold>{isWide ? 'COST ' : 'COST'}</Text>
-        <Text key="spend-total" color={TEXT} bold>{`≈${usd(total)}`}</Text>
-        {lastText ? <Text key="spend-last" color={MUTED}>{isWide ? ` · last ${lastText}` : `last ${lastText}`}</Text> : null}
+        <Text color="subtle" bold>{isWide ? 'COST ' : 'COST'}</Text>
+        <Text key="spend-total" color="text" bold>{`≈${usd(total)}`}</Text>
+        {lastText ? <Text key="spend-last" color="subtle">{isWide ? ` · last ${lastText}` : `last ${lastText}`}</Text> : null}
       </Box>
     )
 
@@ -987,7 +1019,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Box flexDirection="row" paddingX={1}>
-            <Text color={MUTED}>USAGE · waiting for the first reply</Text>
+            <Text color="subtle">USAGE · waiting for the first reply</Text>
             {spendBox ? <Box key="wait-spend" marginLeft={2}>{spendBox}</Box> : null}
             {grow}
             {inlineButtons}
@@ -1004,7 +1036,7 @@ export const register: Register = on => {
       const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
       return {
         left,
-        col: COLORS[w.kind] ?? TEXT,
+        col: COLORS[w.kind] ?? 'text',
         name: NAMES[w.kind] ?? w.kind.toUpperCase(),
         d: dots(left, cells),
         reset: fmtReset(w.resetsAt, now),
@@ -1021,12 +1053,12 @@ export const register: Register = on => {
       const p = parts(w)
       return (
         <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={3}>
-          <Text color={MUTED} bold>{p.name} </Text>
+          <Text color="subtle" bold>{p.name} </Text>
           <Text color={p.col}>{p.d.on}</Text>
           <Text color={EMPTY}>{p.d.off}</Text>
           <Text color={p.col} bold> {p.left}% left</Text>
-          {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
-          {p.reset ? <Text color={MUTED}> · {p.reset}</Text> : null}
+          {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
+          {p.reset ? <Text color="subtle"> · {p.reset}</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
@@ -1037,15 +1069,15 @@ export const register: Register = on => {
       return (
         <Box key={`w-${i}`} flexDirection="column" flexShrink={0} marginRight={3}>
           <Box flexDirection="row">
-            <Text color={MUTED} bold>{p.name} </Text>
+            <Text color="subtle" bold>{p.name} </Text>
             <Text color={p.col}>{p.d.on}</Text>
             <Text color={EMPTY}>{p.d.off}</Text>
           </Box>
           <Box flexDirection="row">
             <Text color={p.col} bold>{p.left}% left</Text>
-            {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
+            {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           </Box>
-          {p.reset ? <Text color={MUTED}>resets {p.reset}</Text> : null}
+          {p.reset ? <Text color="subtle">resets {p.reset}</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
@@ -1057,7 +1089,7 @@ export const register: Register = on => {
       return (
         <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN}>
           <Text color={p.col} bold>{`${p.left}%${compactStep < 4 ? " left" : ""}`}</Text>
-          {p.left < LOW_AT ? <Text color={TEXT} bold> LOW</Text> : null}
+          {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
@@ -1065,13 +1097,13 @@ export const register: Register = on => {
 
     const label = isCompact ? null : (
       <Box key="label" flexShrink={0} marginRight={isWide ? 2 : 3}>
-        <Text color={TEXT} bold>USAGE</Text>
+        <Text color="text" bold>USAGE</Text>
       </Box>
     )
     const usage = [
       ...(list.length > 0
         ? list.map(isWide ? wide : isCompact ? compact : stacked)
-        : isCompact ? [] : [<Box key="wait" flexShrink={0} marginRight={3}><Text color={MUTED}>waiting for the first reply</Text></Box>]),
+        : isCompact ? [] : [<Box key="wait" flexShrink={0} marginRight={3}><Text color="subtle">waiting for the first reply</Text></Box>]),
       spendBox,
     ]
 
@@ -1122,8 +1154,8 @@ export const register: Register = on => {
     const summary = cold
       ? [
           <Text key="idle" color={hue} bold>{` ${view.idle}`}</Text>,
-          mine ? <Text key="dot" color={MUTED}> · </Text> : null,
-          mine ? <Text key="cost" color={TEXT} bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null,
+          mine ? <Text key="dot" color="subtle"> · </Text> : null,
+          mine ? <Text key="cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null,
         ]
       : [<Text key="left" color={hue} bold>{` ${Math.max(0, TTL_MIN - view.idleMin)}m left`}</Text>]
 
@@ -1154,8 +1186,8 @@ export const register: Register = on => {
             <Box key="block" flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
               {compactChip}
               {showNext ? <Text key="next-gap"> </Text> : null}
-              {showNext && mine ? <Text key="next-cost" color={TEXT} bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
-              {showNext ? <Text key="next" color={MUTED}> next</Text> : null}
+              {showNext && mine ? <Text key="next-cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
+              {showNext ? <Text key="next" color="subtle"> next</Text> : null}
               {tip('chip', cold ? `Cold, idle ${view.idle}` : `Warm, cold in ${Math.max(0, TTL_MIN - view.idleMin)}m`)}
             </Box>
           )}
@@ -1192,7 +1224,7 @@ export const register: Register = on => {
       const W = bandPx(columns)
       const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
       const shownH = (h: number) => Math.round(h * scale)
-      const c = cardSvg(view, kind, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows)
+      const c = cardSvg(view, kind, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)))
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))

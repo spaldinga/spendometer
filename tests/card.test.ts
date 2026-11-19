@@ -1,13 +1,15 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, OK, cardSvg, fmtBreakEven, keepWarmCost } from '../hooks/cache-art'
+import { DANGER, EMPTY, HUE, ICE, INK, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
 import type { CacheView, Kind, PaceRow } from '../hooks/cache-art'
+import type { Metrics } from '../hooks/metrics'
 
 const WARM: CacheView = { mode: 'warm', idle: '18m', idleMin: 18, tokens: 240000, window: 1000000, mine: 'opus' }
 const COLD: CacheView = { mode: 'cold', idle: '2h 5m', idleMin: 125, tokens: 240000, window: 1000000, mine: 'opus' }
 const SPEND = { main: 7.4, subs: 0.37 }
 const WIDTH: Record<Kind, number> = { wide: 1300, stacked: 800, tight: 300 }
 const KINDS = ['wide', 'stacked', 'tight'] as const
+const METRICS: Metrics = { hit: 0.963, avg: 0.38, last: 2.11, multiple: 6, runway: 40.4, growth: 6200, subs: 5.14, top: [['Explore', 3.9], ['coder', 1.24]] }
 
 // Drawings put their words between tags; look after the font data in the style block.
 const body = (s: string) => s.slice(s.indexOf('</style>'))
@@ -23,24 +25,26 @@ for (const kind of KINDS) {
     for (const gone of ['IDLE', 'LIMIT', '>WARM<', 'NEXT MESSAGE', 'HAIKU', 'OPUS', 'last reply']) expect(s).not.toContain(gone)
   })
 
-  test(`the cold ${kind} card adds what the next message costs on each model`, () => {
-    const s = body(cardSvg(COLD, kind, WIDTH[kind], SPEND).source)
-    expect(s).toContain('>SPEND<')
-    expect(s).toContain('>NEXT MESSAGE COSTS<')
-    for (const name of ['FABLE', 'OPUS', 'SONNET', 'HAIKU']) expect(s).toContain(`>${name}<`)
-    expect(s).not.toContain('IDLE')
-    expect(s).not.toContain('LIMIT')
+  test(`the ${kind} card has no block of model costs, warm or cold`, () => {
+    for (const v of [WARM, COLD]) {
+      const c = cardSvg(v, kind, WIDTH[kind], SPEND, [PACE_OK], METRICS)
+      expect(c.source).not.toContain('NEXT MESSAGE')
+      expect(c.alt).not.toContain('NEXT MESSAGE')
+      for (const name of ['FABLE', 'OPUS', 'SONNET', 'HAIKU', 'YOU']) expect(body(c.source)).not.toContain(`>${name}<`)
+    }
+    expect(body(cardSvg(COLD, kind, WIDTH[kind], SPEND).source)).toContain('>SPEND<')
   })
 
-  test(`the ${kind} card is never shorter cold than warm`, () => {
-    expect(cardSvg(COLD, kind, WIDTH[kind], SPEND).h).toBeGreaterThanOrEqual(cardSvg(WARM, kind, WIDTH[kind], SPEND).h)
+  test(`the ${kind} card is as tall cold as warm`, () => {
+    expect(cardSvg(COLD, kind, WIDTH[kind], SPEND).h).toBe(cardSvg(WARM, kind, WIDTH[kind], SPEND).h)
+    expect(cardSvg(COLD, kind, WIDTH[kind], SPEND, [], METRICS).h).toBe(cardSvg(WARM, kind, WIDTH[kind], SPEND, [], METRICS).h)
   })
 }
 
 test('the card heights: no empty space', () => {
   const h = (v: CacheView, kind: Kind) => cardSvg(v, kind, WIDTH[kind], SPEND).h
   expect({ wide: h(WARM, 'wide'), stacked: h(WARM, 'stacked'), tight: h(WARM, 'tight') }).toEqual({ wide: 130, stacked: 184, tight: 228 })
-  expect({ wide: h(COLD, 'wide'), stacked: h(COLD, 'stacked'), tight: h(COLD, 'tight') }).toEqual({ wide: 254, stacked: 308, tight: 342 })
+  expect({ wide: h(COLD, 'wide'), stacked: h(COLD, 'stacked'), tight: h(COLD, 'tight') }).toEqual({ wide: 130, stacked: 184, tight: 228 })
 })
 
 test('the free context is spelled out in the caption and in the alt text', () => {
@@ -93,7 +97,7 @@ test('the break-even reads ~Nh and is capped at >24h', () => {
   expect(fmtBreakEven(Infinity)).toBe('>24h')
 })
 
-test('the warm wide card has four columns, and the cold one adds the model costs beneath them', () => {
+test('the warm wide card has four columns, and the cold one turns keep warm into re-cache now', () => {
   const warm = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK, PACE_LOW]).source)
   for (const z of ['>IN CACHE<', '>SPEND<', '>KEEP WARM<', '>PACE VS RESET<']) expect(warm).toContain(z)
   expect(warm).toContain('$0.06')
@@ -106,9 +110,65 @@ test('the warm wide card has four columns, and the cold one adds the model costs
   const inCache = warm.slice(warm.indexOf('>IN CACHE<'), warm.indexOf('>SPEND<'))
   expect(inCache.split('<circle').length - 1).toBe(50)
   const cold = body(cardSvg(COLD, 'wide', 1300, SPEND, [PACE_OK]).source)
-  for (const name of ['FABLE', 'OPUS', 'SONNET', 'HAIKU', 'NEXT MESSAGE COSTS', 'KEEP WARM', 'PACE VS RESET']) expect(cold).toContain(name)
-  // The model costs sit beneath the columns, not beside them.
-  expect(cold.indexOf('NEXT MESSAGE COSTS')).toBeGreaterThan(cold.indexOf('PACE VS RESET'))
+  for (const name of ['>RE-CACHE<', '>RE-CACHE NOW<', 'PACE VS RESET']) expect(cold).toContain(name)
+  expect(cold).not.toContain('KEEP WARM')
+})
+
+test('the cold wide card: the re-cache cost on this model in the cold hue, the cheaper models, and what warm costs', () => {
+  const s = body(cardSvg(COLD, 'wide', 1300, SPEND).source)
+  const zone = s.slice(s.indexOf('>RE-CACHE NOW<'), s.indexOf('>PACE VS RESET<'))
+  // Opus on 240k tokens: $4 x 2 a million to write; warm is 1.2 pings of cache reads an hour.
+  expect(zone).toContain('<tspan font-size="38">$1.92</tspan>')
+  expect(zone).toContain('>on Opus</tspan>')
+  expect(zone).toContain(`font-weight="600" fill="${HUE.cold}"`)
+  expect(zone).toContain('>Sonnet $0.96 · Haiku $0.24<')
+  expect(zone).toContain('>warm costs $0.06/h<')
+  expect(zone).not.toContain('Fable')
+})
+
+test('the cheaper models are the priced ones below this session, in MODELS order; none for the cheapest', () => {
+  expect(MODELS.map(m => m.id)).toEqual(['fable', 'opus', 'sonnet', 'haiku'])
+  const fable = body(cardSvg({ ...COLD, mine: 'fable' }, 'wide', 1300, SPEND).source)
+  expect(fable).toContain('>on Fable</tspan>')
+  // Wide: the column has room for the two cheapest of the three cheaper models, not for all three.
+  expect(fable).toContain('Sonnet $0.96 · Haiku $0.24')
+  const haiku = body(cardSvg({ ...COLD, mine: 'haiku' }, 'wide', 1300, SPEND).source)
+  expect(haiku).toContain('>on Haiku</tspan>')
+  expect(haiku).toContain('>warm costs $0.01/h<')
+  // No cheaper model: no line for them, and the warm line takes its place one step up.
+  expect(haiku).not.toContain('Sonnet')
+  expect(haiku).toContain('y="88" font-size="18" font-weight="500" fill="#8d8775" letter-spacing="0" text-anchor="start">warm costs')
+})
+
+test('a cold card on an unpriced model still says so', () => {
+  const v = { ...COLD, mine: null }
+  expect(body(cardSvg(v, 'wide', 1300, SPEND).source)).toContain('model not priced')
+  expect(body(cardSvg(v, 'stacked', 800, SPEND).source)).toContain('keep warm: model not priced')
+})
+
+test('the cold stacked and tight cards write the re-cache cost and the cheaper models as one line, its dot in the cold hue', () => {
+  for (const kind of ['stacked', 'tight'] as const) {
+    const s = body(cardSvg(COLD, kind, kind === 'tight' ? 700 : 800, SPEND, [PACE_OK]).source)
+    expect(s).toContain('re-cache $1.92 on Opus · Sonnet $0.96 · Haiku $0.24')
+    expect(s).not.toContain('keep warm')
+    expect(s).toContain(`r="4" fill="${HUE.cold}"`)
+  }
+  // A narrow band drops the dearest of the cheaper models first.
+  expect(body(cardSvg({ ...COLD, mine: 'fable' }, 'tight', 300, SPEND).source)).toContain('re-cache $4.80 on Fable · Haiku $0.24')
+})
+
+test('the warm stacked and tight keep line adds what the pings saved', () => {
+  for (const kind of ['stacked', 'tight'] as const) {
+    expect(body(cardSvg(WARM, kind, WIDTH[kind], { ...SPEND, saved: 1.5 }).source)).toContain('keep warm $0.06/h · going cold $1.92 · saved $1.50')
+    expect(body(cardSvg(WARM, kind, WIDTH[kind], SPEND).source)).not.toContain('saved')
+    expect(body(cardSvg(WARM, kind, WIDTH[kind], { ...SPEND, saved: 0, pings: 0.1 }).source)).not.toContain('saved')
+  }
+})
+
+test('the cold alt text gives the re-cache cost and the cheaper models', () => {
+  expect(cardSvg(COLD, 'wide', 1300, SPEND).alt).toContain('re-caching now costs $1.92 on Opus (cheaper: Sonnet $0.96, Haiku $0.24)')
+  expect(cardSvg({ ...COLD, mine: 'haiku' }, 'wide', 1300, SPEND).alt).toContain('re-caching now costs $0.24 on Haiku.')
+  expect(cardSvg(WARM, 'wide', 1300, SPEND).alt).toContain('going cold costs $1.92.')
 })
 
 test('the pace bar is the window colour when it lasts to the reset and red when it ends before', () => {
@@ -144,12 +204,9 @@ test('an unpriced model leaves keep warm without figures', () => {
   expect(body(cardSvg(v, 'stacked', 800, SPEND).source)).toContain('keep warm: model not priced')
 })
 
-test('while cold, the keep-warm caption says what re-caching costs now, not what going cold would', () => {
-  const wide = body(cardSvg(COLD, 'wide', 1300, SPEND, [PACE_OK]).source)
-  expect(wide).toContain('re-caching now costs <tspan')
-  expect(wide).not.toContain('going cold')
-  const stacked = body(cardSvg(COLD, 'stacked', 800, SPEND, [PACE_OK]).source)
-  expect(stacked).toContain('re-cache now $')
+test('while cold, nothing on the card says going cold', () => {
+  expect(body(cardSvg(COLD, 'wide', 1300, SPEND, [PACE_OK]).source)).not.toContain('going cold')
+  expect(body(cardSvg(COLD, 'stacked', 800, SPEND, [PACE_OK]).source)).not.toContain('going cold')
 })
 
 const WITH_DAYS = { ...SPEND, days: [0, 1, 2, 0, 4, 1, 3] }
@@ -213,7 +270,7 @@ test('stacked and tight cards use the today and week caption when days are known
 test('the heights do not change with daily figures or savings', () => {
   const more = { ...WITH_DAYS, saved: 1.5, pings: 0.12 }
   expect(KINDS.map(k => cardSvg(WARM, k, WIDTH[k], more, [PACE_OK, PACE_LOW]).h)).toEqual([130, 184, 228])
-  expect(KINDS.map(k => cardSvg(COLD, k, WIDTH[k], more, [PACE_OK, PACE_LOW]).h)).toEqual([254, 308, 342])
+  expect(KINDS.map(k => cardSvg(COLD, k, WIDTH[k], more, [PACE_OK, PACE_LOW]).h)).toEqual([130, 184, 228])
 })
 
 test('keep warm adds a saved and pings line, which takes the break-even line\'s place', () => {
@@ -253,4 +310,127 @@ test('the wide pace zone writes the forecast under each bar', () => {
   expect(s).toContain('>runs out in ~2h 40m</tspan> · resets 3h 20m')
   expect(s).not.toContain('pace unknown')
   expect(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_NONE]).source)).toContain('>pace unknown<')
+})
+
+// ---------- the metric row (wide only) ----------
+const row = (s: string) => s.slice(s.indexOf('>CACHE HIT<') - 40)
+
+test('the wide card gets a metric row under the four columns, warm and cold, 92 px taller', () => {
+  for (const v of [WARM, COLD]) {
+    const plain = cardSvg(v, 'wide', 1300, SPEND, [PACE_OK])
+    const c = cardSvg(v, 'wide', 1300, SPEND, [PACE_OK], METRICS)
+    expect(c.h).toBe(plain.h + 92)
+    expect(c.h).toBe(222)
+    const s = body(c.source)
+    for (const title of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(s).toContain(`>${title}<`)
+    // The rule above it, and the same x grid as the row above.
+    expect(s).toContain('<rect x="13" y="124" width="1274" height="1"')
+    const titleAt = (title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="${124 + 2 + 22}"[^>]*>${title}<`).exec(s)![1])
+    const colW = Math.floor((1300 - 26 - 3 * 26) / 4)
+    expect(['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS'].map(titleAt)).toEqual([0, 1, 2, 3].map(i => 13 + i * (colW + 26)))
+    expect(s).toContain('font-size="14" font-weight="700" fill="#8d8775" letter-spacing="1.4"')
+  }
+})
+
+test('the other layouts have no metric row, whatever they are given', () => {
+  for (const kind of ['stacked', 'tight'] as const) {
+    const c = cardSvg(WARM, kind, WIDTH[kind], SPEND, [PACE_OK], METRICS)
+    expect(c.h).toBe(cardSvg(WARM, kind, WIDTH[kind], SPEND, [PACE_OK]).h)
+    for (const title of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(c.source).not.toContain(title)
+  }
+})
+
+test('the metric figures and captions', () => {
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS).source))
+  expect(s).toContain('<tspan font-size="26">96%</tspan>')
+  expect(s).toContain('>of input read from cache<')
+  expect(s).toContain('<tspan font-size="26">$0.38</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">avg</tspan>')
+  expect(s).toContain(`last $2.11<tspan fill="${DANGER}" font-weight="700"> · 6× avg</tspan>`)
+  expect(s).toContain('<tspan font-size="26">~40</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">turns</tspan>')
+  expect(s).toContain('>+6k tokens a turn<')
+  expect(s).toContain('<tspan font-size="26">$5.14</tspan>')
+  expect(s).toContain('>Explore $3.90 · coder $1.24<')
+  // Types are cut to 12 characters, and the second one goes when the two do not fit the column.
+  const long = { ...METRICS, top: [['general-purpose-agent', 3.9], ['claude-code-guide', 1.24]] as [string, number][] }
+  const cut = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], long).source))
+  expect(cut).toContain('>general-purp $3.90<')
+  expect(cut).not.toContain('claude-code-')
+})
+
+test('no outlier flag while the last turn is near the average', () => {
+  const s = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, multiple: null }).source)
+  expect(s).toContain('last $2.11</text>')
+  expect(s).not.toContain('× avg')
+})
+
+test('the runway shows >99 past the cap, escaped', () => {
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, runway: 250 }).source))
+  expect(s).toContain('<tspan font-size="26">&gt;99</tspan>')
+})
+
+test('an unknown metric shows its title, a dash and when it will be known; no subagents says so', () => {
+  const none: Metrics = { hit: null, avg: null, last: null, multiple: null, runway: null, growth: null, subs: 0, top: [] }
+  // Nothing known at all: no row.
+  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], none).h).toBe(130)
+  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], null).h).toBe(130)
+  // One known: the row, with the others as dashes.
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...none, hit: 0.5 }).source))
+  expect(s).toContain('<tspan font-size="26">50%</tspan>')
+  expect(s.split('<tspan font-size="26">—</tspan>').length - 1).toBe(2)
+  expect(s.split('>after a few turns<').length - 1).toBe(2)
+  expect(s).toContain('<tspan font-size="26">$0.00</tspan>')
+  expect(s).toContain('>none this thread<')
+  // Subagent cost alone is enough to show the row.
+  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...none, subs: 1, top: [['Explore', 1]] }).h).toBe(222)
+})
+
+// ---------- light mode ----------
+test('every drawing carries the light-scheme style, with the font or without', () => {
+  const docs = [
+    roboSvg('warm'),
+    roboSvg('cold'),
+    chipSvg('warm').source,
+    chipSvg('cold').source,
+    svgDoc(10, 10, '', false),
+    svgDoc(10, 10, '', true),
+    ...KINDS.flatMap(k => [cardSvg(WARM, k, WIDTH[k], SPEND).source, cardSvg(COLD, k, WIDTH[k], SPEND).source]),
+  ]
+  for (const d of docs) {
+    expect(d).toContain('<style>')
+    expect(d).toContain('@media (prefers-color-scheme: light){')
+    // The style comes before the drawing.
+    expect(d.indexOf('</style>')).toBeLessThan(d.indexOf('</svg>') - 1)
+  }
+})
+
+test('the light map covers every colour the drawings use, for fill and for stroke', () => {
+  const doc = svgDoc(10, 10, '', false)
+  const css = doc.slice(doc.indexOf('@media'), doc.indexOf('</style>'))
+  for (const dark of [TEXT, MUTED, EMPTY, LINE, ORANGE, YELLOW, HUE.warm, HUE.cold, OK, DANGER, INK, ICE, '#fff']) {
+    expect(Object.keys(LIGHT)).toContain(dark)
+  }
+  for (const [dark, light] of Object.entries(LIGHT)) {
+    expect(css).toContain(`[fill="${dark}"]{fill:${light}}`)
+    expect(css).toContain(`[stroke="${dark}"]{stroke:${light}}`)
+    expect(light).not.toBe(dark)
+  }
+  expect(LIGHT[TEXT]).toBe('#2b2a26')
+  expect(LIGHT[INK]).toBe('#ffffff')
+})
+
+test('every colour a drawing paints is in the map, or is the translucent black left on purpose', () => {
+  const painted = new Set<string>()
+  const sources = [
+    roboSvg('warm'),
+    roboSvg('cold'),
+    chipSvg('warm').source,
+    chipSvg('cold').source,
+    ...KINDS.flatMap(k => [cardSvg(WARM, k, WIDTH[k], SPEND, [PACE_OK, PACE_LOW, PACE_NONE], METRICS).source, cardSvg(COLD, k, WIDTH[k], { ...WITH_DAYS, saved: 1 }, [PACE_OK]).source]),
+  ]
+  for (const d of sources) {
+    const drawing = d.slice(d.indexOf('</style>'))
+    for (const m of drawing.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{3,6})"/g)) painted.add(m[1])
+  }
+  for (const c of painted) if (c !== '#000') expect(Object.keys(LIGHT)).toContain(c)
+  expect(painted.size).toBeGreaterThan(8)
 })

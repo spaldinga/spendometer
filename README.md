@@ -21,7 +21,7 @@ same band while Claude works.*
 | Part | What you see | Where it comes from |
 |---|---|---|
 | **Usage** | 7-day and 5-hour limits as dot bars, percent left and reset time; `LOW` under 15% | Claude Code's own rate-limit figures |
-| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, the next message's price per model. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
+| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, what re-caching costs on this model and the cheaper ones. On a wide band a second row shows the cache hit rate, the average and last turn's cost, how many turns of context are left at the current growth, and what subagents have cost. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
 | **Progress** | The robot surfing a line with a mark per step, plus `3/7 · Run tests` | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: the robot pacing, `working · 4 steps · 1m 12s` | Turn events |
 | **Subagents** | One small robot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |
@@ -102,8 +102,11 @@ The Keep warm switch is the button in the band. Settings are saved for every ses
 
 ## Limitations
 
-- **Dark themes only, for now.** The band has no background of its own and its text colours are
-  light, so it is hard to read on a light theme.
+- **Light and dark themes.** The band's text uses the app's own text colours, so it follows the theme.
+  The drawings (the card, Robo, the chip, the progress line) are painted in the dark palette and carry a
+  light-scheme override, so they follow the system's light/dark setting, not the app's theme setting. That
+  the app passes the system setting on to a drawing is a hypothesis until it is checked in the app; if it
+  does not, the drawings stay dark.
 - **The hold is not a permission system.** It does not see commands inside `bash -c "..."`,
   scripts or aliases, and it only knows the git commands listed above. Use
   [permission rules](https://code.claude.com/docs/en/settings) for a hard block.
@@ -130,7 +133,8 @@ claude --plugin-dir .      # try it for one session
 ```
 hooks/
   register.tsx       hooks and the band
-  cache-art.ts       colours, prices, the cache card and the robot
+  cache-art.ts       colours (dark and light), prices, the cache card and the robot
+  metrics.ts         the card's metric row: hit rate, runway, outlier (pure)
   progress.ts        task list and report tracking (pure)
   progress-art.ts    the progress line and the surfer
   guard.ts           risky git commands: classify and measure

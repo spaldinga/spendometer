@@ -36,8 +36,26 @@ export type Spend = { main: number; subs: number }
  * What the store keeps per session under `spend:<session id>`: the totals, the latest turn's cost, and when it was written (clock ms).
  * `pings` is what keep-warm pings that kept the cache alive cost, `saved` what they saved against a cold re-cache; both are
  * left out of older records and of the conversation's total.
+ *
+ * The rest feed the card's metric row and are all left out of older records: `turns` counts the priced main turns
+ * since they were first tracked and `paidTurns` is what those cost (so the average is not skewed by earlier
+ * spend); `readTok` is the cache-read input over those turns and `inTok` all their input (fresh, read and written);
+ * `ctxPrev` the context size at the last main turn's end and `growth` the moving average of its increases;
+ * `byType` the subagents' cost per type.
  */
-export type Spent = Spend & { last: number; at: number; pings?: number; saved?: number }
+export type Spent = Spend & {
+  last: number
+  at: number
+  pings?: number
+  saved?: number
+  turns?: number
+  paidTurns?: number
+  readTok?: number
+  inTok?: number
+  ctxPrev?: number
+  growth?: number
+  byType?: Record<string, number>
+}
 
 /** Wrapping up a conversation: asked for by the button, then running once the debrief's turn has started. */
 export type Ending = 'asked' | 'running' | null

@@ -375,6 +375,84 @@ test('the store holds main, subs, last and when; last is the latest main turn pl
   await band.unmount()
 })
 
+type Metered = { turns?: number; paidTurns?: number; readTok?: number; inTok?: number; ctxPrev?: number; growth?: number; byType?: Record<string, number> }
+const metered = (store: Map<string, unknown>) => store.get('spend:S1') as Metered
+
+test('main turns add up the metric figures: priced turns, their cost, cache reads and all input; the context grows', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(1, 0, 0), ctxPrev: 150000 } } })
+  await seed($, 18)
+  // 1M fresh + 2M read + 1M written = 4M input, 2M of it read; the engine reports 200k of context (50k up on last turn).
+  await done($, { usage: USED })
+  let m = metered(store)
+  expect(m.turns).toBe(1)
+  expect(usd(m.paidTurns ?? -1)).toBe(usd(32.4))
+  expect(m.readTok).toBe(2e6)
+  expect(m.inTok).toBe(4e6)
+  expect(m.ctxPrev).toBe(200000)
+  expect(m.growth).toBe(50000)
+  // The same context again: no growth to average in, the figure stays.
+  await done($, { usage: USED })
+  m = metered(store)
+  expect(m.turns).toBe(2)
+  expect(m.readTok).toBe(4e6)
+  expect(m.inTok).toBe(8e6)
+  expect(m.growth).toBe(50000)
+  // An unpriced model adds no turn, and a turn with no usage none either.
+  await done($, { usage: { ...USED, model: 'some-other-model' } })
+  await done($, { usage: null })
+  expect(metered(store).turns).toBe(2)
+})
+
+test('a subagent adds its cost to its type, from the crew, or to agent when the band never saw it start', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  on('agent.spawn', ($, e) => ({ model: 'claude-sonnet-5-5', agentId: `a-${e.subagentType}` }))
+  await seed($, 18)
+  const HAIKU = { ...USED, model: 'claude-haiku-5-5' }
+  await $.agent.spawn({ tool_use_id: 't-Explore', prompt: 'p', description: 'd', subagentType: 'Explore', provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false } as never)
+  await done($, { usage: HAIKU, agentId: 'a-Explore' })
+  await done($, { usage: HAIKU, agentId: 'a-Explore' })
+  await done($, { usage: HAIKU, agentId: 'stranger' })
+  const by = metered(store).byType!
+  expect(usd(by.Explore)).toBe(usd(8.2))
+  expect(usd(by.agent)).toBe(usd(4.1))
+  // Subagent turns touch neither the turn count nor the input figures.
+  expect(metered(store).turns).toBeUndefined()
+  expect(metered(store).inTok).toBeUndefined()
+})
+
+test('a record from before the metric figures is read as it is and gains them as turns finish; junk fields are dropped', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const old = { main: 3, subs: 1, last: 0.5, at: NOW, turns: 'x', byType: { a: 1, b: 'x' }, growth: null }
+  const { store } = engine(on, { keep: true, prefill: { 'spend:S1': old } })
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } })
+  expect(await band.find({ text: '≈$4.00' })).toBeDefined()
+  await band.unmount()
+  await done($, { usage: USED })
+  const m = metered(store)
+  // The old spend stays in the total, but the average only counts the turns tracked since.
+  expect(m.turns).toBe(1)
+  expect(usd(m.paidTurns ?? -1)).toBe(usd(32.4))
+  expect(m.byType).toEqual({ a: 1 })
+  expect(m.growth).toBeUndefined()
+  expect(m.ctxPrev).toBe(200000)
+})
+
+test('the wide open card shows the metric row once the record has figures', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(2, 1, 0.5), turns: 4, paidTurns: 2, readTok: 90, inTok: 100, ctxPrev: 100000, growth: 5000, byType: { Explore: 1 } } } })
+  await seed($, 18)
+  await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } }).then(async band => {
+    await band.press({ key: 'cache-fold' })
+    const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
+    for (const t of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(svgs).toContain(t)
+    expect(svgs).toContain('90%')
+    await band.unmount()
+  })
+})
+
 test('without a last turn the last part is left out; the compact row never shows it', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { 'spend:S1': FRESH(2, 1, 0) } })

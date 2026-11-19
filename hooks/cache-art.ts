@@ -2,6 +2,8 @@
 // hands to Svg. Nothing here touches the engine.
 
 import { SANS } from './font'
+import { RUNWAY_CAP } from './metrics'
+import type { Metrics } from './metrics'
 import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'
@@ -145,11 +147,52 @@ export const riskiest = (rows: readonly PaceRow[]): (PaceRow & { pace: Pace }) |
 }
 
 // ---------- SVG helpers ----------
+const mix = (a: string, b: string, t: number): string =>
+  '#' +
+  [1, 3, 5]
+    .map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - t) + parseInt(b.substr(i, 2), 16) * t).toString(16).padStart(2, '0'))
+    .join('')
+
+/** The frozen Robo's pale blue: the cold hue half way to white. */
+export const ICE = mix(HUE.cold, '#ffffff', 0.5)
+
+/**
+ * The drawings' colours on a light background, by the dark colour each replaces: the one place both palettes
+ * live. A drawing is painted in the dark palette; svgDoc adds a light-scheme style that swaps each colour by
+ * attribute, so no drawing code knows about themes. Left alone on purpose: `#000` (the shadow under Robo and the
+ * passed mark on the progress track, both translucent black, which read on light as well as on dark).
+ */
+export const LIGHT: Record<string, string> = {
+  [TEXT]: '#2b2a26',
+  [MUTED]: '#6b675c',
+  [EMPTY]: '#d9d4c7',
+  [LINE]: '#e0dbcf',
+  [ORANGE]: '#d4560c',
+  [YELLOW]: '#a8700f',
+  [HUE.warm]: '#b04545',
+  [HUE.cold]: '#2c7a94',
+  [OK]: '#0f7a57',
+  [DANGER]: '#c03534',
+  [INK]: '#ffffff',
+  // The frozen Robo: pale on dark, a mid blue on light, with its white glints as a light blue so they still show.
+  [ICE]: '#3a86a0',
+  '#fff': '#8fc1d2',
+}
+
+const LIGHT_CSS =
+  '@media (prefers-color-scheme: light){' +
+  Object.entries(LIGHT)
+    .map(([dark, light]) => `[fill="${dark}"]{fill:${light}} [stroke="${dark}"]{stroke:${light}}`)
+    .join(' ') +
+  '}'
+
+/** Every drawing carries its style: the light-scheme colours, and the font when it has text. */
 export const svgDoc = (w: number, h: number, body: string, font: boolean): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
-  (font
-    ? `<style>@font-face{font-family:RS;font-weight:100 900;src:url(data:font/woff2;base64,${SANS}) format('woff2')} text{font-family:RS,system-ui,'Segoe UI',sans-serif}</style>`
-    : '') +
+  '<style>' +
+  (font ? `@font-face{font-family:RS;font-weight:100 900;src:url(data:font/woff2;base64,${SANS}) format('woff2')} text{font-family:RS,system-ui,'Segoe UI',sans-serif}` : '') +
+  LIGHT_CSS +
+  '</style>' +
   body +
   '</svg>'
 
@@ -186,12 +229,6 @@ export const chipSvg = (mode: Mode): { source: string; w: number; h: number } =>
 // ---------- Robo: bobbing when warm, frozen in ice when cold ----------
 const ROBO_PIX = ['..X..X..', 'XXXXXXXX', 'XXXXXXXX', 'X.XXXX.X', 'XXXXXXXX', 'XXXXXXXX', 'X..XX..X']
 
-const mix = (a: string, b: string, t: number): string =>
-  '#' +
-  [1, 3, 5]
-    .map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - t) + parseInt(b.substr(i, 2), 16) * t).toString(16).padStart(2, '0'))
-    .join('')
-
 // One path, not a rect per pixel: separate rects at fractional sizes leave faint
 // seams between them, while one path fills the shared edges solid.
 const pixels = (u: number, fill: string): string => {
@@ -227,7 +264,7 @@ export const roboShapes = (x: number, y: number, size: number, mode: Mode): stri
   }
   // Cold: still, pale, inside a rounded ice block with icicles and one twinkle.
   const u = size / 12.2
-  const ice = mix(HUE.cold, '#ffffff', 0.5)
+  const ice = ICE
   const ox = x + 1.6 * u
   const oy = y + 1.6 * u
   const bx = -1.2 * u
@@ -284,8 +321,9 @@ export type CardSpend = { main: number; subs: number; days?: number[]; saved?: n
 const CARD_TOP = 6
 
 // The card shows what the band's row does not: the size of the cache, what the conversation has
-// cost, and, while the cache is cold, what the next message costs on each model.
-export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = []): { source: string; w: number; h: number; alt: string } => {
+// cost, what keeping the cache warm costs (or, while cold, what re-caching costs and on which models
+// it is cheaper) and, on the wide card, a row of metrics.
+export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -302,8 +340,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   const share = v.window > 0 ? Math.min(1, v.tokens / v.window) : 0
 
   // A zone's big figure with its small unit after it.
-  const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number) =>
-    `<text x="${x}" y="${yy}" font-weight="600" fill="${TEXT}"><tspan font-size="${bs}">${figure}</tspan>` +
+  const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number, fill = TEXT) =>
+    `<text x="${x}" y="${yy}" font-weight="600" fill="${fill}"><tspan font-size="${bs}">${figure}</tspan>` +
     (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">${unit}</tspan>` : '') +
     '</text>'
   /** Dots in `rows` rows of `cols`, each dot coloured by its index. */
@@ -375,33 +413,39 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     return g + big(x, y + 62, fig, 38, 'this thread', 15) + chart + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
 
-  // What the next message costs, by model; drawn only while the cache is cold, when the choice of
-  // model changes the price. One scale (the cold write's top price).
-  const zoneCost = (x: number, y: number, colW: number, o: { compact?: boolean } = {}) => {
-    const k = o.compact
-      ? { lab: 24, base: 100, rows: 6, step: 7, chip: 58, price: 88, name: 102 }
-      : { lab: 24, base: 106, rows: 8, step: 8, chip: 60, price: 94, name: 110 }
-    let g = t(x, y + k.lab, 'NEXT MESSAGE COSTS', { size: 14, ls: 1.4 })
-    const top = Math.max(...MODELS.map(m => coldCost(m, v.tokens)))
-    MODELS.forEach((m, i) => {
-      const mine = m.id === v.mine
-      const n = top > 0 ? Math.max(1, Math.round((costOf(m, mode, v.tokens) / top) * k.rows)) : 1
-      const bx = x + i * colW
-      for (let r = 0; r < k.rows; r++)
-        for (let c = 0; c < 3; c++)
-          g += `<circle cx="${bx + 3 + c * 8}" cy="${y + k.base - r * k.step}" r="2.8" fill="${r < n ? (mine ? HUEM : MUTED) : EMPTY}"/>`
-      if (mine) g += chipShapes(bx + 30, y + k.chip, 'YOU', HUEM, 10, 0.8).svg
-      g += t(bx + 30, y + k.price, usd(costOf(m, mode, v.tokens)), { size: 17, w: mine ? 700 : 500, fill: mine ? TEXT : MUTED })
-      g += t(bx + 30, y + k.name, m.NAME, { size: 11, w: 700, fill: mine ? HUEM : MUTED, ls: 0.8 })
-    })
-    return g
+  // The models whose cold re-cache costs less than this session's own, in MODELS order: what to switch to
+  // while the cache is cold. A model name as the card writes it: Opus, Sonnet.
+  const own = mineModel(v)
+  const name = (m: Model) => m.id[0].toUpperCase() + m.id.slice(1)
+  const cheaper = own ? MODELS.filter(m => coldCost(m, v.tokens) < coldCost(own, v.tokens)).map(m => `${name(m)} ${usd(coldCost(m, v.tokens))}`) : []
+  /**
+   * `head` and `items` joined with ` · `, items dropped until the line fits `px` (a character is estimated at
+   * 0.56 em: the mod cannot measure text), from the front by default, from the back with `keepFirst`; one item always stays.
+   */
+  const fitJoin = (head: string, items: string[], px: number, size: number, keepFirst = false) => {
+    const line = (l: string[]) => [head, ...l].filter(Boolean).join(' · ')
+    let list = items
+    while (list.length > 1 && line(list).length * size * 0.56 > px) list = keepFirst ? list.slice(0, -1) : list.slice(1)
+    return line(list)
   }
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   // What keeping the cache warm costs an hour, and what letting it go cold costs.
   const kw = keepWarmCost(v)
   const zoneKeep = (x: number, y: number, w: number) => {
-    const g = t(x, y + 24, 'KEEP WARM', { size: 14, ls: 1.4 })
+    const g = t(x, y + 24, cold && kw ? 'RE-CACHE NOW' : 'KEEP WARM', { size: 14, ls: 1.4 })
     if (!kw) return g + t(x, y + 62, 'model not priced', { size: 18, w: 500 })
+    if (cold) {
+      // Cold: what the next message costs on this model, the cheaper ones to switch to, and what warm would cost.
+      const cap = capSize(w)
+      const cheap = cheaper.length ? fitJoin('', cheaper, w, cap) : ''
+      return (
+        g +
+        big(x, y + 62, usd(kw.cold), 38, `on ${name(own!)}`, 15, HUE.cold) +
+        (cheap ? t(x, y + 88, cheap, { size: cap, w: 500 }) : '') +
+        t(x, y + (cheap ? 108 : 88), `warm costs ${usd(kw.perHour)}/h`, { size: cap, w: 500 })
+      )
+    }
     // The break-even line only where there is room for it, and only when it is under a day: both costs grow
     // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
     // always says ">24h" tells nothing.
@@ -417,7 +461,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       g +
       big(x, y + 62, usd(kw.perHour), 38, '/h', 15) +
       // The cold price in the cold hue, as the draft had it: it is what a cold cache costs.
-      `<text x="${x}" y="${y + 88}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">${cold ? 're-caching now costs' : 'going cold costs'} ` +
+      `<text x="${x}" y="${y + 88}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">going cold costs ` +
       `<tspan fill="${HUE.cold}" font-weight="700">${usd(kw.cold)}</tspan></text>` +
       last
     )
@@ -459,7 +503,12 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
 
   // The same two facts as text lines, for the layouts with no room for the drawing.
   const textLines = (x: number, y: number, size: number) => {
-    const keep = kw ? `keep warm ${usd(kw.perHour)}/h · ${cold ? 're-cache now' : 'going cold'} ${usd(kw.cold)}` : 'keep warm: model not priced'
+    const saved = spend?.saved ?? 0
+    const keep = !kw
+      ? 'keep warm: model not priced'
+      : cold
+        ? fitJoin(`re-cache ${usd(kw.cold)} on ${name(own!)}`, cheaper, W - 26 - 14, size)
+        : `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` + (saved > 0 ? ` · saved ${usd(saved)}` : '')
     const r = riskiest(pace)
     let paceText = 'pace unknown'
     let paceFill = MUTED
@@ -478,9 +527,44 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     return dot(y, cold ? HUE.cold : OK) + t(tx, y, keep, { size, w: 600, fill: TEXT }) + dot(y2, paceDot) + t(tx, y2, paceText, { size, w: 600, fill: paceFill })
   }
 
-  // The first row of every layout is 124 px; the text lines under it take 54 more, the cost row 124.
+  // The first row of every layout is 124 px; the text lines under it take 54 more.
   const ROW = 124
   const TEXT_ROWS = 54
+  /** The wide card's metric row: its own 90 px and the 2 px under the rule. */
+  const METRIC_H = 92
+
+  // The metric row: four cells on the row above's columns. A cell is its title, its figure (26 px, the unit after
+  // it) and its caption; while its figure is unknown it shows a dash and says when it will not be.
+  const metricsRow = (colW: number, colX: (i: number) => number, y: number) => {
+    const m = metrics!
+    const size = capSize(colW)
+    const words = (i: number, str: string) => t(colX(i), y + 80, esc(str), { size, w: 500 })
+    const cell = (i: number, title: string, known: boolean, fig: string, unit: string, caption: string) =>
+      t(colX(i), y + 22, title, { size: 14, ls: 1.4 }) +
+      big(colX(i), y + 54, known ? esc(fig) : '—', 26, known ? unit : '', 14) +
+      (known ? caption : words(i, 'after a few turns'))
+    const rule = (i: number) => vline(colX(i) - 13, y + 12, 66)
+    const growth = m.growth === null ? '' : `+${m.growth >= 1000 ? tok(m.growth) : Math.round(m.growth)} tokens a turn`
+    const runway = m.runway === null ? '' : m.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(m.runway)}`
+    // A subagent type is cut to 12 characters; the second type goes when the two do not fit the column.
+    const top = fitJoin('', m.top.map(([k, c]) => `${k.slice(0, 12)} ${usd(c)}`), colW, size, true)
+    // The last turn, flagged in the danger colour when it is far above the average.
+    const last =
+      m.last === null
+        ? ''
+        : `<text x="${colX(1)}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">last ${usd(m.last)}` +
+          (m.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${m.multiple}× avg</tspan>` : '') +
+          '</text>'
+    return (
+      cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, 'of input read from cache')) +
+      rule(1) +
+      cell(1, 'PER TURN', m.avg !== null, usd(m.avg ?? 0), 'avg', last) +
+      rule(2) +
+      cell(2, 'CONTEXT RUNWAY', m.runway !== null, runway, 'turns', words(2, growth)) +
+      rule(3) +
+      cell(3, 'SUBAGENTS', true, usd(m.subs), '', words(3, m.subs > 0 && top ? top : 'none this thread'))
+    )
+  }
   let H: number
   let g: string
   if (kind === 'wide') {
@@ -495,36 +579,24 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       zoneKeep(colX(2), 0, colW) +
       vline(colX(3) - 13, 18, 88) +
       zonePace(colX(3), 0, colW)
-    if (cold) {
-      H = ROW * 2
-      g = row + hline(ROW) + zoneCost(13, ROW + 2, Math.min(160, (W - 26) / 4))
+    // The metric row under the rule, once any of its figures is known.
+    const showMetrics = !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.runway !== null || metrics.subs > 0)
+    if (showMetrics) {
+      H = ROW + METRIC_H
+      g = row + hline(ROW) + metricsRow(colW, colX, ROW + 2)
     } else {
       H = ROW
       g = row
     }
   } else if (kind === 'stacked') {
     const half = Math.floor(W / 2)
-    const row = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 20, 18)
-    const rowH = ROW + TEXT_ROWS
-    if (cold) {
-      H = rowH + ROW
-      g = row + hline(rowH) + zoneCost(13, rowH + 2, Math.min(160, (W - 26) / 4))
-    } else {
-      H = rowH
-      g = row
-    }
+    g = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 20, 18)
+    H = ROW + TEXT_ROWS
   } else {
     // Narrow: the cache row above already shows Robo and the chip.
     const size = W < 300 ? 14 : 15
-    const zones = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true }) + hline(176) + textLines(13, 198, size)
-    const rowH = 176 + 46
-    if (cold) {
-      H = rowH + 114
-      g = zones + hline(rowH) + zoneCost(13, rowH + 2, (W - 26) / 4, { compact: true })
-    } else {
-      H = rowH
-      g = zones
-    }
+    g = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true }) + hline(176) + textLines(13, 198, size)
+    H = 176 + 46
   }
   const h = H + CARD_TOP
   const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
@@ -536,6 +608,6 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
     (days ? ` Spend today ${usd(today)}, this week ${usd(week)}.` : '') +
     ((spend?.saved ?? 0) > 0 ? ` Keep-warm pings have saved about ${usd(spend!.saved!)}.` : '') +
-    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? 're-caching now costs' : 'going cold costs'} ${usd(kw.cold)}.` : '')
+    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }
