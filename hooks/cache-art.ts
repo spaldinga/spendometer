@@ -348,8 +348,9 @@ const METRIC_H = 92
 // The card is one layout at every width, a pace strip across the top and under it the columns that fit
 // (cardColsOf), in the order of what matters most: DELEGATION, IN CACHE, SPEND, KEEP WARM. A zone with no
 // column of its own is a status line below; the metric row (cache hit, cost per turn, by model) joins from
-// three columns. Its height depends on the width only, never on the data.
-export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null): { source: string; w: number; h: number; alt: string } => {
+// three columns, and only while the card stays within maxH drawn px (else the band scrolls). Its height
+// depends on the width and maxH only, never on the data.
+export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, maxH = Infinity): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -713,7 +714,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   }
 
   // The metric row under its rule, once any of its figures is known and there are columns enough to carry it.
-  const showMetrics = n >= 3 && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
+  const showMetrics = n >= 3 && H + METRIC_H + CARD_TOP <= maxH && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
   if (showMetrics) {
     const mcolW = Math.floor((W - 26 - 2 * 26) / 3)
     g += hline(H) + metricsRow(mcolW, i => 13 + i * (mcolW + 26), H + 2)

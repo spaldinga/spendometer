@@ -18,7 +18,7 @@ import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, textCols,
+  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -1311,9 +1311,11 @@ export const register: Register = on => {
       const W = bandPx(columns)
       const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
       const shownH = (h: number) => Math.round(h * scale)
-      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)))
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
+      // The rows left under the band's own rows, as drawn px: the card drops its metric row to stay within them.
+      const cardMaxH = Math.floor(((maxRows - rowsAbove) * ROW_PX) / scale)
+      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), cardMaxH)
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
       showProgress = fit.progress
       if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${cardColsOf(W)} cols`

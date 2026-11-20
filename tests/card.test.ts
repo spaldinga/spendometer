@@ -437,6 +437,16 @@ test('under three columns there is no metric row, whatever the card is given', (
   }
 })
 
+test('the metric row goes when the card would pass maxH, and stays when it just fits', () => {
+  for (const w of [1100, 1400]) {
+    const full = cardSvg(WARM, w, SPEND, [PACE_OK], METRICS)
+    expect(cardSvg(WARM, w, SPEND, [PACE_OK], METRICS, full.h).h).toBe(full.h)
+    const short = cardSvg(WARM, w, SPEND, [PACE_OK], METRICS, full.h - 1)
+    expect(short.h).toBe(full.h - 92)
+    expect(short.source).not.toContain('CACHE HIT')
+  }
+})
+
 test('the metric figures and captions', () => {
   const s = row(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS).source))
   expect(s).toContain('<tspan font-size="26">96%</tspan>')

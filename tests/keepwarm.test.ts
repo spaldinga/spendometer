@@ -527,7 +527,7 @@ test('the wide open card shows the metric row once the record has figures', asyn
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(2, 1, 0.5), turns: 4, paidTurns: 2, readTok: 90, inTok: 100, ctxPrev: 100000, growth: 5000, byType: { Explore: 1 } } } })
   await seed($, 18)
-  await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } }).then(async band => {
+  await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160, maxRows: 30 } }).then(async band => {
     await band.press({ key: 'cache-fold' })
     const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
     for (const t of ['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION']) expect(svgs).toContain(t)
