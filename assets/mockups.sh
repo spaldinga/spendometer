@@ -53,7 +53,10 @@ wide() { # name cold metrics
   head_ $W $H; toprow "$2" $W
   local x0 x1 x2 x3; x0=$(col 0 $cw); x1=$(col 1 $cw); x2=$(col 2 $cw); x3=$(col 3 $cw)
   if [ "$2" = 1 ]; then title "$x0" 82 RE-CACHE; else title "$x0" 82 'IN CACHE'; fi
-  big "$x0" 114 190k tokens; dots "$x0" 132 10 "$hue"; t "$x0" 166 12 500 "$MUTED" '19% of the 1M context · 810k free'
+  if [ "$3" = 1 ]; then # with the metric row, the runway is a second caption line
+    big "$x0" 110 190k tokens; dots "$x0" 124 10 "$hue"; t "$x0" 152 12 500 "$MUTED" '19% of the 1M context · 810k free'
+    t "$x0" 172 12 500 "$MUTED" '~40 turns left at +6k a turn'
+  else big "$x0" 114 190k tokens; dots "$x0" 132 10 "$hue"; t "$x0" 166 12 500 "$MUTED" '19% of the 1M context · 810k free'; fi
   vline $(( x1 - 12 )) 70 110; title "$x1" 82 SPEND; big "$x1" 114 '≈$16.61' 'this thread'; bars "$x1" 148; t "$x1" 166 12 500 "$MUTED" 'today $3.10 · week $16.61'
   vline $(( x2 - 12 )) 70 110
   if [ "$2" = 1 ]; then
@@ -73,13 +76,26 @@ wide() { # name cold metrics
   printf '<text x="%s" y="164" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">runs out in ~2h 40m</tspan> · resets 3h 50m</text>' $tx "$MUTED" "$DANGER"
   if [ "$3" = 1 ]; then
     hline 18 196 $(( W - 36 ))
-    local k; for k in "0|CACHE HIT|96%||of input read from cache" "1|PER TURN|\$0.38|avg|last \$2.11 · 5× avg" "2|CONTEXT RUNWAY|~40|turns|+6k tokens a turn" "3|SUBAGENTS|\$5.14||Explore \$3.90 · coder \$1.24"; do
-      IFS='|' read -r i ti fig un cap <<<"$k"; local x; x=$(col "$i" $cw)
+    local k x; for k in "0|CACHE HIT|96%||\$0.42 per 1M tokens" "1|PER TURN|\$0.38|avg|"; do
+      IFS='|' read -r i ti fig un cap <<<"$k"; x=$(col "$i" $cw)
       [ "$i" -gt 0 ] && vline $(( x - 12 )) 206 100
       title "$x" 222 "$ti"; big "$x" 254 "$fig" "$un"
-      if [ "$i" = 1 ]; then printf '<text x="%s" y="278" font-size="12" font-weight="500" fill="%s">last $2.11 · <tspan fill="%s">5× avg</tspan></text>' "$x" "$MUTED" "$DANGER"
-      else t "$x" 278 12 500 "$MUTED" "$cap"; fi
+      if [ "$i" = 1 ]; then printf '<text x="%s" y="284" font-size="12" font-weight="500" fill="%s">last $2.11 · <tspan fill="%s">5× avg</tspan></text>' "$x" "$MUTED" "$DANGER"
+      else t "$x" 284 12 500 "$MUTED" "$cap"; fi
     done
+    # BY MODEL: the biggest share as the figure, a split bar of every model, the two largest costs as the caption.
+    x=$x2; vline $(( x - 12 )) 206 100; title "$x" 222 'BY MODEL'
+    printf '<text x="%s" y="254" font-weight="600" fill="%s"><tspan font-size="26">Opus</tspan><tspan font-size="26" fill="%s" dx="8">78%%</tspan></text>' "$x" "$TEXT" "$WARM"
+    local o=$(( (cw - 4) * 78 / 100 )) s=$(( (cw - 4) * 17 / 100 )); local h=$(( cw - 4 - o - s ))
+    rect "$x" 262 $o 6 3 "$WARM"; rect $(( x + o + 2 )) 262 $s 6 3 "$ORANGE"; rect $(( x + o + s + 4 )) 262 $h 6 3 "$YELLOW"
+    printf '<text x="%s" y="284" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">■</tspan> $12.96 · <tspan fill="%s">■</tspan> Sonnet $2.90</text>' "$x" "$MUTED" "$WARM" "$ORANGE"
+    # DELEGATION: what subagents saved against the main model, cost and time compare bars, work against wall time.
+    x=$x3; vline $(( x - 12 )) 206 100; title "$x" 222 DELEGATION
+    printf '<text x="%s" y="254" font-weight="600" fill="%s"><tspan font-size="26">≈$3.40</tspan><tspan font-size="13" font-weight="500" fill="%s" dx="6">saved</tspan></text>' "$x" "$OK" "$MUTED"
+    local rx=$(( x + 150 )); local bx=$(( rx + 36 )); local bw=$(( x + cw - bx ))
+    t $rx 242 12 600 "$MUTED" cost; rect $bx 236 $bw 6 3 "$EMPTY"; rect $bx 236 $(( bw * 40 / 100 )) 6 3 "$ORANGE"
+    t $rx 256 12 600 "$MUTED" time; rect $bx 250 $bw 6 3 "$EMPTY"; rect $bx 250 $(( bw * 42 / 100 )) 6 3 "$YELLOW"
+    t "$x" 284 12 500 "$MUTED" '12m of agent work in 5m · 2.4× faster'
   fi
   echo '</svg>'
 }
