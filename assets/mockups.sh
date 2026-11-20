@@ -48,80 +48,91 @@ toprow() { # cold(0/1) width
 
 col() { echo $(( 18 + $1 * ($2 + 24) )); } # col i colW
 
-wide() { # name cold metrics
-  local W=1200 H=232 cw=$(( (1200 - 36 - 72) / 4 )) hue=$WARM; [ "$3" = 1 ] && H=330; [ "$2" = 1 ] && hue=$COLD
-  head_ $W $H; toprow "$2" $W
-  local x0 x1 x2 x3; x0=$(col 0 $cw); x1=$(col 1 $cw); x2=$(col 2 $cw); x3=$(col 3 $cw)
-  if [ "$2" = 1 ]; then title "$x0" 82 RE-CACHE; else title "$x0" 82 'IN CACHE'; fi
-  if [ "$3" = 1 ]; then # with the metric row, the runway is a second caption line
-    big "$x0" 110 190k tokens; dots "$x0" 124 10 "$hue"; t "$x0" 152 12 500 "$MUTED" '19% of the 1M context · 810k free'
-    t "$x0" 172 12 500 "$MUTED" '~40 turns left at +6k a turn'
-  else big "$x0" 114 190k tokens; dots "$x0" 132 10 "$hue"; t "$x0" 166 12 500 "$MUTED" '19% of the 1M context · 810k free'; fi
-  vline $(( x1 - 12 )) 70 110; title "$x1" 82 SPEND; big "$x1" 114 '≈$16.61' 'this thread'; bars "$x1" 148; t "$x1" 166 12 500 "$MUTED" 'today $3.10 · week $16.61'
-  vline $(( x2 - 12 )) 70 110
-  if [ "$2" = 1 ]; then
-    title "$x2" 82 'RE-CACHE NOW'
-    printf '<text x="%s" y="114" font-weight="600" fill="%s"><tspan font-size="26">$1.52</tspan><tspan font-size="13" font-weight="500" fill="%s" dx="6">on Opus</tspan></text>' "$x2" "$COLD" "$MUTED"
-    t "$x2" 140 12 500 "$TEXT" 'Sonnet $0.76 · Haiku $0.19'; t "$x2" 160 12 500 "$MUTED" 'warm costs $0.05/h'
-  else
-    title "$x2" 82 'KEEP WARM'; big "$x2" 114 '$0.05' /h
-    printf '<text x="%s" y="140" font-size="12" font-weight="500" fill="%s">going cold costs <tspan fill="%s" font-weight="700">$1.52</tspan></text>' "$x2" "$MUTED" "$COLD"
-    t "$x2" 160 12 500 "$MUTED" 'saved $4.20 · pings $0.31'
-  fi
-  vline $(( x3 - 12 )) 70 110; title "$x3" 82 'PACE VS RESET'
-  local tx=$(( x3 + 28 )) tw=$(( cw - 28 ))
-  t "$x3" 106 12 700 "$ORANGE" 7D; track $tx 98 $tw $tw "$ORANGE" $(( tx + tw * 40 / 100 ))
-  printf '<text x="%s" y="122" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">lasts ~8d 14h</tspan> · resets 3d 3h <tspan fill="%s" font-weight="700">✓</tspan></text>' $tx "$MUTED" "$TEXT" "$OK"
-  t "$x3" 148 12 700 "$YELLOW" 5H; track $tx 140 $tw $(( tw * 62 / 100 )) "$DANGER" $(( tx + tw * 88 / 100 ))
-  printf '<text x="%s" y="164" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">runs out in ~2h 40m</tspan> · resets 3h 50m</text>' $tx "$MUTED" "$DANGER"
-  if [ "$3" = 1 ]; then
-    hline 18 196 $(( W - 36 ))
-    local k x; for k in "0|CACHE HIT|96%||\$0.42 per 1M tokens" "1|PER TURN|\$0.38|avg|"; do
-      IFS='|' read -r i ti fig un cap <<<"$k"; x=$(col "$i" $cw)
-      [ "$i" -gt 0 ] && vline $(( x - 12 )) 206 100
-      title "$x" 222 "$ti"; big "$x" 254 "$fig" "$un"
-      if [ "$i" = 1 ]; then printf '<text x="%s" y="284" font-size="12" font-weight="500" fill="%s">last $2.11 · <tspan fill="%s">5× avg</tspan></text>' "$x" "$MUTED" "$DANGER"
-      else t "$x" 284 12 500 "$MUTED" "$cap"; fi
-    done
-    # BY MODEL: the biggest share as the figure, a split bar of every model, the two largest costs as the caption.
-    x=$x2; vline $(( x - 12 )) 206 100; title "$x" 222 'BY MODEL'
-    printf '<text x="%s" y="254" font-weight="600" fill="%s"><tspan font-size="26">Opus</tspan><tspan font-size="26" fill="%s" dx="8">78%%</tspan></text>' "$x" "$TEXT" "$WARM"
-    local o=$(( (cw - 4) * 78 / 100 )) s=$(( (cw - 4) * 17 / 100 )); local h=$(( cw - 4 - o - s ))
-    rect "$x" 262 $o 6 3 "$WARM"; rect $(( x + o + 2 )) 262 $s 6 3 "$ORANGE"; rect $(( x + o + s + 4 )) 262 $h 6 3 "$YELLOW"
-    printf '<text x="%s" y="284" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">■</tspan> $12.96 · <tspan fill="%s">■</tspan> Sonnet $2.90</text>' "$x" "$MUTED" "$WARM" "$ORANGE"
-    # DELEGATION: what subagents saved against the main model, cost and time compare bars, work against wall time.
-    x=$x3; vline $(( x - 12 )) 206 100; title "$x" 222 DELEGATION
-    printf '<text x="%s" y="254" font-weight="600" fill="%s"><tspan font-size="26">≈$3.40</tspan><tspan font-size="13" font-weight="500" fill="%s" dx="6">saved</tspan></text>' "$x" "$OK" "$MUTED"
-    local rx=$(( x + 150 )); local bx=$(( rx + 36 )); local bw=$(( x + cw - bx ))
-    t $rx 242 12 600 "$MUTED" cost; rect $bx 236 $bw 6 3 "$EMPTY"; rect $bx 236 $(( bw * 40 / 100 )) 6 3 "$ORANGE"
-    t $rx 256 12 600 "$MUTED" time; rect $bx 250 $bw 6 3 "$EMPTY"; rect $bx 250 $(( bw * 42 / 100 )) 6 3 "$YELLOW"
-    t "$x" 284 12 500 "$MUTED" '12m of agent work in 5m · 2.4× faster'
-  fi
-  echo '</svg>'
+# The row above the card on a narrow band: percent left, the cost, the chip and the icon buttons.
+narrowrow() { # cold
+  local hue=$WARM word=WARM next='32m'; [ "$1" = 1 ] && hue=$COLD word=COLD next='$1.52 next'
+  t 18 34 13 700 "$ORANGE" '69% left'; t 90 34 13 700 "$TEXT" '≈$16.61'; chip 156 34 "$word" "$hue"; t $(( 156 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
+  btn 470 34 28 '−'; btn 504 34 36 K; btn 546 34 36 W; rect 18 50 564 2 1 "$ORANGE"
 }
 
-compact() { # cold
-  local W=600 H=262 hue=$WARM word=WARM next='32m'; [ "$1" = 1 ] && hue=$COLD word=COLD next='$1.52 next'
+# A status line: a 4 px dot, then the text. ln y dotfill text
+ln() { printf '<circle cx="22" cy="%s" r="4" fill="%s"/>' $(( $1 - 4 )) "$2"; t 34 "$1" 12.5 600 "$TEXT" "$3"; }
+
+# Layout B, one layout at every width: the pace strip across the top, then as many columns as fit
+# (DELEGATION, IN CACHE, SPEND, KEEP WARM), a status line for each zone without a column, and from three
+# columns the metric row. W 1200 is three columns, W 600 one.
+card_b() { # W cold metrics
+  local W=$1 cold=$2 mx=$3 n=1 hue=$WARM
+  [ "$W" -ge 1000 ] && n=3
+  [ "$cold" = 1 ] && hue=$COLD
+  local cw=$(( (W - 36 - (n - 1) * 24) / n )) lines=$(( 4 - n )) sh H
+  sh=$(( 302 + 25 * (lines - 1) + 14 )); H=$sh
+  [ "$mx" = 1 ] && [ "$n" = 3 ] && H=$(( sh + 106 ))
   head_ $W $H
-  t 18 34 13 700 "$ORANGE" '69% left'; t 90 34 13 700 "$TEXT" '≈$16.61'; chip 156 34 "$word" "$hue"; t $(( 156 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
-  btn 470 34 28 '−'; btn 504 34 36 K; btn 546 34 36 W; rect 18 50 $(( W - 36 )) 2 1 "$ORANGE"
-  if [ "$1" = 1 ]; then title 18 82 RE-CACHE; else title 18 82 'IN CACHE'; fi
-  big 18 114 190k tokens; dots 18 132 10 "$hue"; t 18 166 12 500 "$MUTED" '19% · 810k free'
-  vline 300 70 110; title 312 82 SPEND; big 312 114 '≈$16.61' 'this thread'; bars 312 148; t 312 166 12 500 "$MUTED" 'today $3.10 · week $16.61'
-  hline 18 186 $(( W - 36 ))
-  if [ "$1" = 1 ]; then
-    printf '<circle cx="22" cy="210" r="4" fill="%s"/>' "$COLD"; t 34 214 12.5 600 "$TEXT" 're-cache $1.52 on Opus · Sonnet $0.76 · Haiku $0.19'
-  else
-    printf '<circle cx="22" cy="210" r="4" fill="%s"/>' "$OK"; t 34 214 12.5 600 "$TEXT" 'keep warm $0.05/h · going cold $1.52 · saved $4.20'
+  if [ "$n" = 3 ]; then toprow "$cold" "$W"; else narrowrow "$cold"; fi
+
+  # The pace strip: label, track (55% of the strip after the label), the forecast to the right on the same line.
+  title 18 82 'PACE VS RESET'
+  local tx=$(( 18 + 28 )) tw=$(( (W - 36 - 28) * 55 / 100 )) wx lowl='runs out in ~2h 40m'
+  wx=$(( tx + tw + 12 )); [ "$W" -lt 1000 ] && lowl='out in ~2h 40m'
+  t 18 106 12 700 "$ORANGE" 7D; track $tx 98 $tw $tw "$ORANGE" $(( tx + tw * 36 / 100 ))
+  printf '<text x="%s" y="106" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">lasts ~8d 14h</tspan> · resets 3d 3h <tspan fill="%s" font-weight="700">✓</tspan></text>' $wx "$MUTED" "$TEXT" "$OK"
+  t 18 134 12 700 "$YELLOW" 5H; track $tx 126 $tw $(( tw * 70 / 100 )) "$DANGER" $(( tx + tw - 2 ))
+  printf '<text x="%s" y="134" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">%s</tspan> · resets 3h 50m</text>' $wx "$MUTED" "$DANGER" "$lowl"
+  hline 18 150 $(( W - 36 ))
+
+  # DELEGATION, first: the saving, cost and time compare bars, the work against the time it took.
+  local x0 x1 x2; x0=$(col 0 $cw); x1=$(col 1 $cw); x2=$(col 2 $cw)
+  title "$x0" 172 DELEGATION
+  printf '<text x="%s" y="204" font-weight="600" fill="%s"><tspan font-size="26">≈$3.40</tspan><tspan font-size="13" font-weight="500" fill="%s" dx="6">saved</tspan></text>' "$x0" "$OK" "$MUTED"
+  local rx=$(( x0 + 150 )) bx bw; bx=$(( rx + 36 )); bw=$(( x0 + cw - bx )); [ "$bw" -gt 160 ] && bw=160
+  t $rx 190 12 600 "$MUTED" cost; rect $bx 184 $bw 6 3 "$EMPTY"; rect $bx 184 $(( bw * 40 / 100 )) 6 3 "$ORANGE"
+  t $rx 204 12 600 "$MUTED" time; rect $bx 198 $bw 6 3 "$EMPTY"; rect $bx 198 $(( bw * 42 / 100 )) 6 3 "$YELLOW"
+  t "$x0" 254 12 500 "$MUTED" '12m of agent work in 5m · 2.4× faster'
+
+  if [ "$n" = 3 ]; then
+    # IN CACHE with its runway line, and SPEND.
+    vline $(( x1 - 12 )) 160 110
+    if [ "$cold" = 1 ]; then title "$x1" 172 RE-CACHE; else title "$x1" 172 'IN CACHE'; fi
+    big "$x1" 200 190k tokens; dots "$x1" 214 10 "$hue"
+    t "$x1" 246 12 500 "$MUTED" '19% of the 1M context · 810k free'; t "$x1" 266 12 500 "$MUTED" '~40 turns left at +6k a turn'
+    vline $(( x2 - 12 )) 160 110
+    title "$x2" 172 SPEND; big "$x2" 204 '≈$16.61' 'this thread'; bars "$x2" 238; t "$x2" 254 12 500 "$MUTED" 'today $3.10 · week $16.61'
   fi
-  printf '<circle cx="22" cy="236" r="4" fill="%s"/>' "$DANGER"; t 34 240 12.5 600 "$DANGER" '5H runs out in ~2h 40m · resets 3h 50m'
+
+  # The zones with no column: one status line each.
+  hline 18 280 $(( W - 36 ))
+  local keepdot=$OK keeptxt='keep warm $0.05/h · going cold $1.52 · saved $4.20'
+  [ "$cold" = 1 ] && keepdot=$COLD keeptxt='re-cache $1.52 on Opus · Sonnet $0.76 · Haiku $0.19'
+  if [ "$n" = 1 ]; then
+    ln 302 "$hue" '190k in cache · 19% of the 1M context · 810k free'
+    ln 327 "$MUTED" '≈$16.61 this thread · today $3.10 · week $16.61'
+    ln 352 "$keepdot" "$keeptxt"
+  else
+    ln 302 "$keepdot" "$keeptxt"
+  fi
+
+  if [ "$mx" = 1 ] && [ "$n" = 3 ]; then
+    # The metric row, three cells: cache hit, cost per turn, by model.
+    local m=$sh x
+    hline 18 $m $(( W - 36 ))
+    x=$x0; title "$x" $(( m + 26 )) 'CACHE HIT'; big "$x" $(( m + 58 )) 96% ''; t "$x" $(( m + 88 )) 12 500 "$MUTED" '$0.42 per 1M tokens'
+    x=$x1; vline $(( x - 12 )) $(( m + 10 )) 100; title "$x" $(( m + 26 )) 'PER TURN'; big "$x" $(( m + 58 )) '$0.38' avg
+    printf '<text x="%s" y="%s" font-size="12" font-weight="500" fill="%s">last $2.11 · <tspan fill="%s">5× avg</tspan></text>' "$x" $(( m + 88 )) "$MUTED" "$DANGER"
+    # BY MODEL: the biggest share as the figure, a split bar of every model, the two largest costs as the caption.
+    x=$x2; vline $(( x - 12 )) $(( m + 10 )) 100; title "$x" $(( m + 26 )) 'BY MODEL'
+    printf '<text x="%s" y="%s" font-weight="600" fill="%s"><tspan font-size="26">Opus</tspan><tspan font-size="26" fill="%s" dx="8">78%%</tspan></text>' "$x" $(( m + 58 )) "$TEXT" "$WARM"
+    local o=$(( (cw - 4) * 78 / 100 )) s=$(( (cw - 4) * 17 / 100 )) h
+    h=$(( cw - 4 - o - s ))
+    rect "$x" $(( m + 66 )) $o 6 3 "$WARM"; rect $(( x + o + 2 )) $(( m + 66 )) $s 6 3 "$ORANGE"; rect $(( x + o + s + 4 )) $(( m + 66 )) $h 6 3 "$YELLOW"
+    printf '<text x="%s" y="%s" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">■</tspan> $12.96 · <tspan fill="%s">■</tspan> Sonnet $2.90</text>' "$x" $(( m + 88 )) "$MUTED" "$WARM" "$ORANGE"
+  fi
   echo '</svg>'
 }
 
 for m in dark light; do
   palette $m
-  wide 0 0 1 > "$out/card-wide-warm-$m.svg"
-  wide 0 1 0 > "$out/card-wide-cold-$m.svg"
-  compact 0 > "$out/card-compact-warm-$m.svg"
-  compact 1 > "$out/card-compact-cold-$m.svg"
+  card_b 1200 0 1 > "$out/card-b-1200-warm-$m.svg"
+  card_b 600 0 0 > "$out/card-b-600-warm-$m.svg"
+  card_b 600 1 0 > "$out/card-b-600-cold-$m.svg"
 done

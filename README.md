@@ -6,8 +6,8 @@ still warm, how far the current request has come, and which subagents are runnin
 `git reset --hard` until you have seen what it would throw away.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-wide-warm-dark.svg">
-  <img alt="The wavebar band with its card open: usage left on the 7-day and 5-hour limits, the conversation's cost, the cache WARM with 32 minutes left, and a card with the cache size, the spend over seven days, what keeping the cache warm costs and saved, the pace of each limit against its reset, the cache hit rate, cost per turn, turns of context left and subagent cost" src="assets/card-wide-warm-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
+  <img alt="The wavebar band with its card open: usage left on the 7-day and 5-hour limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
 wavebar is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
@@ -48,37 +48,33 @@ details.
 
 ### A card with the numbers behind it
 
-Press `+` on the band (or type `/wavebar fold`) to open the card.
+Press `+` on the band (or type `/wavebar fold`) to open the card. It has one layout at every
+width. Across the top, always, is the pace of each usage window against its reset, one line a
+window: the bar is the time left at this pace, the tick is the reset, and the words say whether it
+lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
+the cache, the spend (this thread and the last seven days, today in orange) and what keeping the
+cache warm costs. A zone with no column of its own becomes one status line below. From three
+columns the card adds a row with the cache hit rate, the cost per turn (red when the last turn cost
+three times the average or more) and the cost by model.
 
-**Wide and warm.** Four columns, from about 108 columns: the cache, the spend (this thread and
-the last seven days, today in orange), what keeping the cache warm costs and saved, and the pace of
-each usage window against its reset. The row under them shows the cache hit rate, the cost per turn
-(red when the last turn cost three times the average or more), the turns of context left, and what
-subagents have cost.
+**Wide.** Three columns and the metric row.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-wide-warm-dark.svg">
-  <img alt="The open card, wide and warm: 190k tokens in cache, $16.61 spent in this thread with seven day bars, keep warm $0.05 an hour with $4.20 saved, the 7-day window lasting past its reset and the 5-hour window running out in about 2h 40m, and a row with a 96% cache hit, $0.38 a turn, about 40 turns of context left and $5.14 on subagents" src="assets/card-wide-warm-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
+  <img alt="The open card, wide and warm: the pace of the 7-day window lasting past its reset and the 5-hour window running out in about 2h 40m, then columns for delegation (about $3.40 saved), 190k tokens in cache with about 40 turns of context left, and $16.61 spent in this thread with seven day bars, a status line for keep warm at $0.05 an hour with $4.20 saved, and a row with a 96% cache hit, $0.38 a turn and Opus at 78% of the cost" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
-**Wide and cold.** The cache has gone cold: the third column says what re-caching costs on this
-model and on the cheaper ones.
+**Narrow.** One column and a status line each for the cache, the spend and keep warm (or
+re-cache, once the cache has gone cold and the line says what it costs on this model and on the
+cheaper ones).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-wide-cold-dark.svg">
-  <img alt="The open card, wide and cold: re-caching now costs $1.52 on Opus, $0.76 on Sonnet and $0.19 on Haiku" src="assets/card-wide-cold-light.svg">
-</picture>
-
-**Compact.** On a narrower band: the cache and the spend, then two lines with a status dot, keep
-warm (or re-cache) and the usage window most at risk.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-compact-warm-dark.svg">
-  <img alt="The compact card, warm: the cache and the spend, then keep warm $0.05 an hour with $4.20 saved, and the 5-hour window running out in about 2h 40m" src="assets/card-compact-warm-light.svg" width="49%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-600-warm-dark.svg">
+  <img alt="The narrow card, warm: the pace strip, the delegation column, and status lines for the cache, the spend and keep warm $0.05 an hour with $4.20 saved" src="assets/card-b-600-warm-light.svg" width="49%">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-compact-cold-dark.svg">
-  <img alt="The compact card, cold: re-cache $1.52 on Opus, with Sonnet and Haiku cheaper" src="assets/card-compact-cold-light.svg" width="49%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-600-cold-dark.svg">
+  <img alt="The narrow card, cold: re-cache $1.52 on Opus, with Sonnet and Haiku cheaper" src="assets/card-b-600-cold-light.svg" width="49%">
 </picture>
 
 ### Progress you can read at a glance, in six styles

@@ -4,6 +4,7 @@
 import { SANS } from './font'
 import { RUNWAY_CAP } from './metrics'
 import type { Metrics } from './metrics'
+import { cardColsOf } from './layout'
 import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'
@@ -148,16 +149,6 @@ export const fmtBreakEven = (h: number): string => (h > 24 ? '>24h' : `~${Math.m
 
 /** A usage window as the pace zone draws it: its label and colour, when it resets and its pace (null while unknown). */
 export type PaceRow = { label: string; color: string; untilResetMs: number | null; pace: Pace | null }
-
-/** The window most at risk: the one with the least time to spare past its reset (a negative margin runs out first). */
-export const riskiest = (rows: readonly PaceRow[]): (PaceRow & { pace: Pace }) | null => {
-  let best: (PaceRow & { pace: Pace }) | null = null
-  for (const r of rows) {
-    if (!r.pace) continue
-    if (!best || r.pace.lastsMs - r.pace.untilResetMs < best.pace.lastsMs - best.pace.untilResetMs) best = r as PaceRow & { pace: Pace }
-  }
-  return best
-}
 
 // ---------- SVG helpers ----------
 const mix = (a: string, b: string, t: number): string =>
@@ -344,18 +335,34 @@ export type CardSpend = { main: number; subs: number; days?: number[]; saved?: n
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
 
-// The card shows what the band's row does not: the size of the cache, what the conversation has
-// cost, what keeping the cache warm costs (or, while cold, what re-caching costs and on which models
-// it is cheaper) and, on the wide card, a row of metrics.
-export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null): { source: string; w: number; h: number; alt: string } => {
+/** The pace strip's height: its title and two one-line rows. */
+const PACE_H = 88
+/** The row of columns: 124 px, the runway line's room included. */
+const ROW = 124
+/** A status line's pitch, and what a block of them takes under its rule: the first baseline 24 px down, 7 px under the last. */
+const STATUS_PITCH = 27
+const statusH = (lines: number): number => STATUS_PITCH * lines + 4
+/** The metric row: its own 90 px and the 2 px under the rule. */
+const METRIC_H = 92
+
+// The card is one layout at every width, a pace strip across the top and under it the columns that fit
+// (cardColsOf), in the order of what matters most: DELEGATION, IN CACHE, SPEND, KEEP WARM. A zone with no
+// column of its own is a status line below; the metric row (cache hit, cost per turn, by model) joins from
+// three columns. Its height depends on the width only, never on the data.
+export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const t = (x: number, y: number, str: string, o: TextOpts = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 11}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
     ` letter-spacing="${o.ls ?? 0}" text-anchor="${o.anchor || 'start'}">${str}</text>`
   const vline = (x: number, y: number, h: number) => `<rect x="${x}" y="${y}" width="1" height="${h}" fill="${LINE}"/>`
   const hline = (y: number) => `<rect x="13" y="${y}" width="${W - 26}" height="1" fill="${LINE}"/>`
+  /** The first of `variants` that fits `px` (a character is estimated at 0.56 em: the mod cannot measure text), else the last. */
+  const pick = (variants: string[], px: number, size: number, em = 0.56) => variants.find(s => s.length * size * em <= px) ?? variants[variants.length - 1]
+  /** A column caption: the card reserves CARD_COL_PX for 33 characters at 18 px, so 0.53 em a character here. */
+  const capPick = (variants: string[], px: number, size: number) => pick(variants, px, size, 0.53)
 
   const mainCost = spend?.main ?? 0
   const subsCost = spend?.subs ?? 0
@@ -379,36 +386,29 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   // Drawn at 12 px a column, shown at DESKTOP_COL_PX (8.6): about 70%. 18 shows as about 13 px, the band's own text size.
   const capSize = (w: number) => (w < 230 ? 16 : 18)
 
-  // The conversation's size, as a dot grid of the context window.
-  // The runway as a second caption line under IN CACHE (wide card only), once the context growth is known.
-  const runwayLine =
-    metrics && metrics.runway !== null && metrics.growth !== null
-      ? `${metrics.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(metrics.runway)}`} turns left at +${metrics.growth >= 1000 ? tok(metrics.growth) : Math.round(metrics.growth)} a turn`
-      : ''
-  const zoneSize = (x: number, y: number, w: number, o: { compact?: boolean; runway?: string } = {}) => {
-    const caption = `${Math.round(share * 100)}% of the ${tok(v.window)} context · ${tok(free)} free`
+  // The runway as a second caption line under IN CACHE, once the context growth is known.
+  const runwayTurns =
+    metrics && metrics.runway !== null && metrics.growth !== null ? (metrics.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(metrics.runway)}`) : ''
+  const runwayLine = runwayTurns ? `${runwayTurns} turns left at +${metrics!.growth! >= 1000 ? tok(metrics!.growth!) : Math.round(metrics!.growth!)} a turn` : ''
+  const pct = Math.round(share * 100)
+  const zoneSize = (x: number, y: number, w: number, o: { runway?: string[] } = {}) => {
+    const caption = capPick([`${pct}% of the ${tok(v.window)} context · ${tok(free)} free`, `${pct}% of ${tok(v.window)} · ${tok(free)} free`], w, capSize(w))
     const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { size: 14, ls: 1.4 })
-    if (o.compact) {
-      const cols = 20
-      const gx = x + w - (cols - 1) * 9.6 - 6
-      const lit = Math.round(share * cols * 2)
-      return g + big(x, y + 56, tok(v.tokens), 26, 'tokens', 14) + dots(gx, y + 42, cols, 9.6, 2, i => (i < lit ? HUEM : EMPTY)) + t(x, y + 76, caption, { size: capSize(w), w: 500 })
-    }
     // 25 dots a row on the page; fewer only where the band is too narrow for them.
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
     const lit = Math.round(share * cols * 2)
     const fill = (i: number) => (i < lit ? HUEM : EMPTY)
     // With the runway line the figure, dots and first caption move up to leave the row's last 24 px for it.
-    if (o.runway) {
+    if (o.runway && o.runway.length) {
       return (
         g +
         big(x, y + 60, tok(v.tokens), 38, 'tokens', 15) +
         dots(x, y + 68, cols, 9.6, 2, fill) +
-        t(x, y + 98, caption, { size: capSize(w), w: 500 }) +
-        t(x, y + 118, esc(o.runway), { size: capSize(w), w: 500 })
+        t(x, y + 98, esc(caption), { size: capSize(w), w: 500 }) +
+        t(x, y + 118, esc(capPick(o.runway, w, capSize(w))), { size: capSize(w), w: 500 })
       )
     }
-    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, fill) + t(x, y + 108, caption, { size: capSize(w), w: 500 })
+    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, fill) + t(x, y + 108, esc(caption), { size: capSize(w), w: 500 })
   }
 
   // The account's spend over the last 7 days, when the card knows it and any of it is above zero.
@@ -416,6 +416,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   const today = days ? days[days.length - 1] : 0
   const week = days ? days.reduce((a, b) => a + b, 0) : 0
   const daysCaption = days ? `today ${usd(today)} · week ${usd(week)}` : ''
+  /** What the spend zone and its status line add to the total: the days, or the split of main and subagents; none when nothing is spent. */
+  const spendCaptions = days ? [daysCaption] : total > 0 ? [`main ${usd(mainCost)} · subagents ${usd(subsCost)}`, `main ${usd(mainCost)} · subs ${usd(subsCost)}`] : []
 
   /** One bar a day, oldest to today, scaled to the busiest; today in the band's orange, a day with no spend a 2 px stub. */
   const dayBars = (x: number, base: number, maxH: number) => {
@@ -434,19 +436,14 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
 
   // What is spent: this thread's total, and either the last 7 days as bars or, with no daily figures, dots
   // split between the main session and subagents.
-  const zoneSpend = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
-    const caption = days ? daysCaption : total > 0 ? `main ${usd(mainCost)} · subagents ${usd(subsCost)}` : ''
+  const zoneSpend = (x: number, y: number, w: number) => {
+    const caption = spendCaptions.length ? capPick(spendCaptions, w, capSize(w)) : ''
     const g = t(x, y + 24, 'SPEND', { size: 14, ls: 1.4 })
     const fig = `≈${usd(total)}`
     const split = (n: number) => {
       // The subagents' share, at least one dot once they have cost anything.
       const subDots = total <= 0 || subsCost <= 0 ? 0 : Math.min(n - 1, Math.max(1, Math.round((subsCost / total) * n)))
       return (i: number) => (total <= 0 ? EMPTY : i < n - subDots ? HUEM : MUTED)
-    }
-    if (o.compact) {
-      const cols = 20
-      const gx = x + w - (cols - 1) * 9.6 - 6
-      return g + big(x, y + 56, fig, 26, '', 14) + dots(gx, y + 42, cols, 9.6, 2, split(cols * 2)) + (caption ? t(x, y + 76, caption, { size: capSize(w), w: 500 }) : '')
     }
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
     const chart = days ? dayBars(x, y + 90, 20) : dots(x, y + 80, cols, 9.6, 2, split(cols * 2))
@@ -468,10 +465,10 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     while (list.length > 1 && line(list).length * size * 0.56 > px) list = keepFirst ? list.slice(0, -1) : list.slice(1)
     return line(list)
   }
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   // What keeping the cache warm costs an hour, and what letting it go cold costs.
   const kw = keepWarmCost(v)
+  const saved = spend?.saved ?? 0
   const zoneKeep = (x: number, y: number, w: number) => {
     const g = t(x, y + 24, cold && kw ? 'RE-CACHE NOW' : 'KEEP WARM', { size: 14, ls: 1.4 })
     if (!kw) return g + t(x, y + 62, 'model not priced', { size: 18, w: 500 })
@@ -489,13 +486,13 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     // The break-even line only where there is room for it, and only when it is under a day: both costs grow
     // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
     // always says ">24h" tells nothing.
-    const saved = spend?.saved ?? 0
     const pings = spend?.pings ?? 0
+    const cheaperLine = `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`
     const last =
       saved > 0 || pings > 0
         ? t(x, y + 108, `saved ${usd(saved)} · pings ${usd(pings)}`, { size: capSize(w), w: 500 })
-        : w >= 200 && kw.breakEvenH <= 24
-          ? t(x, y + 108, `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`, { size: capSize(w), w: 500 })
+        : kw.breakEvenH <= 24 && cheaperLine.length * capSize(w) * 0.56 <= w
+          ? t(x, y + 108, cheaperLine, { size: capSize(w), w: 500 })
           : ''
     return (
       g +
@@ -507,73 +504,104 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     )
   }
 
-  // Per usage window, a track on one scale: the bar is the time left at this pace, the tick is the reset.
-  const zonePace = (x: number, y: number, w: number) => {
-    let g = t(x, y + 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
-    const tx = x + 34
-    const tw = w - 34
-    if (pace.length === 0) return g + t(x, y + 62, 'no usage windows reported', { size: 12, w: 500 })
-    // Each window: its label and track (the bar is the time left at this pace, the tick the reset), then
-    // the forecast in words under the bar. The desktop draws the card at about 70%, so the words are 18 px
-    // here to read as about 13, the band's own size; no legend, the words say what the bar does.
-    const words = (yy: number, lead: string, leadFill: string, rest: string, mark = '') =>
-      `<text x="${tx}" y="${yy}" font-size="18" font-weight="500" fill="${MUTED}"><tspan fill="${leadFill}">${lead}</tspan>${rest}` +
-      (mark ? `<tspan fill="${OK}" font-weight="700" dx="4">${mark}</tspan>` : '') +
-      '</text>'
+  // DELEGATION: what subagents saved, two compare rows (cost and time against doing it all on the main model, one
+  // after another) beside the figure, and the work done against the time it took. While the figure is unknown it
+  // shows a dash and says when it will not be.
+  const zoneDeleg = (x: number, y: number, w: number) => {
+    const g = t(x, y + 24, 'DELEGATION', { size: 14, ls: 1.4 })
+    const cap = capSize(w)
+    const words = (s: string) => t(x, y + 108, esc(s), { size: cap, w: 500 })
+    const dash = big(x, y + 62, '—', 38, '', 15)
+    if (!metrics) return g + dash + words('after a few turns')
+    const d = metrics.deleg
+    if (!d) return g + dash + words(capPick(metrics.subs > 0 ? ['tracked from the next subagent', 'tracked from next subagent'] : ['no subagents this thread'], w, cap))
+    const figure = `≈${usd(d.saved)}`
+    const figW = figure.length * 38 * 0.6 + 7 + 'saved'.length * 15 * 0.56
+    const rx = x + Math.max(Math.round(figW) + 16, Math.round(w / 2))
+    const tx = rx + 40
+    const tw = x + w - tx
+    let rows = ''
+    if (tw >= 30) {
+      const compare = (ty: number, label: string, ratio: number | null, fill: string) => {
+        const fw = ratio === null ? 0 : Math.min(tw, Math.max(ratio > 0 ? 3 : 0, Math.round(ratio * tw)))
+        return (
+          t(rx, ty + 6, label, { size: 14, w: 600 }) +
+          `<rect x="${tx}" y="${ty}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>` +
+          (fw > 0 ? `<rect x="${tx}" y="${ty}" width="${fw}" height="6" rx="3" fill="${fill}"/>` : '')
+        )
+      }
+      rows = compare(y + 40, 'cost', d.costRatio, ORANGE) + compare(y + 56, 'time', d.workMs > 0 && d.wallMs > 0 ? Math.min(1, d.wallMs / d.workMs) : null, YELLOW)
+    }
+    const speed = d.workMs > 0 && d.wallMs > 0 ? (d.workMs / d.wallMs).toFixed(1) : null
+    const variants =
+      speed === null
+        ? ['run time not recorded']
+        : [
+            `${fmtSpan(d.workMs)} of agent work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+            `${fmtSpan(d.workMs)} work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+            `${fmtSpan(d.workMs)} in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+          ]
+    return g + big(x, y + 62, figure, 38, 'saved', 15, OK) + rows + words(capPick(variants, w, cap))
+  }
+
+  // The pace strip, full width: one line a usage window. The label, a track (the bar is the time left at this
+  // pace, the tick is the reset) and the forecast in words to the right of the track. The desktop draws the card
+  // at about 70%, so the words are 18 px here to read as about 13, the band's own size.
+  const paceStrip = () => {
+    const g = t(13, 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
+    if (pace.length === 0) return g + t(13, 49, 'no usage windows reported', { size: 18, w: 500 })
+    const tx = 13 + 34
+    const tw = Math.round((W - 26 - 34) * 0.55)
+    const wx = tx + tw + 14
+    const room = W - 13 - wx
+    type Words = { lead: string; fill: string; rest: string; mark?: string }
+    const fits = (c: Words) => (c.lead.length + c.rest.length + (c.mark ? 2 : 0)) * 18 * 0.56 <= room
+    const words = (yy: number, vs: Words[]) => {
+      const c = vs.find(fits) ?? vs[vs.length - 1]
+      return (
+        `<text x="${wx}" y="${yy}" font-size="18" font-weight="500" fill="${MUTED}">` +
+        `<tspan fill="${c.fill}">${c.lead}</tspan>${c.rest}` +
+        (c.mark ? `<tspan fill="${OK}" font-weight="700" dx="4">${c.mark}</tspan>` : '') +
+        '</text>'
+      )
+    }
+    let s = g
     pace.slice(0, 2).forEach((r, i) => {
-      const top = y + 36 + i * 40
-      g += t(x, top + 12, r.label, { size: 16, fill: r.color })
-      g += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
+      const top = 36 + i * 28
+      const yb = top + 13
+      s += t(13, yb, r.label, { size: 16, fill: r.color })
+      s += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
       if (r.pace) {
         const scale = Math.max(r.pace.lastsMs, r.pace.untilResetMs)
         const bw = Math.max(3, Math.round((r.pace.lastsMs / scale) * tw))
-        g += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace.ok ? r.color : DANGER}"/>`
-        g += `<rect x="${tx + Math.round((r.pace.untilResetMs / scale) * tw) - 1}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+        s += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace.ok ? r.color : DANGER}"/>`
+        s += `<rect x="${tx + Math.round((r.pace.untilResetMs / scale) * tw) - 1}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+        const lasts = fmtIdle(r.pace.lastsMs)
         const reset = fmtIdle(r.pace.untilResetMs)
-        g += r.pace.ok
-          ? words(top + 30, `lasts ~${fmtIdle(r.pace.lastsMs)}`, TEXT, ` · resets ${reset}`, '✓')
-          : words(top + 30, `runs out in ~${fmtIdle(r.pace.lastsMs)}`, DANGER, ` · resets ${reset}`)
+        s += r.pace.ok
+          ? words(yb, [
+              { lead: `lasts ~${lasts}`, fill: TEXT, rest: ` · resets ${reset}`, mark: '✓' },
+              { lead: `lasts ~${lasts}`, fill: TEXT, rest: '', mark: '✓' },
+              { lead: '✓', fill: OK, rest: ` ${reset}` },
+            ])
+          : words(yb, [
+              { lead: `runs out in ~${lasts}`, fill: DANGER, rest: ` · resets ${reset}` },
+              { lead: `out in ~${lasts}`, fill: DANGER, rest: ` · resets ${reset}` },
+              { lead: `out ~${lasts}`, fill: DANGER, rest: '' },
+              { lead: `~${lasts}`, fill: DANGER, rest: '' },
+            ])
       } else {
-        if (r.untilResetMs !== null) g += `<rect x="${tx + tw - 2}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
-        g += words(top + 30, 'pace unknown', MUTED, '')
+        if (r.untilResetMs !== null) s += `<rect x="${tx + tw - 2}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+        s += words(yb, [
+          { lead: 'pace unknown', fill: MUTED, rest: '' },
+          { lead: 'unknown', fill: MUTED, rest: '' },
+        ])
       }
     })
-    return g
+    return s
   }
 
-  // The same two facts as text lines, for the layouts with no room for the drawing.
-  const textLines = (x: number, y: number, size: number) => {
-    const saved = spend?.saved ?? 0
-    const keep = !kw
-      ? 'keep warm: model not priced'
-      : cold
-        ? fitJoin(`re-cache ${usd(kw.cold)} on ${name(own!)}`, cheaper, W - 26 - 14, size)
-        : `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` + (saved > 0 ? ` · saved ${usd(saved)}` : '')
-    const r = riskiest(pace)
-    let paceText = 'pace unknown'
-    let paceFill = MUTED
-    let paceDot = MUTED
-    if (r) {
-      const reset = fmtIdle(r.pace.untilResetMs)
-      paceText = r.pace.ok ? `${r.label} ✓ lasts until reset · resets in ${reset}` : `${r.label} runs out in ~${fmtIdle(r.pace.lastsMs)} · resets in ${reset}`
-      paceFill = r.pace.ok ? TEXT : DANGER
-      paceDot = r.pace.ok ? OK : DANGER
-    }
-    // A small status dot before each line, the text shifted right to make room for it.
-    const dot = (yy: number, fill: string) => `<circle cx="${x + 4}" cy="${yy - Math.round(size * 0.36)}" r="4" fill="${fill}"/>`
-    const tx = x + 14
-    const y2 = y + size + 9
-    // Keep warm's dot: green while the cache is warm, the cold hue once it has gone cold.
-    return dot(y, cold ? HUE.cold : OK) + t(tx, y, keep, { size, w: 600, fill: TEXT }) + dot(y2, paceDot) + t(tx, y2, paceText, { size, w: 600, fill: paceFill })
-  }
-
-  // The first row of every layout is 124 px; the text lines under it take 54 more.
-  const ROW = 124
-  const TEXT_ROWS = 54
-  /** The wide card's metric row: its own 90 px and the 2 px under the rule. */
-  const METRIC_H = 92
-
-  // The metric row: four cells on the row above's columns. A cell is its title, its figure (26 px, the unit after
+  // The metric row: three cells across the card. A cell is its title, its figure (26 px, the unit after
   // it) and its caption; while its figure is unknown it shows a dash and says when it will not be.
   const metricsRow = (colW: number, colX: (i: number) => number, y: number) => {
     const m = metrics!
@@ -624,99 +652,88 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       return head(2, 'BY MODEL') + fig + bar + cap
     }
 
-    // DELEGATION: what subagents saved, two compare rows (cost and time against doing it all on the main model, one
-    // after another) beside the figure, and the work done against the time it took.
-    const delegation = () => {
-      const x = colX(3)
-      const d = m.deleg
-      if (!d) return head(3, 'DELEGATION') + big(x, y + 54, '—', 26, '', 14) + words(3, m.subs > 0 ? 'tracked from the next subagent' : 'no subagents this thread')
-      const figure = `≈${usd(d.saved)}`
-      const figW = figure.length * 26 * 0.6 + 7 + 'saved'.length * 14 * 0.56
-      const rx = x + Math.max(Math.round(figW) + 16, Math.round(colW / 2))
-      const tx = rx + 40
-      const tw = x + colW - tx
-      let rows = ''
-      if (tw >= 30) {
-        const compare = (ty: number, label: string, ratio: number | null, fill: string) => {
-          const fw = ratio === null ? 0 : Math.min(tw, Math.max(ratio > 0 ? 3 : 0, Math.round(ratio * tw)))
-          return (
-            t(rx, ty + 6, label, { size: 14, w: 600 }) +
-            `<rect x="${tx}" y="${ty}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>` +
-            (fw > 0 ? `<rect x="${tx}" y="${ty}" width="${fw}" height="6" rx="3" fill="${fill}"/>` : '')
-          )
-        }
-        rows = compare(y + 36, 'cost', d.costRatio, ORANGE) + compare(y + 50, 'time', d.workMs > 0 && d.wallMs > 0 ? Math.min(1, d.wallMs / d.workMs) : null, YELLOW)
-      }
-      const speed = d.workMs > 0 && d.wallMs > 0 ? (d.workMs / d.wallMs).toFixed(1) : null
-      const variants =
-        speed === null
-          ? ['run time not recorded']
-          : [
-              `${fmtSpan(d.workMs)} of agent work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
-              `${fmtSpan(d.workMs)} work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
-              `${fmtSpan(d.workMs)} in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
-            ]
-      const caption = variants.find(c => c.length * size * 0.56 <= colW) ?? variants[variants.length - 1]
-      return head(3, 'DELEGATION') + big(x, y + 54, figure, 26, 'saved', 14, OK) + rows + words(3, caption)
-    }
     return (
       cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, m.perM !== null ? `${usd(m.perM)} per 1M tokens` : 'of input read from cache')) +
       rule(1) +
       cell(1, 'PER TURN', m.avg !== null, usd(m.avg ?? 0), 'avg', last) +
       rule(2) +
-      byModel() +
-      rule(3) +
-      delegation()
+      byModel()
     )
   }
-  let H: number
-  let g: string
-  let metricsShown = false
-  if (kind === 'wide') {
-    // Four equal columns with 26 px between them.
-    const colW = Math.floor((W - 26 - 3 * 26) / 4)
-    const colX = (i: number) => 13 + i * (colW + 26)
-    const row =
-      zoneSize(colX(0), 0, colW, { runway: runwayLine }) +
-      vline(colX(1) - 13, 18, 88) +
-      zoneSpend(colX(1), 0, colW) +
-      vline(colX(2) - 13, 18, 88) +
-      zoneKeep(colX(2), 0, colW) +
-      vline(colX(3) - 13, 18, 88) +
-      zonePace(colX(3), 0, colW)
-    // The metric row under the rule, once any of its figures is known.
-    const showMetrics = !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
-    metricsShown = showMetrics
-    if (showMetrics) {
-      H = ROW + METRIC_H
-      g = row + hline(ROW) + metricsRow(colW, colX, ROW + 2)
-    } else {
-      H = ROW
-      g = row
-    }
-  } else if (kind === 'stacked') {
-    const half = Math.floor(W / 2)
-    g = zoneSize(13, 0, half - 26) + vline(half, 18, 88) + zoneSpend(half + 13, 0, W - half - 26) + hline(ROW - 4) + textLines(13, ROW + 20, 18)
-    H = ROW + TEXT_ROWS
-  } else {
-    // Narrow: the cache row above already shows Robo and the chip.
-    const size = W < 300 ? 14 : 15
-    g = zoneSize(13, 0, W - 26, { compact: true }) + hline(88) + zoneSpend(13, 88, W - 26, { compact: true }) + hline(176) + textLines(13, 198, size)
-    H = 176 + 46
+
+  // The columns: n equal ones with 26 px between them, 13 px at the sides.
+  const n = cardColsOf(W)
+  const colW = Math.floor((W - 26 - (n - 1) * 26) / n)
+  const colX = (i: number) => 13 + i * (colW + 26)
+  const yc = PACE_H
+  const zones = [
+    (x: number) => zoneDeleg(x, yc, colW),
+    (x: number) => zoneSize(x, yc, colW, { runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }),
+    (x: number) => zoneSpend(x, yc, colW),
+    (x: number) => zoneKeep(x, yc, colW),
+  ]
+  let g = paceStrip() + hline(PACE_H)
+  for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i](colX(i))
+  let H = yc + ROW
+
+  // The zones with no column of their own, one status line each: a small dot, then the text. The text is the
+  // longest variant that fits the line.
+  const SS = W < 560 ? 16 : 18
+  const lineRoom = W - 26 - 14
+  const keepVariants = !kw
+    ? ['keep warm: model not priced']
+    : cold
+      ? [fitJoin(`re-cache ${usd(kw.cold)} on ${name(own!)}`, cheaper, lineRoom, SS), `re-cache ${usd(kw.cold)} on ${name(own!)}`]
+      : [
+          `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` + (saved > 0 ? ` · saved ${usd(saved)}` : ''),
+          `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}`,
+          `keep warm ${usd(kw.perHour)}/h`,
+        ]
+  const spendHead = `≈${usd(total)} this thread`
+  const status: { dot: string; variants: string[] }[] = [
+    {
+      dot: HUEM,
+      variants: [
+        `${tok(v.tokens)} in cache · ${pct}% of the ${tok(v.window)} context · ${tok(free)} free`,
+        `${tok(v.tokens)} in cache · ${pct}% of ${tok(v.window)} · ${tok(free)} free`,
+        `${tok(v.tokens)} in cache · ${tok(free)} free`,
+      ],
+    },
+    { dot: MUTED, variants: [...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] },
+    // Keep warm's dot: green while the cache is warm, the cold hue once it has gone cold.
+    { dot: cold ? HUE.cold : OK, variants: keepVariants },
+  ].slice(n - 1)
+  if (status.length) {
+    g += hline(H)
+    status.forEach((s, k) => {
+      const yy = H + 24 + k * STATUS_PITCH
+      g += `<circle cx="17" cy="${yy - Math.round(SS * 0.36)}" r="4" fill="${s.dot}"/>` + t(27, yy, esc(pick(s.variants, lineRoom, SS)), { size: SS, w: 600, fill: TEXT })
+    })
+    H += statusH(status.length)
+  }
+
+  // The metric row under its rule, once any of its figures is known and there are columns enough to carry it.
+  const showMetrics = n >= 3 && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
+  if (showMetrics) {
+    const mcolW = Math.floor((W - 26 - 2 * 26) / 3)
+    g += hline(H) + metricsRow(mcolW, i => 13 + i * (mcolW + 26), H + 2)
+    H += METRIC_H
   }
   const h = H + CARD_TOP
   const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
-  // What the metric row draws as shapes, in words: the per-type subagent costs live only here.
-  const m = metricsShown ? metrics : null
+  // What the metric row draws as shapes, in words: the per-type subagent costs live only here. The delegation
+  // sentence stays whenever the saving is known, whether or not the row is there.
+  const m = showMetrics ? metrics : null
+  const delegAlt = metrics?.deleg
+    ? ` Delegating saved about ${usd(metrics.deleg.saved)}; subagents ran ${fmtSpan(metrics.deleg.workMs)} of work in ${fmtSpan(metrics.deleg.wallMs)}.`
+    : ''
   const metricsAlt = m
     ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
       (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${id[0].toUpperCase() + id.slice(1)} ${usd(c)}`).join(', ')}.` : '') +
       (m.subs > 0 ? ` Subagents cost ${usd(m.subs)}${m.top.length ? ` (${m.top.map(([k, c]) => `${k} ${usd(c)}`).join(', ')})` : ''}.` : '') +
-      (m.deleg
-        ? ` Delegating saved about ${usd(m.deleg.saved)}; subagents ran ${fmtSpan(m.deleg.workMs)} of work in ${fmtSpan(m.deleg.wallMs)}.`
-        : '') +
+      delegAlt +
       (runwayLine ? ` Context runway: ${runwayLine}.` : '')
-    : ''
+    : delegAlt
   const alt =
     (cold
       ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
@@ -724,7 +741,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     ` ${tok(free)} of the context free.` +
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
     (days ? ` Spend today ${usd(today)}, this week ${usd(week)}.` : '') +
-    ((spend?.saved ?? 0) > 0 ? ` Keep-warm pings have saved about ${usd(spend!.saved!)}.` : '') +
+    (saved > 0 ? ` Keep-warm pings have saved about ${usd(saved)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
     metricsAlt
   return { source: svgDoc(W, h, body, true), w: W, h, alt }

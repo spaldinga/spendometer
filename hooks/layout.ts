@@ -117,18 +117,18 @@ export const DESKTOP_COL_PX = 8.6
  */
 export const ROW_PX = 18
 /**
- * The drawn width (px) from which the card has room for its four columns: each column needs about 315 px for
- * its longest caption at 18 px, plus the margins and gaps. About 108 columns, well below the 141 or so the wide
- * row needs for its words on one line.
+ * What one of the card's columns needs, in drawn px: its longest caption at 18 px, the same width the card
+ * has always taken for each of its four columns.
  */
-export const WIDE_CARD_PX = 1360
+export const CARD_COL_PX = 315
 
 /**
- * The card's own layout: four columns wherever they fit, even under a compact row (the row has to fit on one
- * line; the card is a drawing scaled to the band); else the row's layout, with a wide row that is too narrow
- * for the card stacked.
+ * How many columns the card takes at a drawn width of `drawnPx`: as many as fit at CARD_COL_PX each plus
+ * the 26 px gap and 13 px margin on both sides (the margins and one gap fewer than columns cancel out:
+ * (W - 26 + 26) / (CARD_COL_PX + 26)), at least one and at most four. The zones come in the order
+ * DELEGATION, IN CACHE, SPEND, KEEP WARM; the ones left without a column become status lines.
  */
-export const cardKindOf = (row: Kind, drawnPx: number): Kind => (drawnPx >= WIDE_CARD_PX ? 'wide' : row === 'wide' ? 'stacked' : row)
+export const cardColsOf = (drawnPx: number): number => Math.min(4, Math.max(1, Math.floor((drawnPx - 26 + 26) / (CARD_COL_PX + 26))))
 
 /** A drawing's height in rows. */
 export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
