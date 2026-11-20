@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, EMPTY, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
+import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
 import type { CacheView, Kind, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 
@@ -9,7 +9,11 @@ const COLD: CacheView = { mode: 'cold', idle: '2h 5m', idleMin: 125, tokens: 240
 const SPEND = { main: 7.4, subs: 0.37 }
 const WIDTH: Record<Kind, number> = { wide: 1300, stacked: 800, tight: 300 }
 const KINDS = ['wide', 'stacked', 'tight'] as const
-const METRICS: Metrics = { hit: 0.963, avg: 0.38, last: 2.11, multiple: 6, runway: 40.4, growth: 6200, subs: 5.14, top: [['Explore', 3.9], ['coder', 1.24]] }
+const DELEG = { saved: 3.1, costRatio: 0.4, workMs: 12 * 60000, wallMs: 5 * 60000 }
+const METRICS: Metrics = {
+  hit: 0.963, perM: 0.62, avg: 0.38, last: 2.11, multiple: 6, runway: 40.4, growth: 6200,
+  models: [['opus', 14.2], ['sonnet', 5.1], ['haiku', 1.09]], deleg: DELEG, subs: 5.14, top: [['Explore', 3.9], ['coder', 1.24]],
+}
 
 // Drawings put their words between tags; look after the font data in the style block.
 const body = (s: string) => s.slice(s.indexOf('</style>'))
@@ -322,12 +326,12 @@ test('the wide card gets a metric row under the four columns, warm and cold, 92 
     expect(c.h).toBe(plain.h + 92)
     expect(c.h).toBe(222)
     const s = body(c.source)
-    for (const title of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(s).toContain(`>${title}<`)
+    for (const title of ['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION']) expect(s).toContain(`>${title}<`)
     // The rule above it, and the same x grid as the row above.
     expect(s).toContain('<rect x="13" y="124" width="1274" height="1"')
     const titleAt = (title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="${124 + 2 + 22}"[^>]*>${title}<`).exec(s)![1])
     const colW = Math.floor((1300 - 26 - 3 * 26) / 4)
-    expect(['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS'].map(titleAt)).toEqual([0, 1, 2, 3].map(i => 13 + i * (colW + 26)))
+    expect(['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION'].map(titleAt)).toEqual([0, 1, 2, 3].map(i => 13 + i * (colW + 26)))
     expect(s).toContain('font-size="14" font-weight="700" fill="#8d8775" letter-spacing="1.4"')
   }
 })
@@ -336,25 +340,117 @@ test('the other layouts have no metric row, whatever they are given', () => {
   for (const kind of ['stacked', 'tight'] as const) {
     const c = cardSvg(WARM, kind, WIDTH[kind], SPEND, [PACE_OK], METRICS)
     expect(c.h).toBe(cardSvg(WARM, kind, WIDTH[kind], SPEND, [PACE_OK]).h)
-    for (const title of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(c.source).not.toContain(title)
+    for (const title of ['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION']) expect(c.source).not.toContain(title)
   }
 })
+
+const plainText = (s: string) => s.replace(/<[^>]*>/g, '')
+const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [] }
+const colWide = Math.floor((1300 - 26 - 3 * 26) / 4)
 
 test('the metric figures and captions', () => {
   const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS).source))
   expect(s).toContain('<tspan font-size="26">96%</tspan>')
-  expect(s).toContain('>of input read from cache<')
+  // The effective price is the cache hit's caption.
+  expect(s).toContain('>$0.62 per 1M tokens<')
+  expect(s).not.toContain('of input read from cache')
   expect(s).toContain('<tspan font-size="26">$0.38</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">avg</tspan>')
   expect(s).toContain(`last $2.11<tspan fill="${DANGER}" font-weight="700"> · 6× avg</tspan>`)
-  expect(s).toContain('<tspan font-size="26">~40</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">turns</tspan>')
-  expect(s).toContain('>+6k tokens a turn<')
-  expect(s).toContain('<tspan font-size="26">$5.14</tspan>')
-  expect(s).toContain('>Explore $3.90 · coder $1.24<')
-  // Types are cut to 12 characters, and the second one goes when the two do not fit the column.
-  const long = { ...METRICS, top: [['general-purpose-agent', 3.9], ['claude-code-guide', 1.24]] as [string, number][] }
-  const cut = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], long).source))
-  expect(cut).toContain('>general-purp $3.90<')
-  expect(cut).not.toContain('claude-code-')
+  // The context runway and the per-type subagent figures are no longer in the row.
+  for (const gone of ['CONTEXT RUNWAY', 'SUBAGENTS', 'tokens a turn', 'Explore']) expect(s).not.toContain(gone)
+})
+
+test('without a known price the cache hit keeps its old caption', () => {
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, perM: null }).source))
+  expect(s).toContain('>of input read from cache<')
+  expect(s).not.toContain('per 1M tokens')
+})
+
+test("by model: the biggest share as the figure in its colour, a split bar in the models' colours, each cost in the caption", () => {
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS).source))
+  // 14.20 of 20.39 is 70%.
+  expect(s).toContain(`<tspan font-size="26">Opus</tspan><tspan font-size="26" fill="${HUE.warm}" dx="8">70%</tspan>`)
+  // The split bar: 6 px tall, 2 px gaps, one colour per model, as wide as the column and in the cost order.
+  const bars = [...s.matchAll(/<rect x="([\d.]+)" y="\d+" width="([\d.]+)" height="6" rx="3" fill="(#\w+)"/g)].map(m => ({ x: Number(m[1]), w: Number(m[2]), fill: m[3] })).slice(0, 3)
+  expect(bars.map(b => b.fill)).toEqual([HUE.warm, ORANGE, YELLOW])
+  const x0 = 13 + 2 * (colWide + 26)
+  expect(bars[0].x).toBe(x0)
+  expect(Math.abs(bars[1].x - (bars[0].x + bars[0].w + 2))).toBeLessThan(0.02)
+  expect(Math.abs(bars[2].x - (bars[1].x + bars[1].w + 2))).toBeLessThan(0.02)
+  expect(Math.abs(bars[2].x + bars[2].w - (x0 + colWide))).toBeLessThan(0.05)
+  expect(bars[0].w).toBeGreaterThan(bars[1].w)
+  expect(bars[1].w).toBeGreaterThan(bars[2].w)
+  // The caption: the first entry is the figure's model, so its name is left out; each ■ in its model's colour.
+  // The third entry goes while it does not fit the column, and is there on a wider card.
+  expect(plainText(s)).toContain('■ $14.20 · ■ Sonnet $5.10')
+  expect(plainText(s)).not.toContain('Haiku $1.09')
+  const wideCard = row(body(cardSvg(WARM, 'wide', 1800, SPEND, [PACE_OK], METRICS).source))
+  expect(plainText(wideCard)).toContain('■ $14.20 · ■ Sonnet $5.10 · ■ Haiku $1.09')
+  expect(wideCard).toContain(`<tspan fill="${HUE.warm}">■</tspan> $14.20 · <tspan fill="${ORANGE}">■</tspan> Sonnet $5.10 · <tspan fill="${YELLOW}">■</tspan> Haiku $1.09`)
+})
+
+test('by model: entries that do not fit are cut from the back, one model fills the whole bar, Fable has its own colour', () => {
+  const four = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, models: [['fable', 12], ['opus', 3], ['sonnet', 2], ['haiku', 1]] }).source))
+  expect(four).toContain(`<tspan font-size="26">Fable</tspan><tspan font-size="26" fill="${FABLE}" dx="8">67%</tspan>`)
+  expect(plainText(four)).toContain('■ $12.00 · ■ Opus $3.00')
+  expect(plainText(four)).not.toContain('Haiku $1.00')
+  const one = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, deleg: null, models: [['sonnet', 4]] }).source))
+  expect(one).toContain(`fill="${ORANGE}" dx="8">100%`)
+  expect(plainText(one)).toContain('■ $4.00')
+  expect([...one.matchAll(/height="6" rx="3"/g)].length).toBe(1)
+  // No priced model yet: a dash.
+  const dash = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, models: [] }).source))
+  expect(plainText(dash.slice(dash.indexOf('>BY MODEL<') - 40))).toContain('BY MODEL—after a few turns')
+})
+
+test('delegation: the saving in the OK colour, a cost row and a time row on EMPTY tracks, and the work against the time', () => {
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS).source))
+  expect(s).toContain('<tspan font-size="26">≈$3.10</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">saved</tspan>')
+  expect(s).toContain(`<text x="${13 + 3 * (colWide + 26)}" y="${124 + 2 + 54}" font-weight="600" fill="${OK}">`)
+  expect(plainText(s)).toContain('cost')
+  expect(plainText(s)).toContain('time')
+  const tracks = [...s.matchAll(/<rect x="([\d.]+)" y="(\d+)" width="([\d.]+)" height="6" rx="3" fill="#4a463b"\/>/g)].map(m => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]) }))
+  expect(tracks.length).toBe(2)
+  const fills = (fill: string) => [...s.matchAll(new RegExp(`<rect x="([\\d.]+)" y="(\\d+)" width="([\\d.]+)" height="6" rx="3" fill="${fill}"/>`, 'g'))]
+  // The cost row is 40% full in orange, the time row 5 of 12 minutes in yellow; the rows are above each other, one track wide.
+  const cost = fills(ORANGE).find(m => Number(m[2]) === tracks[0].y)!
+  const time = fills(YELLOW).find(m => Number(m[2]) === tracks[1].y)!
+  expect(Number(cost[3])).toBe(Math.round(0.4 * tracks[0].w))
+  expect(Number(time[3])).toBe(Math.round((5 / 12) * tracks[1].w))
+  expect(tracks[0].x).toBe(tracks[1].x)
+  expect(tracks[0].w).toBe(tracks[1].w)
+  expect(tracks[0].x + tracks[0].w).toBe(13 + 3 * (colWide + 26) + colWide)
+  expect(tracks[1].y).toBeGreaterThan(tracks[0].y)
+})
+
+test('the delegation caption gives work, wall time and the speed-up, shortened to fit the column', () => {
+  const at = (w: number, m: Metrics) => plainText(row(body(cardSvg(WARM, 'wide', w, SPEND, [PACE_OK], m).source)))
+  expect(at(1700, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
+  expect(at(1300, METRICS)).toContain('12m work in 5m · 2.4× faster')
+  // Never overlapped: 1.0x, said honestly; a sub-minute run is written in seconds.
+  expect(at(1700, { ...METRICS, deleg: { ...DELEG, workMs: 90_000, wallMs: 90_000 } })).toContain('1m of agent work in 1m · 1.0× faster')
+  expect(at(1700, { ...METRICS, deleg: { ...DELEG, workMs: 45_000, wallMs: 30_000 } })).toContain('45s of agent work in 30s · 1.5× faster')
+})
+
+test('delegation before any subagent: a dash and the plain words; with old subagent spend only, it waits for the next one', () => {
+  const none = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, deleg: null, subs: 0, top: [] }).source))
+  expect(plainText(none.slice(none.indexOf('>DELEGATION<') - 40))).toContain('DELEGATION—no subagents this thread')
+  expect(none).not.toContain('saved')
+  const old = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, deleg: null }).source))
+  expect(plainText(old)).toContain('tracked from the next subagent')
+  // A subagent of the main model's own kind saves nothing: shown as $0.00, never negative.
+  const same = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, deleg: { ...DELEG, saved: 0, costRatio: 1 } }).source))
+  expect(same).toContain('<tspan font-size="26">≈$0.00</tspan>')
+})
+
+test('the alt text carries what the row left out: the per-type subagent costs, the models, the saving and the runway', () => {
+  const alt = cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS).alt
+  expect(alt).toContain('Subagents cost $5.14 (Explore $3.90, coder $1.24)')
+  expect(alt).toContain('Cost by model: Opus $14.20, Sonnet $5.10, Haiku $1.09')
+  expect(alt).toContain('Delegating saved about $3.10; subagents ran 12m of work in 5m')
+  expect(alt).toContain('~40 turns left at +6k a turn')
+  expect(alt).toContain('Effective price about $0.62 per million tokens')
+  expect(cardSvg(WARM, 'stacked', 800, SPEND, [PACE_OK], METRICS).alt).not.toContain('Cost by model')
 })
 
 test('no outlier flag while the last turn is near the average', () => {
@@ -363,25 +459,45 @@ test('no outlier flag while the last turn is near the average', () => {
   expect(s).not.toContain('× avg')
 })
 
-test('the runway shows >99 past the cap, escaped', () => {
-  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, runway: 250 }).source))
-  expect(s).toContain('<tspan font-size="26">&gt;99</tspan>')
+test('the runway is a second caption under IN CACHE, with the rows and the card heights unchanged', () => {
+  const plain = cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK])
+  const c = cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], METRICS)
+  expect(plain.h).toBe(130)
+  expect(c.h).toBe(222)
+  const s = body(c.source)
+  expect(s).toContain('>~40 turns left at +6k a turn<')
+  expect(s).toContain('>24% of the 1M context · 760k free<')
+  // Both captions, and the dots, sit inside the 124 px row, above the rule under it.
+  const ys = (re: RegExp) => Number(re.exec(s)![1])
+  const second = ys(/<text x="13" y="(\d+)"[^>]*>~40 turns left/)
+  const first = ys(/<text x="13" y="(\d+)"[^>]*>24% of the/)
+  expect(first).toBeLessThan(second)
+  expect(second + 4).toBeLessThanOrEqual(124)
+  const dotYs = [...s.matchAll(/<circle cx="[\d.]+" cy="(\d+)" r="3"/g)].map(m => Number(m[1])).slice(0, 50)
+  expect(Math.max(...dotYs) + 3).toBeLessThan(first - 12)
+  // Not on the stacked card, and not while the growth is unknown.
+  expect(body(cardSvg(WARM, 'stacked', 800, SPEND, [PACE_OK], METRICS).source)).not.toContain('turns left')
+  expect(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, runway: null, growth: null }).source)).not.toContain('turns left')
 })
 
-test('an unknown metric shows its title, a dash and when it will be known; no subagents says so', () => {
-  const none: Metrics = { hit: null, avg: null, last: null, multiple: null, runway: null, growth: null, subs: 0, top: [] }
+test('the runway shows >99 past the cap, escaped, and small growth is written in tokens', () => {
+  const s = body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...METRICS, runway: 250, growth: 640 }).source)
+  expect(s).toContain('>&gt;99 turns left at +640 a turn<')
+})
+
+test('an unknown metric shows its title, a dash and when it will be known', () => {
   // Nothing known at all: no row.
-  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], none).h).toBe(130)
+  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], NONE).h).toBe(130)
   expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], null).h).toBe(130)
   // One known: the row, with the others as dashes.
-  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...none, hit: 0.5 }).source))
+  const s = row(body(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...NONE, hit: 0.5 }).source))
   expect(s).toContain('<tspan font-size="26">50%</tspan>')
-  expect(s.split('<tspan font-size="26">—</tspan>').length - 1).toBe(2)
+  expect(s.split('<tspan font-size="26">—</tspan>').length - 1).toBe(3)
   expect(s.split('>after a few turns<').length - 1).toBe(2)
-  expect(s).toContain('<tspan font-size="26">$0.00</tspan>')
-  expect(s).toContain('>none this thread<')
+  expect(s).toContain('>of input read from cache<')
+  expect(s).toContain('>no subagents this thread<')
   // Subagent cost alone is enough to show the row.
-  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...none, subs: 1, top: [['Explore', 1]] }).h).toBe(222)
+  expect(cardSvg(WARM, 'wide', 1300, SPEND, [PACE_OK], { ...NONE, subs: 1, top: [['Explore', 1]] }).h).toBe(222)
 })
 
 // ---------- light mode ----------
@@ -406,7 +522,7 @@ test('every drawing carries the light-scheme style, with the font or without', (
 test('the light map covers every colour the drawings use, for fill and for stroke', () => {
   const doc = svgDoc(10, 10, '', false)
   const css = doc.slice(doc.indexOf('@media'), doc.indexOf('</style>'))
-  for (const dark of [TEXT, MUTED, EMPTY, LINE, ORANGE, YELLOW, HUE.warm, HUE.cold, OK, DANGER, INK, ICE, '#fff', LC_OR, LC_PE, LC_TA, LC_LA, LC_BL, LC_INK]) {
+  for (const dark of [TEXT, MUTED, EMPTY, LINE, ORANGE, YELLOW, HUE.warm, HUE.cold, FABLE, OK, DANGER, INK, ICE, '#fff', LC_OR, LC_PE, LC_TA, LC_LA, LC_BL, LC_INK]) {
     expect(Object.keys(LIGHT)).toContain(dark)
   }
   for (const [dark, light] of Object.entries(LIGHT)) {

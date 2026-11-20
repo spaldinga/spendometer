@@ -27,7 +27,7 @@ export type Progress = { steps: Step[]; done: number; total: number; note: strin
 export type Turn = { startedAt: number; steps: number }
 
 /** One subagent of the main session: what kind it is, how many requests it has made, whether it is finished. */
-export type Worker = { id: string; type: string; steps: number; isDone: boolean }
+export type Worker = { id: string; type: string; steps: number; isDone: boolean; startedAt?: number; endedAt?: number }
 
 /** What this conversation has cost so far at list prices, in dollars: the main session's turns and its subagents'. */
 export type Spend = { main: number; subs: number }
@@ -42,6 +42,11 @@ export type Spend = { main: number; subs: number }
  * spend); `readTok` is the cache-read input over those turns and `inTok` all their input (fresh, read and written);
  * `ctxPrev` the context size at the last main turn's end and `growth` the moving average of its increases;
  * `byType` the subagents' cost per type.
+ *
+ * Also optional: `byModel` the cost per model family (main and subagent turns, priced ones only) and `totTok` all their
+ * tokens (input, output, cache read and write), so cost over tokens is the effective price; `subsAtMain` what the
+ * subagent turns would have cost at the main session's model, each turn counted at no less than it really cost, so
+ * `subsAtMain - subs` is what delegating saved; `spans` the subagents' run intervals [start, end] in clock ms (the last 200).
  */
 export type Spent = Spend & {
   last: number
@@ -55,6 +60,12 @@ export type Spent = Spend & {
   ctxPrev?: number
   growth?: number
   byType?: Record<string, number>
+  byModel?: Record<string, number>
+  totTok?: number
+  subsAtMain?: number
+  /** Subagent cost counted from the same moment as subsAtMain, so a record from before that does not skew the saving. */
+  subsPaid?: number
+  spans?: [number, number][]
 }
 
 /** Wrapping up a conversation: asked for by the button, then running once the debrief's turn has started. */

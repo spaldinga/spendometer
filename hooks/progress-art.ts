@@ -7,9 +7,13 @@ import { EMPTY, ORANGE, svgDoc } from './cache-art'
 // dots. All of it is centred in BAR_H and starts at the drawing's left edge, so a bar on a row of
 // its own lines up with the row above.
 
-export const BAR_H = 26
+/** The drawing's height: BAR_TOP px of empty space (so it never touches the buttons above it), then the 24 px the content centres in. */
+export const BAR_H = 32
+export const BAR_TOP = 8
+/** The centre line of the content. */
+export const BAR_CY = BAR_TOP + (BAR_H - BAR_TOP) / 2
 const SEG_H = 6
-const SEG_Y = (BAR_H - SEG_H) / 2
+const SEG_Y = BAR_CY - SEG_H / 2
 const SEG_RX = 2
 const GAP = 3
 /** Above this many steps the segments would run together: one continuous track is drawn instead. */
@@ -79,6 +83,6 @@ export const crewSvg = (heads: number): { source: string; w: number } => {
   const n = Math.max(1, heads)
   const w = DOT_R * 2 + (n - 1) * DOT_STEP
   let g = ''
-  for (let i = 0; i < n; i++) g += `<circle cx="${DOT_R + i * DOT_STEP}" cy="${BAR_H / 2}" r="${DOT_R}" fill="${ORANGE}"/>`
+  for (let i = 0; i < n; i++) g += `<circle cx="${DOT_R + i * DOT_STEP}" cy="${BAR_CY}" r="${DOT_R}" fill="${ORANGE}"/>`
   return { source: svgDoc(w, BAR_H, g, false), w }
 }

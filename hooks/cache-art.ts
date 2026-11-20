@@ -24,6 +24,10 @@ export const OK = '#1d9e75'
 // The cache's two states in a muted shade: desaturated so they sit
 // beside the band's own orange and yellow.
 export const HUE: Record<Mode, string> = { warm: '#cc6363', cold: '#6aaabd' }
+/** Fable's colour in the by-model split: a lavender beside the others. */
+export const FABLE = '#b59fd0'
+/** Each model family's colour in the by-model split. */
+export const MODEL_COLOR: Record<string, string> = { opus: HUE.warm, sonnet: ORANGE, haiku: YELLOW, fable: FABLE }
 /** Text on a filled chip. */
 export const INK = '#1c1a16'
 export const WORD: Record<Mode, string> = { warm: 'WARM', cold: 'COLD' }
@@ -180,6 +184,7 @@ export const LIGHT: Record<string, string> = {
   [YELLOW]: '#a8700f',
   [HUE.warm]: '#b04545',
   [HUE.cold]: '#2c7a94',
+  [FABLE]: '#7a5fa3',
   [OK]: '#0f7a57',
   [DANGER]: '#c03534',
   [INK]: '#ffffff',
@@ -313,6 +318,9 @@ export const roboSvg = (mode: Mode): string => svgDoc(ROBO_SIZE, ROBO_SIZE, robo
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
 
+/** A run time written out: 45s, 12m, 2h 5m. */
+export const fmtSpan = (ms: number): string => (ms < 60000 ? `${Math.max(0, Math.round(ms / 1000))}s` : fmtIdle(ms))
+
 /** A reset time written out: 3d 2h, 4h 1m, 35m. */
 export const fmtReset = (iso: string | undefined, now: number): string => {
   if (!iso) return ''
@@ -372,7 +380,12 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   const capSize = (w: number) => (w < 230 ? 16 : 18)
 
   // The conversation's size, as a dot grid of the context window.
-  const zoneSize = (x: number, y: number, w: number, o: { compact?: boolean } = {}) => {
+  // The runway as a second caption line under IN CACHE (wide card only), once the context growth is known.
+  const runwayLine =
+    metrics && metrics.runway !== null && metrics.growth !== null
+      ? `${metrics.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(metrics.runway)}`} turns left at +${metrics.growth >= 1000 ? tok(metrics.growth) : Math.round(metrics.growth)} a turn`
+      : ''
+  const zoneSize = (x: number, y: number, w: number, o: { compact?: boolean; runway?: string } = {}) => {
     const caption = `${Math.round(share * 100)}% of the ${tok(v.window)} context · ${tok(free)} free`
     const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { size: 14, ls: 1.4 })
     if (o.compact) {
@@ -384,7 +397,18 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     // 25 dots a row on the page; fewer only where the band is too narrow for them.
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
     const lit = Math.round(share * cols * 2)
-    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, i => (i < lit ? HUEM : EMPTY)) + t(x, y + 108, caption, { size: capSize(w), w: 500 })
+    const fill = (i: number) => (i < lit ? HUEM : EMPTY)
+    // With the runway line the figure, dots and first caption move up to leave the row's last 24 px for it.
+    if (o.runway) {
+      return (
+        g +
+        big(x, y + 60, tok(v.tokens), 38, 'tokens', 15) +
+        dots(x, y + 68, cols, 9.6, 2, fill) +
+        t(x, y + 98, caption, { size: capSize(w), w: 500 }) +
+        t(x, y + 118, esc(o.runway), { size: capSize(w), w: 500 })
+      )
+    }
+    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, fill) + t(x, y + 108, caption, { size: capSize(w), w: 500 })
   }
 
   // The account's spend over the last 7 days, when the card knows it and any of it is above zero.
@@ -555,15 +579,10 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     const m = metrics!
     const size = capSize(colW)
     const words = (i: number, str: string) => t(colX(i), y + 80, esc(str), { size, w: 500 })
+    const head = (i: number, title: string) => t(colX(i), y + 22, title, { size: 14, ls: 1.4 })
     const cell = (i: number, title: string, known: boolean, fig: string, unit: string, caption: string) =>
-      t(colX(i), y + 22, title, { size: 14, ls: 1.4 }) +
-      big(colX(i), y + 54, known ? esc(fig) : '—', 26, known ? unit : '', 14) +
-      (known ? caption : words(i, 'after a few turns'))
+      head(i, title) + big(colX(i), y + 54, known ? esc(fig) : '—', 26, known ? unit : '', 14) + (known ? caption : words(i, 'after a few turns'))
     const rule = (i: number) => vline(colX(i) - 13, y + 12, 66)
-    const growth = m.growth === null ? '' : `+${m.growth >= 1000 ? tok(m.growth) : Math.round(m.growth)} tokens a turn`
-    const runway = m.runway === null ? '' : m.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(m.runway)}`
-    // A subagent type is cut to 12 characters; the second type goes when the two do not fit the column.
-    const top = fitJoin('', m.top.map(([k, c]) => `${k.slice(0, 12)} ${usd(c)}`), colW, size, true)
     // The last turn, flagged in the danger colour when it is far above the average.
     const last =
       m.last === null
@@ -571,24 +590,94 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
         : `<text x="${colX(1)}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">last ${usd(m.last)}` +
           (m.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${m.multiple}× avg</tspan>` : '') +
           '</text>'
+
+    // BY MODEL: the biggest share as the figure, a split bar of all shares and each model's cost as the caption.
+    const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
+    const spentBy = m.models.reduce((a, [, c]) => a + c, 0)
+    const byModel = () => {
+      const x = colX(2)
+      if (m.models.length === 0 || spentBy <= 0) return head(2, 'BY MODEL') + big(x, y + 54, '—', 26, '', 14) + words(2, 'after a few turns')
+      const [topId, topCost] = m.models[0]
+      const fig =
+        `<text x="${x}" y="${y + 54}" font-weight="600" fill="${TEXT}"><tspan font-size="26">${famName(topId)}</tspan>` +
+        `<tspan font-size="26" fill="${MODEL_COLOR[topId] ?? TEXT}" dx="8">${Math.round((topCost / spentBy) * 100)}%</tspan></text>`
+      // The split bar: 6 px tall, 2 px between the parts, as wide as the column.
+      const gap = 2
+      const room = colW - gap * (m.models.length - 1)
+      let ws = m.models.map(([, c]) => Math.max(3, (c / spentBy) * room))
+      const sum = ws.reduce((a, b) => a + b, 0)
+      if (sum > room) ws = ws.map(w => (w * room) / sum)
+      let bx = x
+      let bar = ''
+      m.models.forEach(([id], k) => {
+        bar += `<rect x="${Math.round(bx * 100) / 100}" y="${y + 60}" width="${Math.round(ws[k] * 100) / 100}" height="6" rx="3" fill="${MODEL_COLOR[id] ?? MUTED}"/>`
+        bx += ws[k] + gap
+      })
+      // The first entry is the figure's model, so only its cost; entries are cut from the back until the line fits.
+      let list = m.models.map(([id, c], k) => ({ id, text: k === 0 ? usd(c) : `${famName(id)} ${usd(c)}` }))
+      const len = (l: typeof list) => l.map(e => `■ ${e.text}`).join(' · ').length
+      while (list.length > 1 && len(list) * size * 0.56 > colW) list = list.slice(0, -1)
+      const cap =
+        `<text x="${x}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
+        list.map((e, k) => `${k ? ' · ' : ''}<tspan fill="${MODEL_COLOR[e.id] ?? MUTED}">■</tspan> ${esc(e.text)}`).join('') +
+        '</text>'
+      return head(2, 'BY MODEL') + fig + bar + cap
+    }
+
+    // DELEGATION: what subagents saved, two compare rows (cost and time against doing it all on the main model, one
+    // after another) beside the figure, and the work done against the time it took.
+    const delegation = () => {
+      const x = colX(3)
+      const d = m.deleg
+      if (!d) return head(3, 'DELEGATION') + big(x, y + 54, '—', 26, '', 14) + words(3, m.subs > 0 ? 'tracked from the next subagent' : 'no subagents this thread')
+      const figure = `≈${usd(d.saved)}`
+      const figW = figure.length * 26 * 0.6 + 7 + 'saved'.length * 14 * 0.56
+      const rx = x + Math.max(Math.round(figW) + 16, Math.round(colW / 2))
+      const tx = rx + 40
+      const tw = x + colW - tx
+      let rows = ''
+      if (tw >= 30) {
+        const compare = (ty: number, label: string, ratio: number | null, fill: string) => {
+          const fw = ratio === null ? 0 : Math.min(tw, Math.max(ratio > 0 ? 3 : 0, Math.round(ratio * tw)))
+          return (
+            t(rx, ty + 6, label, { size: 14, w: 600 }) +
+            `<rect x="${tx}" y="${ty}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>` +
+            (fw > 0 ? `<rect x="${tx}" y="${ty}" width="${fw}" height="6" rx="3" fill="${fill}"/>` : '')
+          )
+        }
+        rows = compare(y + 36, 'cost', d.costRatio, ORANGE) + compare(y + 50, 'time', d.workMs > 0 && d.wallMs > 0 ? Math.min(1, d.wallMs / d.workMs) : null, YELLOW)
+      }
+      const speed = d.workMs > 0 && d.wallMs > 0 ? (d.workMs / d.wallMs).toFixed(1) : null
+      const variants =
+        speed === null
+          ? ['run time not recorded']
+          : [
+              `${fmtSpan(d.workMs)} of agent work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+              `${fmtSpan(d.workMs)} work in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+              `${fmtSpan(d.workMs)} in ${fmtSpan(d.wallMs)} · ${speed}× faster`,
+            ]
+      const caption = variants.find(c => c.length * size * 0.56 <= colW) ?? variants[variants.length - 1]
+      return head(3, 'DELEGATION') + big(x, y + 54, figure, 26, 'saved', 14, OK) + rows + words(3, caption)
+    }
     return (
-      cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, 'of input read from cache')) +
+      cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, m.perM !== null ? `${usd(m.perM)} per 1M tokens` : 'of input read from cache')) +
       rule(1) +
       cell(1, 'PER TURN', m.avg !== null, usd(m.avg ?? 0), 'avg', last) +
       rule(2) +
-      cell(2, 'CONTEXT RUNWAY', m.runway !== null, runway, 'turns', words(2, growth)) +
+      byModel() +
       rule(3) +
-      cell(3, 'SUBAGENTS', true, usd(m.subs), '', words(3, m.subs > 0 && top ? top : 'none this thread'))
+      delegation()
     )
   }
   let H: number
   let g: string
+  let metricsShown = false
   if (kind === 'wide') {
     // Four equal columns with 26 px between them.
     const colW = Math.floor((W - 26 - 3 * 26) / 4)
     const colX = (i: number) => 13 + i * (colW + 26)
     const row =
-      zoneSize(colX(0), 0, colW) +
+      zoneSize(colX(0), 0, colW, { runway: runwayLine }) +
       vline(colX(1) - 13, 18, 88) +
       zoneSpend(colX(1), 0, colW) +
       vline(colX(2) - 13, 18, 88) +
@@ -596,7 +685,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
       vline(colX(3) - 13, 18, 88) +
       zonePace(colX(3), 0, colW)
     // The metric row under the rule, once any of its figures is known.
-    const showMetrics = !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.runway !== null || metrics.subs > 0)
+    const showMetrics = !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
+    metricsShown = showMetrics
     if (showMetrics) {
       H = ROW + METRIC_H
       g = row + hline(ROW) + metricsRow(colW, colX, ROW + 2)
@@ -616,6 +706,17 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
   }
   const h = H + CARD_TOP
   const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
+  // What the metric row draws as shapes, in words: the per-type subagent costs live only here.
+  const m = metricsShown ? metrics : null
+  const metricsAlt = m
+    ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
+      (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${id[0].toUpperCase() + id.slice(1)} ${usd(c)}`).join(', ')}.` : '') +
+      (m.subs > 0 ? ` Subagents cost ${usd(m.subs)}${m.top.length ? ` (${m.top.map(([k, c]) => `${k} ${usd(c)}`).join(', ')})` : ''}.` : '') +
+      (m.deleg
+        ? ` Delegating saved about ${usd(m.deleg.saved)}; subagents ran ${fmtSpan(m.deleg.workMs)} of work in ${fmtSpan(m.deleg.wallMs)}.`
+        : '') +
+      (runwayLine ? ` Context runway: ${runwayLine}.` : '')
+    : ''
   const alt =
     (cold
       ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
@@ -624,6 +725,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number, spend: CardSpend | 
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
     (days ? ` Spend today ${usd(today)}, this week ${usd(week)}.` : '') +
     ((spend?.saved ?? 0) > 0 ? ` Keep-warm pings have saved about ${usd(spend!.saved!)}.` : '') +
-    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '')
+    (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
+    metricsAlt
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

@@ -1,5 +1,5 @@
 import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, MUTED, ORANGE, TEXT, svgDoc } from './cache-art'
-import { BAR_H, paceSvg, walkSvg } from './progress-art'
+import { BAR_CY, BAR_H, paceSvg, walkSvg } from './progress-art'
 import type { Progress } from '../types'
 
 // The progress row's themes. Each is a pair of pure functions: `walk` draws a request with a step list
@@ -19,7 +19,7 @@ export type Theme = {
   info: boolean
 }
 
-const CY = BAR_H / 2
+const CY = BAR_CY
 const CHAR = 0.6
 const CAPS = 0.7
 const FONT = 12
@@ -81,6 +81,8 @@ const nodesOf = (p: Progress, W: number, off: number, minSp: number): Nodes => {
 
 // ---------- Heartbeat ----------
 
+/** The ECG's height in tenths of its full size: its tallest spike stays 8 px below the top of the drawing. */
+const ECG_M = 6.5
 const ECGW = 29
 /** One ECG complex as relative path commands: P wave, Q dip, R spike, S, T hump. `m` tenths of height, `sx` of width. */
 const ecg = (m: number, sx: number): string => {
@@ -102,7 +104,7 @@ const trace = (a: number, b: number, ev: number, m: number): string => {
 const pen = (a: number, b: number, ev: number, dur: string): string => {
   const L = b - a
   if (L < 16) return ''
-  const d = trace(a, b, ev, 8)
+  const d = trace(a, b, ev, ECG_M)
   return (
     `<clipPath id="pw"><rect x="${num(a)}" y="0" width="0" height="${BAR_H}">${anim('width', `0;${num(L)}`, dur)}</rect></clipPath>` +
     `<clipPath id="pe"><rect x="${num(a + 14)}" y="0" width="${num(Math.max(1, L - 14))}" height="${BAR_H}">${anim('x', `${num(a + 14)};${num(b)}`, dur)}${anim('width', `${num(Math.max(1, L - 14))};0`, dur)}</rect></clipPath>` +
@@ -122,7 +124,7 @@ const heart = (cx: number, beats: boolean): string =>
 const heartWalk = (p: Progress, W: number): string => {
   const { n, d, fin, isCur } = stateOf(p)
   const trail = (to: number): string =>
-    to > 4 && d > 0 ? `<path d="${trace(0, to, to / d, 10)}" fill="none" stroke="${ORANGE}" stroke-width="2.2" stroke-linejoin="round"/>` : ''
+    to > 4 && d > 0 ? `<path d="${trace(0, to, to / d, ECG_M)}" fill="none" stroke="${ORANGE}" stroke-width="2.2" stroke-linejoin="round"/>` : ''
   if (fin) return doc(W, trail(W - 16) + heart(W - 9, false))
   const g = nodesOf(p, W, 14, 10)
   const hx = g.at(Math.min(d, n - 1))
@@ -144,7 +146,7 @@ const heartPace = (W: number): string => doc(W, heart(10, true) + pen(24, W, 90,
 // ---------- Console ----------
 
 const BLK_H = 18
-const BLK_Y = (BAR_H - BLK_H) / 2
+const BLK_Y = BAR_CY - BLK_H / 2
 const BLK_GAP = 4
 const DONE_FILLS = [LC_TA, LC_PE, LC_OR]
 const pad2 = (v: number): string => String(v).padStart(2, '0')
@@ -159,6 +161,13 @@ const capRight = (W: number, w: number): string =>
 const CAP_R = 34
 const capW = (label: string): number => Math.ceil(textPx(label, SMALL, CAPS) + 24)
 
+/** The narrowest a step block is: its number. */
+const BLK_MIN = Math.ceil(textPx('00', SMALL, CAPS) + 14)
+/** The most of the room the current step may ask for its name. */
+const NOW_SHARE = 0.6
+/** The longest name a block asks room for; a longer one is cut to what it gets. */
+const NAME_MAX = 20
+
 const consoleWalk = (p: Progress, W: number): string => {
   const { n, d, fin, isCur } = stateOf(p)
   const full = fin ? `DONE ${pad2(n)}·${pad2(n)}` : isCur ? `STEP ${pad2(d + 1)}·${pad2(n)}` : `DONE ${pad2(d)}·${pad2(n)}`
@@ -168,41 +177,50 @@ const consoleWalk = (p: Progress, W: number): string => {
   const limit = W - CAP_R - BLK_GAP
   const avail = Math.max(0, limit - x0)
   const focus = Math.min(d, n - 1)
-  // Each block's text and width: a title (or its number) right-aligned; the current one also carries its number.
+  // Each block's room: `nat` for its whole name (the current block also carries its number), `min` at the least. A
+  // block shows its number when its name does not fit at all.
+  const NOW_PAD = 2 * SMALL * CAPS + 26
   const items = Array.from({ length: n }, (_, i) => {
     const isNow = isCur && i === d
-    let t = nameAt(p, i, d, isCur).toUpperCase()
-    if (!isNow) t = cut(t, Math.min(16 * SMALL * CAPS, Math.max(0, avail - 14)), SMALL, CAPS)
-    else t = cut(t, Math.max(0, avail - 2 * SMALL * CAPS - 24), SMALL, CAPS)
-    const shown = isNow ? t : t || pad2(i + 1)
-    const w = isNow ? textPx(shown, SMALL, CAPS) + 2 * SMALL * CAPS + 26 : textPx(shown, SMALL, CAPS) + 14
-    return { i, shown, w: Math.min(w, Math.max(avail, 24)), isNow }
+    const name = nameAt(p, i, d, isCur).toUpperCase()
+    const nat = isNow ? textPx(name, SMALL, CAPS) + NOW_PAD : Math.min(textPx(name, SMALL, CAPS), NAME_MAX * SMALL * CAPS) + 14
+    const min = isNow ? Math.max(BLK_MIN, Math.min(nat, NOW_SHARE * avail)) : BLK_MIN
+    return { i, name, isNow, nat: Math.max(nat, min), min: Math.min(min, Math.max(avail, 1)) }
   })
-  // A window of blocks around the current one: behind it and ahead of it in turn, while they fit.
+  // A window of blocks around the current one: behind it and ahead of it in turn, while they fit at their least.
   let lo = focus
   let hi = focus + 1
-  let sum = items[focus].w
+  let sum = items[focus].min
   for (;;) {
     let grew = false
-    if (lo > 0 && sum + BLK_GAP + items[lo - 1].w <= avail) { sum += BLK_GAP + items[--lo].w; grew = true }
-    if (hi < n && sum + BLK_GAP + items[hi].w <= avail) { sum += BLK_GAP + items[hi++].w; grew = true }
+    if (lo > 0 && sum + BLK_GAP + items[lo - 1].min <= avail) { sum += BLK_GAP + items[--lo].min; grew = true }
+    if (hi < n && sum + BLK_GAP + items[hi].min <= avail) { sum += BLK_GAP + items[hi++].min; grew = true }
     if (!grew) break
   }
+  // The blocks share the room: all of them grow in proportion to their names when it is more than the names ask
+  // for, and shrink from their names towards their least when it is less. The last one ends where the end cap begins.
+  const shown = items.slice(lo, hi)
+  const space = avail - BLK_GAP * (shown.length - 1)
+  const sumNat = shown.reduce((a, it) => a + it.nat, 0)
+  const sumMin = shown.reduce((a, it) => a + it.min, 0)
+  const widths = shown.map(it =>
+    space >= sumNat ? (it.nat * space) / sumNat : it.min + (sumNat > sumMin ? ((space - sumMin) * (it.nat - it.min)) / (sumNat - sumMin) : 0),
+  )
   let body = capLeft(cap, label)
   let x = x0
-  for (let i = lo; i < hi; i++) {
-    const it = items[i]
+  shown.forEach((it, k) => {
+    const w = widths[k]
+    const t = cut(it.name, it.isNow ? w - NOW_PAD : w - 14, SMALL, CAPS)
     if (it.isNow) {
-      body += block(x, it.w, LC_OR, it.shown, `<rect x="${num(x)}" y="${BLK_Y}" width="${num(it.w)}" height="${BLK_H}" fill="${LC_LA}" opacity="0"><animate attributeName="opacity" values="0;1;0" keyTimes="0;.5;1" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/></rect>`)
-      body += text(x + 6, SMALL, 700, LC_INK, pad2(i + 1))
-    } else if (i < d) {
-      body += block(x, it.w, DONE_FILLS[i % 3], it.shown)
+      body += block(x, w, LC_OR, t, `<rect x="${num(x)}" y="${BLK_Y}" width="${num(w)}" height="${BLK_H}" fill="${LC_LA}" opacity="0"><animate attributeName="opacity" values="0;1;0" keyTimes="0;.5;1" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/></rect>`)
+      body += text(x + 6, SMALL, 700, LC_INK, pad2(it.i + 1))
+    } else if (it.i < d) {
+      body += block(x, w, DONE_FILLS[it.i % 3], t || pad2(it.i + 1))
     } else {
-      body += `<g opacity=".5">${block(x, it.w, LC_BL, it.shown)}</g>`
+      body += `<g opacity=".5">${block(x, w, LC_BL, t || pad2(it.i + 1))}</g>`
     }
-    x += it.w + BLK_GAP
-  }
-  if (limit - x > 2) body += `<rect x="${num(x)}" y="${BLK_Y}" width="${num(limit - x)}" height="${BLK_H}" fill="${LC_LA}"/>`
+    x += w + BLK_GAP
+  })
   return doc(W, body + capRight(W, CAP_R))
 }
 const consolePace = (W: number, info: string): string => {
@@ -396,7 +414,7 @@ const cometWalk = (p: Progress, W: number): string => {
     else if (isCur && i === d) {
       body += `<circle cx="${cx}" cy="${CY}" r="5" fill="none" stroke="${ORANGE}" stroke-width="2"/>`
       body += `<circle cx="${cx}" cy="${CY}" r="5" fill="${ORANGE}" opacity="0">${anim('opacity', '0;1;0;0', DUR, 'keyTimes="0;.6;.75;1"')}</circle>`
-      body += `<circle cx="${cx}" cy="${CY}" r="5" fill="none" stroke="${ORANGE}" stroke-width="1.8" opacity="0">${anim('r', '5;5;16', DUR, 'keyTimes="0;.6;1"')}${anim('opacity', '0;0;1;0', DUR, 'keyTimes="0;.59;.6;1"')}</circle>`
+      body += `<circle cx="${cx}" cy="${CY}" r="5" fill="none" stroke="${ORANGE}" stroke-width="1.8" opacity="0">${anim('r', '5;5;11', DUR, 'keyTimes="0;.6;1"')}${anim('opacity', '0;0;1;0', DUR, 'keyTimes="0;.59;.6;1"')}</circle>`
       if (g.label) body += text(g.at(i) + 12, FONT, 700, TEXT, g.label)
     } else body += `<circle cx="${cx}" cy="${CY}" r="4" fill="none" stroke="${EMPTY}" stroke-width="2"/>`
   }

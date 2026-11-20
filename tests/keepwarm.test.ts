@@ -3,6 +3,8 @@ import type { On, Plugin } from 'claude-code'
 
 import { turnCost, usd } from '../hooks/cache-art'
 import { dayKey } from '../hooks/days'
+import { metricsOf } from '../hooks/metrics'
+import type { Spent } from '../types'
 import { pingKeptCacheWarm } from '../hooks/register'
 
 /** The brown the band used to paint behind itself. */
@@ -422,6 +424,87 @@ test('a subagent adds its cost to its type, from the crew, or to agent when the 
   expect(metered(store).inTok).toBeUndefined()
 })
 
+type Delegated = Metered & { byModel?: Record<string, number>; totTok?: number; subsAtMain?: number; spans?: [number, number][]; subs: number }
+const spawnOf = (type: string) =>
+  ({ tool_use_id: `t-${type}`, prompt: 'p', description: 'd', subagentType: type, provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false }) as never
+
+test('turns add up per model and all tokens; a subagent turn also adds what it would have cost at the main model', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  on('agent.spawn', ($, e) => ({ model: 'claude-haiku-5-5', agentId: `a-${e.subagentType}` }))
+  await seed($, 18)
+  const HAIKU = { ...USED, model: 'claude-haiku-5-5' }
+  await done($, { usage: USED })
+  await $.agent.spawn(spawnOf('Explore'))
+  await done($, { usage: HAIKU, agentId: 'a-Explore' })
+  const m = store.get('spend:S1') as Delegated
+  expect(Object.keys(m.byModel ?? {}).sort()).toEqual(['haiku', 'opus'])
+  expect(usd(m.byModel!.opus)).toBe(usd(32.4))
+  expect(usd(m.byModel!.haiku)).toBe(usd(4.1))
+  // 5M tokens a turn: 1M fresh, 1M out, 2M read, 1M written.
+  expect(m.totTok).toBe(10e6)
+  // The haiku turn's tokens at opus prices: 32.4 against 4.1 spent, so 28.3 saved.
+  expect(usd(m.subsAtMain! - m.subs)).toBe(usd(28.3))
+  // An unpriced model adds nothing to any of them.
+  await done($, { usage: { ...USED, model: 'some-other-model' } })
+  expect((store.get('spend:S1') as Delegated).totTok).toBe(10e6)
+})
+
+test('a subagent on the main model saves nothing, and a dearer one never saves below nothing', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  on('agent.spawn', ($, e) => ({ model: 'claude-opus-5-5', agentId: `a-${e.subagentType}` }))
+  await seed($, 18)
+  await done($, { usage: { ...USED, model: 'claude-sonnet-5-5' } })
+  // The main model is sonnet now; an opus subagent costs more than the same tokens on sonnet.
+  await $.agent.spawn(spawnOf('Plan'))
+  await done($, { usage: USED, agentId: 'a-Plan' })
+  let m = store.get('spend:S1') as Delegated
+  expect(usd(m.subs)).toBe(usd(32.4))
+  expect(usd(m.subsAtMain!)).toBe(usd(32.4))
+  // And a sonnet subagent beside a sonnet main model: its cost equals what it would have been.
+  await done($, { usage: { ...USED, model: 'claude-sonnet-5-5' }, agentId: 'a-Plan' })
+  m = store.get('spend:S1') as Delegated
+  expect(usd(m.subsAtMain! - m.subs)).toBe(usd(0))
+})
+
+test('run intervals: from the spawn to the last turn of each subagent, overlapping ones counted once in the wall time', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  on('agent.spawn', ($, e) => ({ model: 'claude-haiku-5-5', agentId: `a-${e.subagentType}` }))
+  await seed($, 18)
+  const HAIKU = { ...USED, model: 'claude-haiku-5-5' }
+  await $.agent.spawn(spawnOf('Explore'))
+  await clock.advance(1 * MIN)
+  await $.agent.spawn(spawnOf('Plan'))
+  await clock.advance(1 * MIN)
+  await done($, { usage: HAIKU, agentId: 'a-Explore' })
+  await clock.advance(2 * MIN)
+  // Explore's second turn extends its interval; it does not add one.
+  await done($, { usage: HAIKU, agentId: 'a-Explore' })
+  await clock.advance(1 * MIN)
+  await done($, { usage: HAIKU, agentId: 'a-Plan' })
+  const spans = (store.get('spend:S1') as Delegated).spans!
+  expect(spans).toEqual([[NOW, NOW + 4 * MIN], [NOW + 1 * MIN, NOW + 5 * MIN]])
+  const m = metricsOf(store.get('spend:S1') as Spent, 0)!
+  expect(m.deleg!.workMs).toBe(8 * MIN)
+  expect(m.deleg!.wallMs).toBe(5 * MIN)
+})
+
+test('records from before the by-model figures are read as they are; junk in the new fields is dropped', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const old = { main: 3, subs: 1, last: 0.5, at: NOW, byModel: { opus: 1, x: 'y' }, totTok: 'z', subsAtMain: null, spans: [[1, 2], [3], 'x', [4, NaN], [5, 9]] }
+  const { store } = engine(on, { keep: true, prefill: { 'spend:S1': old } })
+  await seed($, 18)
+  await done($, { usage: USED })
+  const m = store.get('spend:S1') as Delegated
+  expect(usd(m.byModel!.opus)).toBe(usd(33.4))
+  expect(Object.keys(m.byModel!)).toEqual(['opus'])
+  expect(m.totTok).toBe(5e6)
+  expect(m.subsAtMain).toBeUndefined()
+  expect(m.spans).toEqual([[1, 2], [5, 9]])
+})
+
 test('a record from before the metric figures is read as it is and gains them as turns finish; junk fields are dropped', async ($, on) => {
   mock.clock(on, { now: NOW })
   const old = { main: 3, subs: 1, last: 0.5, at: NOW, turns: 'x', byType: { a: 1, b: 'x' }, growth: null }
@@ -447,7 +530,7 @@ test('the wide open card shows the metric row once the record has figures', asyn
   await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } }).then(async band => {
     await band.press({ key: 'cache-fold' })
     const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
-    for (const t of ['CACHE HIT', 'PER TURN', 'CONTEXT RUNWAY', 'SUBAGENTS']) expect(svgs).toContain(t)
+    for (const t of ['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION']) expect(svgs).toContain(t)
     expect(svgs).toContain('90%')
     await band.unmount()
   })

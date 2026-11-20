@@ -13,7 +13,7 @@ import {
   MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceRow, TurnUsage } from './cache-art'
-import { metricsOf, nextGrowth } from './metrics'
+import { metricsOf, nextGrowth, putSpan } from './metrics'
 import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
@@ -86,11 +86,19 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
     if (typeof s.pings === 'number') out.pings = s.pings
     if (typeof s.saved === 'number') out.saved = s.saved
     // The metric figures arrived later still; each is kept only when it is a number.
-    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth'] as const) if (typeof s[k] === 'number') out[k] = s[k]
-    if (s.byType && typeof s.byType === 'object') {
-      const by: Record<string, number> = {}
-      for (const [k, c] of Object.entries(s.byType)) if (typeof c === 'number') by[k] = c
-      out.byType = by
+    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid'] as const) if (typeof s[k] === 'number') out[k] = s[k]
+    for (const k of ['byType', 'byModel'] as const) {
+      const src = s[k]
+      if (src && typeof src === 'object') {
+        const by: Record<string, number> = {}
+        for (const [name, c] of Object.entries(src)) if (typeof c === 'number') by[name] = c
+        out[k] = by
+      }
+    }
+    if (Array.isArray(s.spans)) {
+      out.spans = s.spans
+        .filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && Number.isFinite(x[0]) && Number.isFinite(x[1]))
+        .map(x => [x[0], x[1]] as [number, number])
     }
     return out
   } catch {
@@ -102,6 +110,8 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
 const recordOf = (was: Spent | null, at: number): Spent => {
   const next: Spent = { ...(was ?? { main: 0, subs: 0, last: 0 }), at }
   if (was?.byType) next.byType = { ...was.byType }
+  if (was?.byModel) next.byModel = { ...was.byModel }
+  if (was?.spans) next.spans = was.spans.map(s => [s[0], s[1]] as [number, number])
   return next
 }
 
@@ -132,7 +142,14 @@ const readDays = async ($: EngineInterface, now: number): Promise<number[]> => {
 }
 
 /** Adds a finished turn's cost to this session's saved figures. A failing store or id loses the figure, never the turn. */
-const addSpend = async ($: EngineInterface, paid: number, isMain: boolean, usage?: TurnUsage | null, type = 'agent'): Promise<void> => {
+const addSpend = async (
+  $: EngineInterface,
+  paid: number,
+  isMain: boolean,
+  usage?: TurnUsage | null,
+  type = 'agent',
+  span?: { start: number; end: number; prevEnd?: number },
+): Promise<void> => {
   try {
     const key = SPEND_PREFIX + (await $.session.id())
     const was = await readSpend($)
@@ -145,6 +162,11 @@ const addSpend = async ($: EngineInterface, paid: number, isMain: boolean, usage
       const today = await $.store.get(dk)
       await $.store.set(dk, (typeof today === 'number' ? today : 0) + paid)
     } catch { /* the day's total misses this turn */ }
+    // Per model family, and all tokens: the card's split by model and the effective price per million tokens.
+    const family = familyOf(usage?.model)
+    if (family) next.byModel = { ...next.byModel, [family]: (next.byModel?.[family] ?? 0) + paid }
+    next.totTok =
+      (next.totTok ?? 0) + (usage?.input_tokens || 0) + (usage?.output_tokens || 0) + (usage?.cache_read_input_tokens || 0) + (usage?.cache_creation_input_tokens || 0)
     if (isMain) {
       next.main += paid
       // The metric row's figures: the priced main turns, what they cost and the input they read.
@@ -158,6 +180,12 @@ const addSpend = async ($: EngineInterface, paid: number, isMain: boolean, usage
     } else {
       next.subs += paid
       next.byType = { ...next.byType, [type]: (next.byType?.[type] ?? 0) + paid }
+      // The same tokens at the main session's model; never below what they cost (a same-model or dearer subagent saves 0).
+      const mainModel = (await cacheFacts($))?.model ?? null
+      const atMain = mainModel && usage ? (turnCost({ ...usage, model: mainModel }) ?? paid) : paid
+      next.subsAtMain = (next.subsAtMain ?? 0) + Math.max(atMain, paid)
+      next.subsPaid = (next.subsPaid ?? 0) + paid
+      if (span) next.spans = putSpan(next.spans, span.start, span.end, span.prevEnd)
       await update($, subsSince, n => n + paid)
     }
     await $.store.set(key, next)
@@ -731,7 +759,8 @@ export const register: Register = on => {
     if (started.deny !== undefined) return started
     const id = started.agentId ?? e.tool_use_id
     const type = String(e.subagentType || 'agent')
-    await update($, crew, list => [...list.filter(w => w.id !== id), { id, type, steps: 0, isDone: false }].slice(-50))
+    const startedAt = await $.clock.now()
+    await update($, crew, list => [...list.filter(w => w.id !== id), { id, type, steps: 0, isDone: false, startedAt }].slice(-50))
     return started
   })
 
@@ -741,9 +770,13 @@ export const register: Register = on => {
     const paid = turnCost(e.usage) ?? 0
     if (e.agentId) {
       const id = e.agentId
-      const type = (await read($, crew)).find(w => w.id === id)?.type ?? 'agent'
-      await update($, crew, list => list.map(w => (w.id === id ? { ...w, isDone: true } : w)))
-      if (paid > 0) await addSpend($, paid, false, e.usage, type)
+      const worker = (await read($, crew)).find(w => w.id === id)
+      const type = worker?.type ?? 'agent'
+      // The run interval: from the spawn to this turn's end; a subagent the band never saw start is dated by the turn's length.
+      const end = await $.clock.now()
+      const start = worker?.startedAt ?? Math.max(0, end - (typeof e.durationMs === 'number' ? e.durationMs : 0))
+      await update($, crew, list => list.map(w => (w.id === id ? { ...w, isDone: true, ...(paid > 0 ? { startedAt: start, endedAt: end } : {}) } : w)))
+      if (paid > 0) await addSpend($, paid, false, e.usage, type, { start, end, prevEnd: worker?.endedAt })
       return r
     }
     if (paid > 0) await addSpend($, paid, true, e.usage)

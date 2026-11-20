@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, MUTED, ORANGE, TEXT } from '../hooks/cache-art'
-import { BAR_H } from '../hooks/progress-art'
+import { BAR_CY, BAR_H, BAR_TOP } from '../hooks/progress-art'
 import { fromSteps } from '../hooks/progress'
 import { DEFAULT_THEME, THEMES, THEME_IDS, isThemeId, themeIdOf } from '../hooks/progress-themes'
 import type { ThemeId } from '../hooks/progress-themes'
@@ -89,7 +89,7 @@ test('console run: orange cap with the step, a block a step with its title, the 
   const s = THEMES.bridge.walk(RUN, 800)
   expect(words(s)).toEqual(['STEP 04·07', 'READ CODE', 'PLAN', 'WRITE CODE', 'RUN TESTS', '04', 'REVIEW', 'COMMIT', 'PUSH'])
   // Done blocks cycle tan, peach, orange.
-  const fills = [...s.matchAll(/<rect x="[\d.]+" y="4" width="([\d.]+)" height="18" fill="(#\w+)"/g)].map(m => m[2])
+  const fills = [...s.matchAll(new RegExp(`<rect x="[\\d.]+" y="${BAR_CY - 9}" width="([\\d.]+)" height="18" fill="(#\\w+)"`, 'g'))].map(m => m[2])
   expect(fills.slice(1, 4)).toEqual([LC_TA, LC_PE, LC_OR])
   expect(fills).toContain(LC_BL)
   expect(count(s, /<g opacity="\.5">/g)).toBe(3)
@@ -174,7 +174,7 @@ test('pie run: discs for done, a sweeping clock and the name for the current, em
   expect(count(s, /r="7.5" fill="none" stroke="#4a463b"/g)).toBe(3)
   expect(count(s, /r="7.5" fill="none" stroke="#ff6b1a"/g)).toBe(4)
   expect(count(s, /values="0 17.3;17.3 0" dur="1.8s"/g)).toBe(1)
-  const bars = [...s.matchAll(/<rect x="[\d.]+" y="12" width="[\d.]+" height="2" rx="1" fill="(#\w+)"/g)].map(m => m[1])
+  const bars = [...s.matchAll(new RegExp(`<rect x="[\\d.]+" y="${BAR_CY - 1}" width="[\\d.]+" height="2" rx="1" fill="(#\\w+)"`, 'g'))].map(m => m[1])
   expect(bars).toEqual([ORANGE, ORANGE, ORANGE, EMPTY, EMPTY, EMPTY])
   expect(s).toContain(light)
 })
@@ -202,8 +202,8 @@ test('comet run: done nodes filled, a comet flying to the current node, which fl
   expect(s).toContain('values="0 0;')
   expect(s).toContain('keyTimes="0;.6;1" dur="1.6s"')
   expect(s).toContain('values="0;1;0;0" keyTimes="0;.6;.75;1"')
-  expect(s).toContain('values="5;5;16" keyTimes="0;.6;1"')
-  expect(count(s, /<circle cx="[\d.-]+" cy="13" r="[2-4]" fill="#ff6b1a" opacity="/g)).toBe(6)
+  expect(s).toContain('values="5;5;11" keyTimes="0;.6;1"')
+  expect(count(s, new RegExp(`<circle cx="[\\d.-]+" cy="${BAR_CY}" r="[2-4]" fill="#ff6b1a" opacity="`, 'g'))).toBe(6)
   expect(s).toContain(light)
 })
 
@@ -295,4 +295,92 @@ test("the first version's ids still work: a saved or typed old id reads as its n
   expect(themeIdOf('nope')).toBeNull()
   expect(themeIdOf('constructor')).toBeNull()
   expect(themeIdOf(undefined)).toBeNull()
+})
+
+// ---------- the bridge's blocks share the width ----------
+/** The step blocks of a console drawing: x and width of each plain 18 px rect that is not one of the caps' squares. */
+const blocks = (s: string) =>
+  [...drawing(s).matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="18" fill="(#\w+)"\/>/g)]
+    .map(m => ({ x: Number(m[1]), w: Number(m[2]), fill: m[3] }))
+    .filter(b => b.w !== 9)
+
+test('bridge: the step blocks fill the room between the two caps, and only a short lavender cap is left at the end', () => {
+  const many = list(20, Array.from({ length: 40 }, (_, i) => `Step number ${i + 1}`))
+  for (const width of [300, 420, 560, 800]) {
+    for (const p of [RUN, FIN, REPORT, many, list(2, [LONG, LONG, LONG, LONG, LONG])]) {
+      const s = THEMES.bridge.walk(p, width)
+      const bs = blocks(s)
+      expect(bs.length).toBeGreaterThan(0)
+      // The first block follows the orange cap and the last ends 4 px before the 34 px end cap; no gap between.
+      const end = width - 34 - 4
+      const last = bs[bs.length - 1]
+      expect(Math.abs(last.x + last.w - end)).toBeLessThan(0.05)
+      for (let i = 1; i < bs.length; i++) expect(Math.abs(bs[i].x - (bs[i - 1].x + bs[i - 1].w + 4))).toBeLessThan(0.05)
+      // The end cap is the only lavender shape that is not a blink, and it is 34 px.
+      const lavender = [...drawing(s).matchAll(new RegExp(`<rect x="([\\d.]+)" y="[\\d.]+" width="([\\d.]+)" height="18"[^>]*fill="${LC_LA}"/>`, 'g'))]
+      expect(lavender.every(m => Number(m[2]) <= 34)).toBe(true)
+      expect(lavender.some(m => Number(m[2]) === 34 && Number(m[1]) === width - 34)).toBe(true)
+      expect(outside(s, width)).toEqual([])
+    }
+  }
+})
+
+test('bridge: full names where they fit, shorter ones shrinking to their number when the room runs out', () => {
+  expect(words(THEMES.bridge.walk(RUN, 800))).toContain('READ CODE')
+  const tight = words(THEMES.bridge.walk(list(3, NAMES), 420))
+  expect(tight).toContain('RUN TESTS')
+  expect(tight.some(t => /^\d\d$/.test(t))).toBe(true)
+  // A long list: the current step's whole name, a few blocks around it.
+  const many = list(20, Array.from({ length: 40 }, (_, i) => `Step number ${i + 1}`))
+  expect(words(THEMES.bridge.walk(many, 420)).some(t => t.includes('STEP NUMBER 21'))).toBe(true)
+})
+
+// ---------- the gap above the bar ----------
+const GAP_TOP = 8
+
+/** The topmost y of what a progress drawing paints (rects, circles with their stroke and animated radius, text, lines, traced paths); clip paths are no content. */
+const contentTop = (svg: string): number => {
+  const d = drawing(svg).replace(/<clipPath[\s\S]*?<\/clipPath>/g, '')
+  const ys: number[] = []
+  for (const m of d.matchAll(/<rect [^>]*?y="([\d.-]+)"/g)) ys.push(Number(m[1]))
+  for (const m of d.matchAll(/<circle ([^>]*?)(?:\/>|>([\s\S]*?)<\/circle>)/g)) {
+    const attr = (k: string) => Number(new RegExp(`${k}="([\\d.-]+)"`).exec(m[1])?.[1] ?? NaN)
+    const radii = [attr('r'), ...[...(m[2] ?? '').matchAll(/attributeName="r" values="([^"]+)"/g)].flatMap(a => a[1].split(';').map(Number))]
+    const stroke = m[1].includes('fill="none"') ? (attr('stroke-width') || 0) / 2 : 0
+    ys.push(attr('cy') - Math.max(...radii) - stroke)
+  }
+  for (const m of d.matchAll(/<text [^>]*?y="([\d.-]+)" font-size="(\d+)"/g)) ys.push(Number(m[1]) - Number(m[2]) * 0.75)
+  for (const m of d.matchAll(/<line [^>]*?y1="([\d.-]+)"[^>]*?y2="([\d.-]+)"/g)) ys.push(Math.min(Number(m[1]), Number(m[2])))
+  for (const m of d.matchAll(/<path d="([^"]*)" fill="none"[^>]*?(?:stroke-width="([\d.]+)")?/g)) {
+    if (m[0].includes('transform=')) continue
+    let x = 0
+    let y = 0
+    let low = Infinity
+    const tok = m[1].match(/[MLlqt]|-?[\d.]+/g) ?? []
+    for (let i = 0; i < tok.length; ) {
+      const c = tok[i++]
+      const n = (c === 'q' ? 4 : 2)
+      const a = tok.slice(i, i + n).map(Number)
+      i += n
+      if (c === 'M' || c === 'L') { x = a[0]; y = a[1]; low = Math.min(low, y) }
+      else if (c === 'l' || c === 't') { x += a[0]; y += a[1]; low = Math.min(low, y) }
+      else if (c === 'q') { low = Math.min(low, y + a[1], y + a[3]); x += a[2]; y += a[3] }
+    }
+    ys.push(low - Number(/stroke-width="([\d.]+)"/.exec(m[0])?.[1] ?? 0) / 2)
+  }
+  return Math.min(...ys)
+}
+
+test('every progress drawing leaves 8 px of empty space at the top, idle and running', () => {
+  const many = list(20, Array.from({ length: 40 }, (_, i) => `Step number ${i + 1}`))
+  expect(BAR_TOP).toBe(GAP_TOP)
+  expect(BAR_H).toBe(BAR_TOP + 24)
+  for (const id of ALL) {
+    for (const width of [160, 360, 800]) {
+      for (const p of [RUN, FIN, REPORT, many, list(0, NAMES, false), list(2, [LONG, LONG, LONG])]) {
+        expect(contentTop(THEMES[id].walk(p, width))).toBeGreaterThanOrEqual(GAP_TOP - 0.01)
+      }
+      for (const info of ['', '4 steps · 1m 12s']) expect(contentTop(THEMES[id].pace(width, info))).toBeGreaterThanOrEqual(GAP_TOP - 0.01)
+    }
+  }
 })

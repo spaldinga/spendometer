@@ -2,7 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { afterListCall, afterReport, fromSteps, pulseText, ratioOf } from '../hooks/progress'
-import { crewSvg, paceSvg, walkSvg } from '../hooks/progress-art'
+import { BAR_CY, BAR_H, BAR_TOP, crewSvg, paceSvg, walkSvg } from '../hooks/progress-art'
+import { fitOpen, rowsOf } from '../hooks/layout'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const PLAN = 'mcp__ccd_turn__update_plan'
@@ -454,4 +455,19 @@ test('the wave theme keeps the words with the idle line', async ($, on) => {
   expect(await barSource(wave)).toContain('stroke="#4a463b"')
   expect(await wave.find({ text: / working · 1 step/ })).toBeDefined()
   await wave.unmount()
+})
+
+test('the calm bar and the crew dots sit 8 px below the top, and the taller drawing is still two rows', () => {
+  const top = (s: string) => Math.min(...[...s.matchAll(/<rect [^>]*?y="([\d.]+)"/g)].map(m => Number(m[1])), ...[...s.matchAll(/<circle [^>]*?cy="([\d.]+)" r="([\d.]+)"/g)].map(m => Number(m[1]) - Number(m[2])))
+  for (const s of [walkSvg(1, 4, 200, true, false), walkSvg(10, 30, 300, true, false), walkSvg(4, 4, 200, false, true), paceSvg(200), crewSvg(1).source, crewSvg(3).source]) {
+    expect(top(s.slice(s.indexOf('</style>')))).toBeGreaterThanOrEqual(BAR_TOP)
+    expect(s).toContain(`height="${BAR_H}"`)
+  }
+  expect(BAR_TOP).toBe(8)
+  // The content is centred in what is left under the gap.
+  expect(BAR_CY).toBe(BAR_TOP + (BAR_H - BAR_TOP) / 2)
+  // fitOpen counts the bar as before: two rows at 18 px a row.
+  expect(rowsOf(BAR_H)).toBe(2)
+  expect(fitOpen(5, 1, BAR_H, 36)).toEqual({ progress: true })
+  expect(fitOpen(4, 1, BAR_H, 36)).toEqual({ progress: false })
 })
