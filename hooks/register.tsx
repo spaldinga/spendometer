@@ -7,6 +7,7 @@ import { BAR_H, crewSvg } from './progress-art'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
+import { isCommit, isPr, resultsSentence } from './results'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, ORANGE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD, YELLOW,
@@ -72,9 +73,10 @@ const subsSince = atom({ plugin: 'wavebar', key: 'subsSince' } as const, 0)
 const realAt = atom({ plugin: 'wavebar', key: 'realAt' } as const, null as number | null)
 
 /** The conversation's cost as one line for the transcript, so a debrief can quote it instead of leaving cost empty. */
-export const spendLine = (s: Spend): string =>
+export const spendLine = (s: Spend & { commits?: number; prs?: number }): string =>
   `this conversation has cost about ${usd(s.main + s.subs)} so far (main session ${usd(s.main)}, subagents ${usd(s.subs)}). ` +
-  'An estimate from token counts at list prices; not a bill.'
+  'An estimate from token counts at list prices; not a bill.' +
+  resultsSentence(s.commits ?? 0, s.prs ?? 0, (s.commits ?? 0) + (s.prs ?? 0) > 0 && s.main + s.subs > 0 ? usd((s.main + s.subs) / ((s.commits ?? 0) + (s.prs ?? 0))) : null)
 
 /** This session's saved cost, or null when there is none or the id or the store cannot be read. */
 const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
@@ -86,7 +88,7 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
     if (typeof s.pings === 'number') out.pings = s.pings
     if (typeof s.saved === 'number') out.saved = s.saved
     // The metric figures arrived later still; each is kept only when it is a number.
-    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid'] as const) if (typeof s[k] === 'number') out[k] = s[k]
+    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs'] as const) if (typeof s[k] === 'number') out[k] = s[k]
     for (const k of ['byType', 'byModel'] as const) {
       const src = s[k]
       if (src && typeof src === 'object') {
@@ -125,6 +127,21 @@ const addKeepWarm = async ($: EngineInterface, add: { pings?: number; saved?: nu
     await $.store.set(key, next)
     $.ui.invalidate('ui.render')
   } catch { /* the card shows no savings; the ping goes on */ }
+}
+
+/** Adds the commits and pull requests a shell command made to this session's record. A command that made none writes nothing. */
+const addResults = async ($: EngineInterface, command: string): Promise<void> => {
+  const commit = isCommit(command)
+  const pr = isPr(command)
+  if (!commit && !pr) return
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const next = recordOf(await readSpend($), await $.clock.now())
+    if (commit) next.commits = (next.commits ?? 0) + 1
+    if (pr) next.prs = (next.prs ?? 0) + 1
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the card shows no results; the command went on */ }
 }
 
 /** The last seven days' totals, oldest first, 0 for a day with none (or an unreadable one). */
@@ -531,6 +548,16 @@ export const resetHold = (): void => {
   waitAt = null
 }
 
+/**
+ * Lets a shell command run and counts its commits and pull requests when it did. The call's result carries
+ * no exit status the mod can read, so "ran" means nothing in front of it refused it (no `deny` in the result).
+ */
+async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> | R, command: string): Promise<R> {
+  const r = await next(e)
+  if (!(r && typeof r === 'object' && 'deny' in r)) await addResults($, command)
+  return r
+}
+
 export const register: Register = on => {
   // A git command that throws work away is held until the person answers in the band.
   // Cancel, no answer and an interrupted turn refuse it. A machine that cannot hold,
@@ -540,9 +567,9 @@ export const register: Register = on => {
     on('tool.call', { tool }, async ($, e, next) => {
       const command = String(e.command ?? '')
       const risk = classify(command)
-      if (risk === null) return next(e)
+      if (risk === null) return pass($, e, next, command)
       // The hold is on unless /wavebar hold off said otherwise.
-      if (!(await switchOf($, HOLD_KEY, true))) return next(e)
+      if (!(await switchOf($, HOLD_KEY, true))) return pass($, e, next, command)
       const interrupted = { deny: refusal('the turn was interrupted', risk.label) }
       // `held` is claimed with no await between the check and the claim, so two waiting calls can't both get through.
       while (held !== null) {
@@ -551,7 +578,7 @@ export const register: Register = on => {
       }
       if (waitAt === -1) {
         void Promise.resolve($.ui.log(`could not hold \`${risk.label}\` to show what it changes: this machine has no way to wait. It runs as usual.`)).catch(() => {})
-        return next(e)
+        return pass($, e, next, command)
       }
       const mine: Held = { command, risk, report: null, decision: null }
       held = mine
@@ -575,7 +602,7 @@ export const register: Register = on => {
       if (mine.decision !== 'proceed') {
         void Promise.resolve($.ui.log(`could not keep holding \`${risk.label}\`, so it runs as usual.`)).catch(() => {})
       }
-      return next(e)
+      return pass($, e, next, command)
     })
   }
 
@@ -1321,7 +1348,7 @@ export const register: Register = on => {
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
       // The rows left under the band's own rows, as drawn px: the card drops its metric row to stay within them.
       const cardMaxH = Math.floor(((maxRows - rowsAbove) * ROW_PX) / scale)
-      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), cardMaxH)
+      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings, commits: paid?.commits, prs: paid?.prs }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), cardMaxH)
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
       showProgress = fit.progress
       if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${cardColsOf(W)} cols`

@@ -97,7 +97,7 @@ card_b() { # W cold metrics
     big "$x1" 200 190k tokens; dots "$x1" 214 10 "$hue"
     t "$x1" 246 12 500 "$MUTED" '19% of the 1M context · 810k free'; t "$x1" 266 12 500 "$MUTED" '~40 turns left at +6k a turn'
     vline $(( x2 - 12 )) 160 110
-    title "$x2" 172 SPEND; big "$x2" 204 '≈$16.61' 'this thread'; bars "$x2" 238; t "$x2" 254 12 500 "$MUTED" 'today $3.10 · week $16.61'
+    title "$x2" 172 SPEND; big "$x2" 200 '≈$16.61' 'this thread'; bars "$x2" 232; t "$x2" 246 12 500 "$MUTED" 'today $3.10 · week $16.61'; t "$x2" 266 12 500 "$MUTED" '4 commits · 1 PR · ≈$3.32 a result'
   fi
 
   # The zones with no column: one status line each.

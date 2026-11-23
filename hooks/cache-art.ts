@@ -5,6 +5,7 @@ import { SANS } from './font'
 import { RUNWAY_CAP } from './metrics'
 import type { Metrics } from './metrics'
 import { cardColsOf } from './layout'
+import { resultsSentence, resultsText } from './results'
 import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'
@@ -330,7 +331,7 @@ export const fmtReset = (iso: string | undefined, now: number): string => {
  * spend for the last 7 days, oldest first, today last; `saved` and `pings` are what keep-warm pings saved
  * and cost in this conversation.
  */
-export type CardSpend = { main: number; subs: number; days?: number[]; saved?: number; pings?: number }
+export type CardSpend = { main: number; subs: number; days?: number[]; saved?: number; pings?: number; commits?: number; prs?: number }
 
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
@@ -420,6 +421,15 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   /** What the spend zone and its status line add to the total: the days, or the split of main and subagents; none when nothing is spent. */
   const spendCaptions = days ? [daysCaption] : total > 0 ? [`main ${usd(mainCost)} · subagents ${usd(subsCost)}`, `main ${usd(mainCost)} · subs ${usd(subsCost)}`] : []
 
+  // The commits and pull requests this conversation made, and what a result cost: its own caption line in the
+  // SPEND column (longest first) and a lead for the status line.
+  const commits = Math.max(0, spend?.commits ?? 0)
+  const prs = Math.max(0, spend?.prs ?? 0)
+  const results = commits + prs
+  const resultsBase = results > 0 ? resultsText(commits, prs) : ''
+  const perResult = results > 0 && total > 0 ? total / results : null
+  const resultCaptions = results > 0 ? [...(perResult !== null ? [`${resultsBase} · ≈${usd(perResult)} a result`, `${resultsBase} · ${usd(perResult)} each`] : []), resultsBase] : []
+
   /** One bar a day, oldest to today, scaled to the busiest; today in the band's orange, a day with no spend a 2 px stub. */
   const dayBars = (x: number, base: number, maxH: number) => {
     if (!days) return ''
@@ -447,6 +457,17 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       return (i: number) => (total <= 0 ? EMPTY : i < n - subDots ? HUEM : MUTED)
     }
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
+    // With the results line the figure, chart and first caption move up, as in IN CACHE with its runway line.
+    if (resultCaptions.length) {
+      const chart = days ? dayBars(x, y + 80, 12) : dots(x, y + 68, cols, 9.6, 2, split(cols * 2))
+      return (
+        g +
+        big(x, y + 60, fig, 38, 'this thread', 15) +
+        chart +
+        (caption ? t(x, y + 98, caption, { size: capSize(w), w: 500 }) : '') +
+        t(x, y + 118, esc(capPick(resultCaptions, w, capSize(w))), { size: capSize(w), w: 500 })
+      )
+    }
     const chart = days ? dayBars(x, y + 90, 20) : dots(x, y + 80, cols, 9.6, 2, split(cols * 2))
     return g + big(x, y + 62, fig, 38, 'this thread', 15) + chart + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
@@ -700,7 +721,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
         `${tok(v.tokens)} in cache · ${tok(free)} free`,
       ],
     },
-    { dot: MUTED, variants: [...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] },
+    { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] },
     // Keep warm's dot: green while the cache is warm, the cold hue once it has gone cold.
     { dot: cold ? HUE.cold : OK, variants: keepVariants },
   ].slice(n - 1)
@@ -742,6 +763,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     ` ${tok(free)} of the context free.` +
     ` This conversation has cost about ${usd(total)}${total > 0 ? ` (main ${usd(mainCost)}, subagents ${usd(subsCost)})` : ''}.` +
     (days ? ` Spend today ${usd(today)}, this week ${usd(week)}.` : '') +
+    resultsSentence(commits, prs, perResult !== null ? usd(perResult) : null) +
     (saved > 0 ? ` Keep-warm pings have saved about ${usd(saved)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
     metricsAlt

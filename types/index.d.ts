@@ -52,6 +52,9 @@ export type Spent = Spend & {
   last: number
   at: number
   pings?: number
+  /** Git commits and pull requests the conversation's shell commands made (counted from the command text). */
+  commits?: number
+  prs?: number
   saved?: number
   turns?: number
   paidTurns?: number

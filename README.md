@@ -52,7 +52,7 @@ Press `+` on the band (or type `/wavebar fold`) to open the card. It has one lay
 width. Across the top, always, is the pace of each usage window against its reset, one line a
 window: the bar is the time left at this pace, the tick is the reset, and the words say whether it
 lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
-the cache, the spend (this thread and the last seven days, today in orange) and what keeping the
+the cache, the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost) and what keeping the
 cache warm costs. A zone with no column of its own becomes one status line below. From three
 columns the card adds a row with the cache hit rate, the cost per turn (red when the last turn cost
 three times the average or more) and the cost by model.
