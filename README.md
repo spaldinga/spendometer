@@ -7,7 +7,7 @@ still warm, how far the current request has come, and which subagents are runnin
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The wavebar band with its card open: usage left on the 7-day and 5-hour limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
+  <img alt="The wavebar band with its card open: usage left on the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
 wavebar is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
@@ -41,7 +41,7 @@ instead of `&&`.
 
 ### Your limits, your cost and your cache, in one row
 
-The top row is always there: the 7-day and 5-hour limits with what is left and when they reset,
+The top row is always there: the 5-hour and 7-day limits, first as `/usage` lists them, with what is left and when they reset (on a narrow band: `5h 10%  week 31%`, what is used, as `/usage` writes it),
 what this conversation has cost and what the last turn cost, and the prompt cache: `WARM` with the
 minutes left, or `COLD` with what the next message will cost to re-cache. Hover a limit for the
 details.
@@ -61,7 +61,7 @@ three times the average or more) and the cost by model.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The open card, wide and warm: the pace of the 7-day window lasting past its reset and the 5-hour window running out in about 2h 40m, then columns for delegation (about $3.40 saved), 190k tokens in cache with about 40 turns of context left, and $16.61 spent in this thread with seven day bars, a status line for keep warm at $0.05 an hour with $4.20 saved, and a row with a 96% cache hit, $0.38 a turn and Opus at 78% of the cost" src="assets/card-b-1200-warm-light.svg">
+  <img alt="The open card, wide and warm: the pace of the 5-hour window running out in about 2h 40m and the 7-day window lasting past its reset, then columns for delegation (about $3.40 saved), 190k tokens in cache with about 40 turns of context left, and $16.61 spent in this thread with seven day bars, a status line for keep warm at $0.05 an hour with $4.20 saved, and a row with a 96% cache hit, $0.38 a turn and Opus at 78% of the cost" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
 **Narrow.** One column and a status line each for the cache, the spend and keep warm (or
@@ -149,7 +149,7 @@ press **Proceed**.
 
 | Part | What you see | Where it comes from |
 |---|---|---|
-| **Usage** | 7-day and 5-hour limits as dot bars, percent left and reset time; `LOW` under 15% | Claude Code's own rate-limit figures |
+| **Usage** | 5-hour and 7-day limits as dot bars, percent left and reset time (percent used on a narrow band); `LOW` under 15% | Claude Code's own rate-limit figures |
 | **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, what re-caching costs on this model and the cheaper ones. On a wide band a second row shows the cache hit rate, the average and last turn's cost, how many turns of context are left at the current growth, and what subagents have cost. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
 | **Progress** | Six styles to choose from (comet by default), with the count and the step in progress | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: each style's working animation and `working · 4 steps · 1m 12s` | Turn events |

@@ -38,8 +38,8 @@ head_() { printf '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"
 
 toprow() { # cold(0/1) width
   local hue=$WARM word=WARM after='32m left'; [ "$1" = 1 ] && hue=$COLD word=COLD after='16h 19m · $1.52'
-  t 18 34 13 700 "$TEXT" USAGE; t 76 34 13 500 "$MUTED" 7D; t 100 34 13 700 "$ORANGE" '69% left'; t 162 34 13 500 "$MUTED" '· 3d 3h'
-  t 222 34 13 500 "$MUTED" 5H; t 246 34 13 700 "$YELLOW" '90% left'; t 308 34 13 500 "$MUTED" '· 3h 50m'
+  t 18 34 13 700 "$TEXT" USAGE; t 76 34 13 500 "$MUTED" 5H; t 100 34 13 700 "$YELLOW" '90% left'; t 162 34 13 500 "$MUTED" '· 3h 50m'
+  t 234 34 13 500 "$MUTED" 7D; t 258 34 13 700 "$ORANGE" '69% left'; t 320 34 13 500 "$MUTED" '· 3d 3h'
   t 380 34 13 500 "$MUTED" COST; t 418 34 13 700 "$TEXT" '≈$16.61'; t 474 34 13 500 "$MUTED" '· last $0.47'
   chip 570 34 "$word" "$hue"; t $(( 570 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$after"
   btn $(( $2 - 230 )) 34 28 '−'; btn $(( $2 - 194 )) 34 92 'Keep warm'; btn $(( $2 - 94 )) 34 78 'Wrap up'
@@ -48,10 +48,10 @@ toprow() { # cold(0/1) width
 
 col() { echo $(( 18 + $1 * ($2 + 24) )); } # col i colW
 
-# The row above the card on a narrow band: percent left, the cost, the chip and the icon buttons.
+# The row above the card on a narrow band: percent used of each limit as /usage writes it, the cost, the chip and the icon buttons.
 narrowrow() { # cold
   local hue=$WARM word=WARM next='32m'; [ "$1" = 1 ] && hue=$COLD word=COLD next='$1.52 next'
-  t 18 34 13 700 "$ORANGE" '69% left'; t 90 34 13 700 "$TEXT" '≈$16.61'; chip 156 34 "$word" "$hue"; t $(( 156 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
+  t 18 34 13 500 "$MUTED" 5h; t 38 34 13 700 "$YELLOW" '10%'; t 82 34 13 500 "$MUTED" week; t 120 34 13 700 "$ORANGE" '31%'; t 166 34 13 700 "$TEXT" '≈$16.61'; chip 232 34 "$word" "$hue"; t $(( 232 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
   btn 470 34 28 '−'; btn 504 34 36 K; btn 546 34 36 W; rect 18 50 564 2 1 "$ORANGE"
 }
 
@@ -75,10 +75,10 @@ card_b() { # W cold metrics
   title 18 82 'PACE VS RESET'
   local tx=$(( 18 + 28 )) tw=$(( (W - 36 - 28) * 55 / 100 )) wx lowl='runs out in ~2h 40m'
   wx=$(( tx + tw + 12 )); [ "$W" -lt 1000 ] && lowl='out in ~2h 40m'
-  t 18 106 12 700 "$ORANGE" 7D; track $tx 98 $tw $tw "$ORANGE" $(( tx + tw * 36 / 100 ))
-  printf '<text x="%s" y="106" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">lasts ~8d 14h</tspan> · resets 3d 3h <tspan fill="%s" font-weight="700">✓</tspan></text>' $wx "$MUTED" "$TEXT" "$OK"
-  t 18 134 12 700 "$YELLOW" 5H; track $tx 126 $tw $(( tw * 70 / 100 )) "$DANGER" $(( tx + tw - 2 ))
-  printf '<text x="%s" y="134" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">%s</tspan> · resets 3h 50m</text>' $wx "$MUTED" "$DANGER" "$lowl"
+  t 18 134 12 700 "$ORANGE" 7D; track $tx 126 $tw $tw "$ORANGE" $(( tx + tw * 36 / 100 ))
+  printf '<text x="%s" y="134" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">lasts ~8d 14h</tspan> · resets 3d 3h <tspan fill="%s" font-weight="700">✓</tspan></text>' $wx "$MUTED" "$TEXT" "$OK"
+  t 18 106 12 700 "$YELLOW" 5H; track $tx 98 $tw $(( tw * 70 / 100 )) "$DANGER" $(( tx + tw - 2 ))
+  printf '<text x="%s" y="106" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">%s</tspan> · resets 3h 50m</text>' $wx "$MUTED" "$DANGER" "$lowl"
   hline 18 150 $(( W - 36 ))
 
   # DELEGATION, first: the saving, cost and time compare bars, the work against the time it took.

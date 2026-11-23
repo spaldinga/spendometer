@@ -79,11 +79,11 @@ test('squeezed, the folded cache shrinks to the chip and the next cost on the on
   expect(await half.find({ text: '$0.15' })).toBeDefined()
   await half.unmount()
 
-  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 16 } })
+  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 14 } })
   expect(await narrow.find({ key: 'cache' })).toBeDefined()
   await narrow.press({ key: 'cache-fold' })
-  // Narrow's card is the compact one: 16 columns is a 252 px band.
-  expect(JSON.stringify(await narrow.find({ key: 'card' }))).toContain('width=\\"252\\"')
+  // Narrow's card is the compact one: 14 columns is a 228 px band.
+  expect(JSON.stringify(await narrow.find({ key: 'card' }))).toContain('width=\\"228\\"')
   await narrow.unmount()
 })
 

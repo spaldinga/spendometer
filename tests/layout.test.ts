@@ -265,22 +265,34 @@ test('compact, with the card open, the chip still shows', async ($, on) => {
 
 test('hovering a usage window on the wide row shows its name, what is left and when it resets', async ($, on) => {
   const band = await mountAt($, on, 160)
-  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in 2d 0h$/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /^5-hour limit · 82% left · resets in 1h 29m$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in 2d 0h$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m$/ })).toBeDefined()
   await band.unmount()
 })
 
 test('hovering a usage window on the compact row shows the same', async ($, on) => {
   const band = await mountAt($, on, 68)
-  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in 2d 0h$/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /^5-hour limit · 82% left · resets in 1h 29m$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in 2d 0h$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m$/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('the compact row writes what is used, as /usage does: 5h first, each with its short name', async ($, on) => {
+  const band = await mountAt($, on, 68)
+  const texts = (await band.findAll({ type: 'Text' })).map(t => String(t.props.children ?? t.text ?? ''))
+  const at = (s: string) => texts.indexOf(s)
+  expect(at('5h ')).toBeGreaterThan(-1)
+  expect(at('18%')).toBe(at('5h ') + 1)
+  expect(at('week ')).toBeGreaterThan(at('18%'))
+  expect(at('1%')).toBe(at('week ') + 1)
+  expect(texts).not.toContain('82% left')
   await band.unmount()
 })
 
 test('hovering a usage window on a row of three lines shows the same text', async ($, on) => {
   // Narrow enough for the tight layout, whose windows are blocks of three lines.
   const band = await mountAt($, on, 20)
-  expect(await band.find({ type: 'Text', text: /^7-day limit · 99% left · resets in/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in/ })).toBeDefined()
   await band.unmount()
 })
 

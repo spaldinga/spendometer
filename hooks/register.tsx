@@ -323,7 +323,10 @@ const COL_PX_FULL = 12
 
 const NAMES: Record<string, string> = { seven_day: '7D', five_hour: '5H', spend_limit: 'SPEND' }
 const LONG: Record<string, string> = { seven_day: '7-day limit', five_hour: '5-hour limit', spend_limit: 'Spend limit' }
-const ORDER: Record<string, number> = { seven_day: 0, five_hour: 1 }
+/** The compact row's word for a window, after its percent: colour alone told them apart before. */
+const SHORT: Record<string, string> = { seven_day: 'week', five_hour: '5h', spend_limit: 'spend' }
+/** The 5-hour window first, as /usage lists it: it is the one that runs out within a working session. */
+const ORDER: Record<string, number> = { five_hour: 0, seven_day: 1 }
 const COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
 
 const clean = (list: readonly Window[]): Window[] =>
@@ -954,6 +957,8 @@ export const register: Register = on => {
     const k = Svg ? DESKTOP_CHAR_COLS : 1
     const t = (s: string) => textCols(s, k)
     const lefts = list.map(w => Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10))
+    // The compact row writes what is used, as /usage does; the wide and stacked rows keep what is left beside their dots.
+    const useds = lefts.map(l => Math.round((100 - l) * 10) / 10)
     const resets = list.map(w => fmtReset(w.resetsAt, now))
     const lowText = (i: number) => (lefts[i] < LOW_AT ? ' LOW' : '')
     const nameOf = (w: Window) => NAMES[w.kind] ?? w.kind.toUpperCase()
@@ -1006,7 +1011,7 @@ export const register: Register = on => {
     const nextShown = (step: number) => nextCost !== null && (step === 0 || view?.mode === 'cold')
     const compactAt = (step: number) =>
       ROW_PAD +
-      list.reduce((n, w, i) => n + t2(`${lefts[i]}%${step < 4 ? ' left' : ''}${lowText(i)}`) + COMPACT_MARGIN, 0) +
+      list.reduce((n, w, i) => n + t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`) + COMPACT_MARGIN, 0) +
       (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
       (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + COMPACT_MARGIN : 0)
     const need = {
@@ -1162,7 +1167,7 @@ export const register: Register = on => {
         reset: fmtReset(w.resetsAt, now),
         tip: (() => {
           const r = fmtReset(w.resetsAt, now)
-          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}`
+          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${Math.round((100 - left) * 10) / 10}% used, ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}`
         })(),
       }
     }
@@ -1208,7 +1213,8 @@ export const register: Register = on => {
       const p = parts(w)
       return (
         <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN}>
-          <Text color={p.col} bold>{`${p.left}%${compactStep < 4 ? " left" : ""}`}</Text>
+          {compactStep < 4 && SHORT[w.kind] ? <Text color="subtle">{SHORT[w.kind]} </Text> : null}
+          <Text color={p.col} bold>{`${Math.round((100 - p.left) * 10) / 10}%`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
