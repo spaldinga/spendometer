@@ -1,13 +1,13 @@
 # wavebar
 
 **Know where you stand while Claude works.** A band above the Claude Code prompt shows how much of
-your usage is left and when it resets, what the conversation has cost, whether the prompt cache is
+your usage you have used (as pies) and when it resets, what the conversation has cost, whether the prompt cache is
 still warm, how far the current request has come, and which subagents are running. It also stops a
 `git reset --hard` until you have seen what it would throw away.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The wavebar band with its card open: usage left on the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
+  <img alt="The wavebar band with its card open: pies for the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
 wavebar is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
@@ -41,7 +41,7 @@ instead of `&&`.
 
 ### Your limits, your cost and your cache, in one row
 
-The top row is always there: the 5-hour and 7-day limits, first as `/usage` lists them, with what is left and when they reset (on a narrow band: `5h 10%  week 31%`, what is used, as `/usage` writes it),
+The top row is always there: the 5-hour and 7-day limits, first as `/usage` lists them, each as a small pie of what is used with the percent used and when it resets (on a narrow band: `5h ◔ 10%  week ◔ 31%`, then the pies and percents alone; the terminal has no pies and keeps its dots and percent left),
 what this conversation has cost and what the last turn cost, and the prompt cache: `WARM` with the
 minutes left, or `COLD` with what the next message will cost to re-cache. Hover a limit for the
 details.
@@ -50,7 +50,7 @@ details.
 
 Press `+` on the band (or type `/wavebar fold`) to open the card. It has one layout at every
 width. Across the top, always, is the pace of each usage window against its reset, one line a
-window: the bar is the time left at this pace, the tick is the reset, and the words say whether it
+window: the bar is how much of the limit is used (red when it runs out before the reset), the tick is how much of the window's time has gone, so a bar past the tick is faster than the window allows and one behind it is fine, and the words say whether it
 lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
 the cache, the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost) and what keeping the
 cache warm costs. A zone with no column of its own becomes one status line below. From three
@@ -149,7 +149,7 @@ press **Proceed**.
 
 | Part | What you see | Where it comes from |
 |---|---|---|
-| **Usage** | 5-hour and 7-day limits as dot bars, percent left and reset time (percent used on a narrow band); `LOW` under 15% | Claude Code's own rate-limit figures |
+| **Usage** | 5-hour and 7-day limits as small pies with percent used and reset time (the terminal: dot bars and percent left); `LOW` under 15% left | Claude Code's own rate-limit figures |
 | **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, what re-caching costs on this model and the cheaper ones. On a wide band a second row shows the cache hit rate, the average and last turn's cost, how many turns of context are left at the current growth, and what subagents have cost. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
 | **Progress** | Six styles to choose from (comet by default), with the count and the step in progress | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: each style's working animation and `working · 4 steps · 1m 12s` | Turn events |

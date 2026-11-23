@@ -10,8 +10,8 @@ import { classify, measure as measureRisk, refusal } from './guard'
 import { isCommit, isPr, resultsSentence } from './results'
 import type { Report, Risk } from './guard'
 import {
-  EMPTY, HUE, INK, ORANGE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD, YELLOW,
-  MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, roboSvg, turnCost, usd, warmCost,
+  EMPTY, HUE, INK, ORANGE, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
+  MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceRow, TurnUsage } from './cache-art'
 import { metricsOf, nextGrowth, putSpan } from './metrics'
@@ -19,7 +19,7 @@ import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols,
+  CHIP_COLS, PIE_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -343,6 +343,8 @@ const trackPace = (list: readonly Window[], now: number): PaceRow[] => {
     rows.push({
       label: NAMES[w.kind],
       color: COLORS[w.kind],
+      used: w.percentUsed,
+      windowMs: WINDOW_MS[w.kind] ?? null,
       untilResetMs: w.resetsAt ? Date.parse(w.resetsAt) - now : null,
       pace: WINDOW_MS[w.kind] ? paceOf(w, WINDOW_MS[w.kind], now) : null,
     })
@@ -957,7 +959,8 @@ export const register: Register = on => {
     const k = Svg ? DESKTOP_CHAR_COLS : 1
     const t = (s: string) => textCols(s, k)
     const lefts = list.map(w => Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10))
-    // The compact row writes what is used, as /usage does; the wide and stacked rows keep what is left beside their dots.
+    // The compact row writes what is used, as /usage does. On the desktop the wide and stacked rows do too, beside a pie;
+    // the terminal keeps what is left beside its dots.
     const useds = lefts.map(l => Math.round((100 - l) * 10) / 10)
     const resets = list.map(w => fmtReset(w.resetsAt, now))
     const lowText = (i: number) => (lefts[i] < LOW_AT ? ' LOW' : '')
@@ -968,9 +971,14 @@ export const register: Register = on => {
         : list.reduce(
             (n, w, i) =>
               n +
-              (isWideRow
-                ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + BLOCK_MARGIN
-                : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
+              (Svg
+                ? // The pie replaces the dots, and the words say what is used.
+                  isWideRow
+                  ? t(`${nameOf(w)}  ${useds[i]}% used${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + PIE_COLS + BLOCK_MARGIN
+                  : Math.max(t(`${nameOf(w)} `) + PIE_COLS, blockCols([`${useds[i]}% used${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], 0, k)) + BLOCK_MARGIN
+                : isWideRow
+                  ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + BLOCK_MARGIN
+                  : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
             0,
           )
     const spendCols = (isWideRow: boolean) =>
@@ -1011,7 +1019,15 @@ export const register: Register = on => {
     const nextShown = (step: number) => nextCost !== null && (step === 0 || view?.mode === 'cold')
     const compactAt = (step: number) =>
       ROW_PAD +
-      list.reduce((n, w, i) => n + t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`) + COMPACT_MARGIN, 0) +
+      list.reduce(
+        (n, w, i) =>
+          n +
+          (Svg
+            ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`) + PIE_COLS
+            : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`)) +
+          COMPACT_MARGIN,
+        0,
+      ) +
       (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
       (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + COMPACT_MARGIN : 0)
     const need = {
@@ -1161,6 +1177,7 @@ export const register: Register = on => {
       const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
       return {
         left,
+        used: Math.round((100 - left) * 10) / 10,
         col: COLORS[w.kind] ?? 'text',
         name: NAMES[w.kind] ?? w.kind.toUpperCase(),
         d: dots(left, cells),
@@ -1172,16 +1189,26 @@ export const register: Register = on => {
       }
     }
 
+    // The pie beside a window on the desktop: what is used, in the window's colour. The terminal has none.
+    const pie = (w: Window, p: ReturnType<typeof parts>, i: number) =>
+      Svg ? <Svg key={`pie-${i}`} source={pieSvg(p.used, COLORS[w.kind] ?? TEXT)} alt={`${p.name} ${p.used}% used`} width={PIE_SIZE} height={PIE_SIZE} /> : null
+
     // Wide: every window on one row. Narrow: each window is a block of three
-    // lines (name and dots, percent left, reset time) so nothing wraps or clips.
+    // lines (name and pie, percent used, reset time) so nothing wraps or clips. The terminal keeps dots and percent left.
     const wide = (w: Window, i: number) => {
       const p = parts(w)
       return (
-        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={3}>
+        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={3} alignItems="center">
           <Text color="subtle" bold>{p.name} </Text>
-          <Text color={p.col}>{p.d.on}</Text>
-          <Text color={EMPTY}>{p.d.off}</Text>
-          <Text color={p.col} bold> {p.left}% left</Text>
+          {Svg ? (
+            pie(w, p, i)
+          ) : (
+            <>
+              <Text color={p.col}>{p.d.on}</Text>
+              <Text color={EMPTY}>{p.d.off}</Text>
+            </>
+          )}
+          <Text color={p.col} bold> {Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           {p.reset ? <Text color="subtle"> · {p.reset}</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
@@ -1193,13 +1220,19 @@ export const register: Register = on => {
       const p = parts(w)
       return (
         <Box key={`w-${i}`} flexDirection="column" flexShrink={0} marginRight={3}>
-          <Box flexDirection="row">
+          <Box flexDirection="row" alignItems="center">
             <Text color="subtle" bold>{p.name} </Text>
-            <Text color={p.col}>{p.d.on}</Text>
-            <Text color={EMPTY}>{p.d.off}</Text>
+            {Svg ? (
+              pie(w, p, i)
+            ) : (
+              <>
+                <Text color={p.col}>{p.d.on}</Text>
+                <Text color={EMPTY}>{p.d.off}</Text>
+              </>
+            )}
           </Box>
           <Box flexDirection="row">
-            <Text color={p.col} bold>{p.left}% left</Text>
+            <Text color={p.col} bold>{Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
             {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           </Box>
           {p.reset ? <Text color="subtle">resets {p.reset}</Text> : null}
@@ -1208,13 +1241,14 @@ export const register: Register = on => {
       )
     }
 
-    // Compact: only what is left of each window, in its colour.
+    // Compact: only what is used of each window, in its colour; the desktop puts a pie before the percent.
     const compact = (w: Window, i: number) => {
       const p = parts(w)
       return (
-        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN}>
+        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
           {compactStep < 4 && SHORT[w.kind] ? <Text color="subtle">{SHORT[w.kind]} </Text> : null}
-          <Text color={p.col} bold>{`${Math.round((100 - p.left) * 10) / 10}%`}</Text>
+          {Svg ? <Box key="pie-gap" marginRight={1}>{pie(w, p, i)}</Box> : null}
+          <Text color={p.col} bold>{`${p.used}%`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>

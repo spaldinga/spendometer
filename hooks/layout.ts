@@ -141,3 +141,6 @@ export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, 
   const prog = progressPx > 0 ? rowsOf(progressPx) : 0
   return { progress: rowsAbove + prog + rowsOf(cardPx) <= maxRows }
 }
+
+/** The usage pie, 16 px, as a drawing: about 2 columns at DESKTOP_COL_PX. The spaces around it are counted as text. */
+export const PIE_COLS = 2

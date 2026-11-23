@@ -28,9 +28,12 @@ dots() { local i c; for i in $(seq 0 49); do c=$EMPTY; [ "$i" -lt "$3" ] && c=$4
 # bars x base
 bars() { local i=0 h c; for h in 2 5 9 2 14 7 18; do c=$MUTED; [ $i -eq 6 ] && c=$ORANGE; [ "$h" -eq 2 ] && c=$EMPTY
   rect $(( $1 + i * 13 )) $(( $2 - h )) 10 "$h" 1 "$c"; i=$((i+1)); done; }
-# track x y w fillw fillcol tick
+# track x y w fillw fillcol tick: the fill is the share used, the tick the share of the window gone
 track() { rect "$1" "$2" "$3" 5 2.5 "$EMPTY"; rect "$1" "$2" "$4" 5 2.5 "$5"; rect "$6" $(( $2 - 4 )) 2 13 0 "$TEXT"; }
 chip() { local w=$(( ${#3} * 9 + 14 )); rect "$1" $(( $2 - 15 )) "$w" 21 6 "$4"; t $(( $1 + w / 2 )) $(( $2 )) 12 700 "$INK" "$3" middle; }
+# pie x y pct col: the usage pie, 16 px, the used share as a wedge from 12 o'clock (as hooks/cache-art.ts pieShapes draws it)
+pie() { printf '<circle cx="%s" cy="%s" r="7" fill="%s"/>' $(( $1 + 8 )) $(( $2 + 8 )) "$EMPTY"
+  awk -v cx=$(( $1 + 8 )) -v cy=$(( $2 + 8 )) -v p="$3" -v c="$4" 'BEGIN { a = p / 100 * 6.2831853; printf "<path d=\"M%d %dL%d %dA7 7 0 %d 1 %.2f %.2fZ\" fill=\"%s\"/>", cx, cy, cx, cy - 7, (p > 50), cx + 7 * sin(a), cy - 7 * cos(a), c }'; }
 btn() { rect "$1" $(( $2 - 16 )) "$3" 24 6 "$BTN"; t $(( $1 + $3 / 2 )) $(( $2 )) 12 500 "$TEXT" "$4" middle; }
 
 head_() { printf '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 %s %s" font-family="system-ui,-apple-system,Segoe UI,sans-serif">' "$1" "$2" "$1" "$2"
@@ -38,10 +41,10 @@ head_() { printf '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"
 
 toprow() { # cold(0/1) width
   local hue=$WARM word=WARM after='32m left'; [ "$1" = 1 ] && hue=$COLD word=COLD after='16h 19m · $1.52'
-  t 18 34 13 700 "$TEXT" USAGE; t 76 34 13 500 "$MUTED" 5H; t 100 34 13 700 "$YELLOW" '90% left'; t 162 34 13 500 "$MUTED" '· 3h 50m'
-  t 234 34 13 500 "$MUTED" 7D; t 258 34 13 700 "$ORANGE" '69% left'; t 320 34 13 500 "$MUTED" '· 3d 3h'
-  t 380 34 13 500 "$MUTED" COST; t 418 34 13 700 "$TEXT" '≈$16.61'; t 474 34 13 500 "$MUTED" '· last $0.47'
-  chip 570 34 "$word" "$hue"; t $(( 570 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$after"
+  t 18 34 13 700 "$TEXT" USAGE; t 76 34 13 500 "$MUTED" 5H; pie 100 26 70 "$YELLOW"; t 122 34 13 700 "$YELLOW" '70% used'; t 190 34 13 500 "$MUTED" '· 3h 0m'
+  t 256 34 13 500 "$MUTED" 7D; pie 280 26 31 "$ORANGE"; t 302 34 13 700 "$ORANGE" '31% used'; t 370 34 13 500 "$MUTED" '· 3d 3h'
+  t 430 34 13 500 "$MUTED" COST; t 468 34 13 700 "$TEXT" '≈$16.61'; t 524 34 13 500 "$MUTED" '· last $0.47'
+  chip 620 34 "$word" "$hue"; t $(( 620 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$after"
   btn $(( $2 - 230 )) 34 28 '−'; btn $(( $2 - 194 )) 34 92 'Keep warm'; btn $(( $2 - 94 )) 34 78 'Wrap up'
   rect 18 50 $(( $2 - 36 )) 2 1 "$ORANGE"
 }
@@ -51,7 +54,7 @@ col() { echo $(( 18 + $1 * ($2 + 24) )); } # col i colW
 # The row above the card on a narrow band: percent used of each limit as /usage writes it, the cost, the chip and the icon buttons.
 narrowrow() { # cold
   local hue=$WARM word=WARM next='32m'; [ "$1" = 1 ] && hue=$COLD word=COLD next='$1.52 next'
-  t 18 34 13 500 "$MUTED" 5h; t 38 34 13 700 "$YELLOW" '10%'; t 82 34 13 500 "$MUTED" week; t 120 34 13 700 "$ORANGE" '31%'; t 166 34 13 700 "$TEXT" '≈$16.61'; chip 232 34 "$word" "$hue"; t $(( 232 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
+  t 18 34 13 500 "$MUTED" 5h; pie 38 26 70 "$YELLOW"; t 60 34 13 700 "$YELLOW" '70%'; t 104 34 13 500 "$MUTED" week; pie 148 26 31 "$ORANGE"; t 170 34 13 700 "$ORANGE" '31%'; t 216 34 13 700 "$TEXT" '≈$16.61'; chip 282 34 "$word" "$hue"; t $(( 282 + ${#word} * 9 + 22 )) 34 13 700 "$hue" "$next"
   btn 470 34 28 '−'; btn 504 34 36 K; btn 546 34 36 W; rect 18 50 564 2 1 "$ORANGE"
 }
 
@@ -75,10 +78,10 @@ card_b() { # W cold metrics
   title 18 82 'PACE VS RESET'
   local tx=$(( 18 + 28 )) tw=$(( (W - 36 - 28) * 55 / 100 )) wx lowl='runs out in ~2h 40m'
   wx=$(( tx + tw + 12 )); [ "$W" -lt 1000 ] && lowl='out in ~2h 40m'
-  t 18 134 12 700 "$ORANGE" 7D; track $tx 126 $tw $tw "$ORANGE" $(( tx + tw * 36 / 100 ))
+  t 18 134 12 700 "$ORANGE" 7D; track $tx 126 $tw $(( tw * 31 / 100 )) "$ORANGE" $(( tx + tw * 57 / 100 ))
   printf '<text x="%s" y="134" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">lasts ~8d 14h</tspan> · resets 3d 3h <tspan fill="%s" font-weight="700">✓</tspan></text>' $wx "$MUTED" "$TEXT" "$OK"
-  t 18 106 12 700 "$YELLOW" 5H; track $tx 98 $tw $(( tw * 70 / 100 )) "$DANGER" $(( tx + tw - 2 ))
-  printf '<text x="%s" y="106" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">%s</tspan> · resets 3h 50m</text>' $wx "$MUTED" "$DANGER" "$lowl"
+  t 18 106 12 700 "$YELLOW" 5H; track $tx 98 $tw $(( tw * 70 / 100 )) "$DANGER" $(( tx + tw * 40 / 100 ))
+  printf '<text x="%s" y="106" font-size="12" font-weight="500" fill="%s"><tspan fill="%s">%s</tspan> · resets 3h 0m</text>' $wx "$MUTED" "$DANGER" "$lowl"
   hline 18 150 $(( W - 36 ))
 
   # DELEGATION, first: the saving, cost and time compare bars, the work against the time it took.

@@ -148,8 +148,11 @@ export const keepWarmCost = (v: CacheView): { perHour: number; cold: number; bre
 /** The break-even as the card writes it: ~3h, or >24h when it is longer than a day. */
 export const fmtBreakEven = (h: number): string => (h > 24 ? '>24h' : `~${Math.max(1, Math.round(h))}h`)
 
-/** A usage window as the pace zone draws it: its label and colour, when it resets and its pace (null while unknown). */
-export type PaceRow = { label: string; color: string; untilResetMs: number | null; pace: Pace | null }
+/**
+ * A usage window as the pace zone draws it: its label and colour, when it resets and its pace (null while unknown),
+ * the share used (0 to 100) and the window's length, which with the time to the reset gives the share of time gone.
+ */
+export type PaceRow = { label: string; color: string; untilResetMs: number | null; pace: Pace | null; used?: number; windowMs?: number | null }
 
 // ---------- SVG helpers ----------
 const mix = (a: string, b: string, t: number): string =>
@@ -306,6 +309,34 @@ export const roboShapes = (x: number, y: number, size: number, mode: Mode): stri
 /** Robo beside the chip in the band's row. */
 export const ROBO_SIZE = 26
 export const roboSvg = (mode: Mode): string => svgDoc(ROBO_SIZE, ROBO_SIZE, roboShapes(0, 0, ROBO_SIZE, mode), false)
+
+// ---------- Pie: how much of a usage limit is used ----------
+/** The usage pie's size in px: about 2 columns on the desktop (see PIE_COLS in layout.ts). */
+export const PIE_SIZE = 16
+
+/** The wedge's path for `pct` used (0 to 100) in a circle of radius r around cx, cy, from 12 o'clock clockwise; '' for 0, null for a full circle. */
+export const wedgePath = (cx: number, cy: number, r: number, pct: number): string | null => {
+  const p = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0))
+  if (p <= 0) return ''
+  if (p >= 100) return null
+  const a = (p / 100) * 2 * Math.PI
+  const n = (v: number) => Math.round(v * 100) / 100
+  return `M${cx} ${cy}L${cx} ${n(cy - r)}A${r} ${r} 0 ${p > 50 ? 1 : 0} 1 ${n(cx + r * Math.sin(a))} ${n(cy - r * Math.cos(a))}Z`
+}
+
+/** The pie's shapes at x, y: a full circle in EMPTY and the used share as a wedge in `color`. */
+export const pieShapes = (x: number, y: number, size: number, pct: number, color: string): string => {
+  const r = size / 2 - 1
+  const cx = x + size / 2
+  const cy = y + size / 2
+  const w = wedgePath(cx, cy, r, pct)
+  return (
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${w === null ? color : EMPTY}"/>` + (w ? `<path d="${w}" fill="${color}"/>` : '')
+  )
+}
+
+/** The pie beside a usage window in the band's row. */
+export const pieSvg = (pct: number, color: string): string => svgDoc(PIE_SIZE, PIE_SIZE, pieShapes(0, 0, PIE_SIZE, pct, color), false)
 
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
@@ -566,8 +597,9 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     return g + big(x, y + 62, figure, 38, 'saved', 15, OK) + rows + words(capPick(variants, w, cap))
   }
 
-  // The pace strip, full width: one line a usage window. The label, a track (the bar is the time left at this
-  // pace, the tick is the reset) and the forecast in words to the right of the track. The desktop draws the card
+  // The pace strip, full width: one line a usage window. The label, a track (the bar is the share of the limit
+  // used, the tick is the share of the window's time gone: a bar past the tick is faster than the window allows,
+  // behind it is fine) and the forecast in words to the right of the track. The desktop draws the card
   // at about 70%, so the words are 18 px here to read as about 13, the band's own size.
   const paceStrip = () => {
     const g = t(13, 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
@@ -593,11 +625,18 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       const yb = top + 13
       s += t(13, yb, r.label, { size: 16, fill: r.color })
       s += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
+      // The fill is what is used, red when the forecast runs out before the reset; the tick is the share of the
+      // window's time already gone, none while the reset is unknown.
+      const used = Math.max(0, Math.min(100, r.used ?? 0))
+      if (used > 0) {
+        const bw = Math.min(tw, Math.max(3, Math.round((used / 100) * tw)))
+        s += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace && !r.pace.ok ? DANGER : r.color}"/>`
+      }
+      if (r.untilResetMs !== null && r.windowMs && r.untilResetMs > 0 && r.untilResetMs <= r.windowMs) {
+        const gone = 1 - r.untilResetMs / r.windowMs
+        s += `<rect x="${tx + Math.min(tw - 2, Math.max(0, Math.round(gone * tw) - 1))}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
+      }
       if (r.pace) {
-        const scale = Math.max(r.pace.lastsMs, r.pace.untilResetMs)
-        const bw = Math.max(3, Math.round((r.pace.lastsMs / scale) * tw))
-        s += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace.ok ? r.color : DANGER}"/>`
-        s += `<rect x="${tx + Math.round((r.pace.untilResetMs / scale) * tw) - 1}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
         const lasts = fmtIdle(r.pace.lastsMs)
         const reset = fmtIdle(r.pace.untilResetMs)
         s += r.pace.ok
@@ -613,7 +652,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
               { lead: `~${lasts}`, fill: DANGER, rest: '' },
             ])
       } else {
-        if (r.untilResetMs !== null) s += `<rect x="${tx + tw - 2}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
         s += words(yb, [
           { lead: 'pace unknown', fill: MUTED, rest: '' },
           { lead: 'unknown', fill: MUTED, rest: '' },

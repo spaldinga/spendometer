@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, roboSvg, svgDoc } from '../hooks/cache-art'
+import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, pieSvg, roboSvg, svgDoc, wedgePath } from '../hooks/cache-art'
 import type { CacheView, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 
@@ -26,9 +26,10 @@ const colXOf = (w: number, n: number, i: number) => 13 + i * (colWOf(w, n) + 26)
 const body = (s: string) => s.slice(s.indexOf('</style>'))
 const plainText = (s: string) => s.replace(/<[^>]*>/g, '')
 
-const PACE_OK: PaceRow = { label: '7D', color: '#ff6b1a', untilResetMs: 3 * 3600_000, pace: { lastsMs: 5 * 3600_000, untilResetMs: 3 * 3600_000, ok: true } }
-const PACE_LOW: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: 82 * 60_000, pace: { lastsMs: 160 * 60_000, untilResetMs: 200 * 60_000, ok: false } }
-const PACE_NONE: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: 82 * 60_000, pace: null }
+const H5 = 5 * 3600_000
+const PACE_OK: PaceRow = { label: '7D', color: '#ff6b1a', untilResetMs: 3 * 3600_000, windowMs: H5, used: 31, pace: { lastsMs: 5 * 3600_000, untilResetMs: 3 * 3600_000, ok: true } }
+const PACE_LOW: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: 3 * 3600_000, windowMs: H5, used: 70, pace: { lastsMs: 160 * 60_000, untilResetMs: 200 * 60_000, ok: false } }
+const PACE_NONE: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: null, windowMs: H5, used: 0, pace: null }
 
 // The x of a title in the columns' row.
 const titleX = (s: string, title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="${YC + 24}"[^>]*>${title}<`).exec(s)![1])
@@ -167,13 +168,37 @@ test('the pace words take the longest variant that fits to the right of the trac
   expect(at(1400, [PACE_OK, PACE_LOW])).toContain('runs out in ~2h 40m · resets 3h 20m')
 })
 
-test('the pace bar is the window colour when it lasts to the reset and red when it ends before', () => {
+test('the pace bar fills to the share used, in the window colour, red when the forecast runs out before the reset', () => {
   const s = body(cardSvg(WARM, 1400, SPEND, [PACE_OK, PACE_LOW]).source)
-  expect(s).toContain('height="6" rx="3" fill="#ff6b1a"')
-  expect(s).toContain(`height="6" rx="3" fill="${DANGER}"`)
+  const tw = Math.round((1400 - 26 - 34) * 0.55)
+  // 7D: 31% used, within the pace: its own colour. 5H: 70% used, runs out: red.
+  expect(s).toContain(`<rect x="47" y="40" width="${Math.round(0.31 * tw)}" height="6" rx="3" fill="#ff6b1a"/>`)
+  expect(s).toContain(`<rect x="47" y="68" width="${Math.round(0.7 * tw)}" height="6" rx="3" fill="${DANGER}"/>`)
   expect(s).toContain(`<tspan fill="${DANGER}">runs out in ~2h 40m</tspan> · resets 3h 20m`)
   expect(s).toContain(`>lasts ~5h 0m</tspan> · resets 3h 0m<tspan fill="${OK}"`)
   expect(s).not.toContain('bar: time left')
+})
+
+test('the pace tick is the share of the window already gone, none while the reset is unknown', () => {
+  const tw = Math.round((1400 - 26 - 34) * 0.55)
+  const tick = (rows: PaceRow[]) => [...body(cardSvg(WARM, 1400, SPEND, rows).source).matchAll(/<rect x="(\d+)" y="(36|64)" width="2" height="14" fill="#e8e2d2"\/>/g)].map(m => Number(m[1]))
+  // 3 h left of a 5 h window: 40% of the time gone.
+  expect(tick([PACE_OK])).toEqual([47 + Math.round(0.4 * tw) - 1])
+  expect(tick([PACE_OK, PACE_LOW])).toEqual([47 + Math.round(0.4 * tw) - 1, 47 + Math.round(0.4 * tw) - 1])
+  // 1 h left: 80% gone.
+  expect(tick([{ ...PACE_OK, untilResetMs: 3600_000 }])).toEqual([47 + Math.round(0.8 * tw) - 1])
+  expect(tick([{ ...PACE_OK, untilResetMs: null }])).toEqual([])
+  expect(tick([{ ...PACE_OK, windowMs: null }])).toEqual([])
+  // The pace can be unknown while the bar and the tick are not.
+  expect(tick([{ ...PACE_OK, pace: null }])).toEqual([47 + Math.round(0.4 * tw) - 1])
+})
+
+test('the pace bar is empty at 0% used, full at 100%, and a sliver never thinner than 3 px', () => {
+  const fills = (used: number) => [...body(cardSvg(WARM, 1400, SPEND, [{ ...PACE_OK, used }]).source).matchAll(/<rect x="47" y="40" width="(\d+)" height="6" rx="3" fill="#ff6b1a"\/>/g)].map(m => Number(m[1]))
+  const tw = Math.round((1400 - 26 - 34) * 0.55)
+  expect(fills(0)).toEqual([])
+  expect(fills(0.1)).toEqual([3])
+  expect(fills(100)).toEqual([tw])
 })
 
 test('the pace strip says so when the pace is unknown for a window, and when there are no windows', () => {
@@ -683,4 +708,29 @@ test('every colour a drawing paints is in the map, or is the translucent black l
   }
   for (const c of painted) if (c !== '#000') expect(Object.keys(LIGHT)).toContain(c)
   expect(painted.size).toBeGreaterThan(8)
+})
+
+// ---------- the usage pie ----------
+test('the pie wedge: nothing at 0, a quarter-turn at 25, a long arc past half, a full circle at 100', () => {
+  expect(wedgePath(8, 8, 7, 0)).toBe('')
+  expect(wedgePath(8, 8, 7, 100)).toBeNull()
+  expect(wedgePath(8, 8, 7, 25)).toBe('M8 8L8 1A7 7 0 0 1 15 8Z')
+  expect(wedgePath(8, 8, 7, 50)).toBe('M8 8L8 1A7 7 0 0 1 8 15Z')
+  expect(wedgePath(8, 8, 7, 21)).toContain('A7 7 0 0 1')
+  expect(wedgePath(8, 8, 7, 99.9)).toContain('A7 7 0 1 1')
+  // 99.9% ends just short of 12 o'clock, on the left of the top.
+  const end = /A7 7 0 1 1 ([\d.]+) ([\d.]+)Z/.exec(wedgePath(8, 8, 7, 99.9)!)!
+  expect(Number(end[1])).toBeLessThan(8)
+  expect(Number(end[1])).toBeGreaterThan(7.9)
+  expect(Number(end[2])).toBeLessThan(1.1)
+})
+
+test('the pie is an EMPTY circle with a wedge in the window colour; full when 100%, bare when 0, light style included', () => {
+  const at = (p: number) => body(pieSvg(p, ORANGE))
+  expect(at(21)).toContain(`<circle cx="8" cy="8" r="7" fill="${EMPTY}"/><path d="M8 8L8 1A7`)
+  expect(at(21)).toContain(`fill="${ORANGE}"/>`)
+  expect(at(0)).toBe(`</style><circle cx="8" cy="8" r="7" fill="${EMPTY}"/></svg>`)
+  expect(at(100)).toBe(`</style><circle cx="8" cy="8" r="7" fill="${ORANGE}"/></svg>`)
+  expect(pieSvg(50, YELLOW)).toContain('prefers-color-scheme: light')
+  expect(pieSvg(50, YELLOW)).toContain('width="16" height="16"')
 })

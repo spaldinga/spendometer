@@ -87,9 +87,9 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   return $.ui.mount({ plugin: 'wavebar', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
 }
 
-test('at 68 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
-  const band = await mountAt($, on, 68)
-  // The estimate: the compact row is 48 columns here (step 0), the icon buttons 18 and 2 columns of slack: 68 is the least width for step 0 with the buttons inline.
+test('at 70 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
+  const band = await mountAt($, on, 70)
+  // The estimate: the compact row is 50 columns here (step 0), the icon buttons 18 and 2 columns of slack: 70 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌')
@@ -143,12 +143,12 @@ test('at 100 columns, a usual desktop window, everything stays on one wide row',
 })
 
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
-// step 0: 48, 1: 38 warm (48 cold), 2: 30, 3: 25, 4: 17. With the buttons (18) and 2 columns of slack:
-// step 0 from 68 columns, 1 from 58, 2 from 50, 3 from 45, 4 from 37; under 37 the buttons take a row of their own.
+// step 0: 50, 1: 40 warm (50 cold), 2: 32, 3: 27, 4: 20 (a pie, 2 columns, in each window). With the buttons (18) and 2 columns of slack:
+// step 0 from 70 columns, 1 from 60, 2 from 52, 3 from 47, 4 from 40; under 40 the buttons take a row of their own.
 const row = async (band: Awaited<ReturnType<typeof mountAt>>) => shown(await band.find({ key: 'row' }))
 
-test('the ladder: warm shows the next cost at step 0 (68 columns)', async ($, on) => {
-  const band = await mountAt($, on, 68)
+test('the ladder: warm shows the next cost at step 0 (70 columns)', async ($, on) => {
+  const band = await mountAt($, on, 70)
   expect(await row(band)).toContain('next')
   await band.unmount()
 })
@@ -383,7 +383,7 @@ test('a window whose reset time has passed shows 100% left, not the old share an
   // Two hours on: the 5-hour window reset at 23:29, the 7-day one has not.
   const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW + 2 * 3600_000)
   const row = shown((await band.find({ key: 'row' }))!)
-  expect(row).toContain('100% left')
+  expect(row).toContain('0% used')
   expect(row).not.toContain('resetting')
   await band.unmount()
 })

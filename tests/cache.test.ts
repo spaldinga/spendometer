@@ -28,7 +28,8 @@ test('a warm cache shows Robo, the WARM chip and the minutes left, folded', asyn
   const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
   // Drawings keep no key in the kit, so they are found by what they say.
   const alts = (await band.findAll({ type: 'Svg' })).map(s => s.props.alt)
-  expect(alts).toEqual(['Robo, bobbing', 'WARM'])
+  // A pie per usage window, 5H first, then Robo and the chip.
+  expect(alts).toEqual(['5H 18% used', '7D 1% used', 'Robo, bobbing', 'WARM'])
   expect(await band.find({ text: ' 42m left' })).toBeDefined()
   expect(await band.find({ key: 'card' })).toBeUndefined()
   expect((await band.find({ key: 'cache-fold' }))?.props.label).toBe('+')
@@ -116,7 +117,8 @@ test('a cleared session drops the cache until the next reply', async ($, on) => 
   await $.classic.SessionStart({ source: 'clear' })
 
   const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
-  expect(await band.findAll({ type: 'Svg' })).toEqual([])
-  expect(await band.find({ text: ' 99% left' })).toBeDefined()
+  // No cache: no chip or Robo, only the usage pies.
+  expect((await band.findAll({ type: 'Svg' })).map(s => s.props.alt)).toEqual(['5H 18% used', '7D 1% used'])
+  expect(await band.find({ text: ' 1% used' })).toBeDefined()
   await band.unmount()
 })
