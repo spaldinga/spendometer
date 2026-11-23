@@ -198,13 +198,13 @@ Remove it with `/plugin uninstall wavebar@wavebar`.
 ## Settings
 
 ```
-/wavebar status        show the settings
-/wavebar cost          print this conversation's cost (Wrap up runs it for the debrief)
-/wavebar fold          open or close the cache card from the keyboard
-/wavebar progress      list the progress row themes (comet, calm, vitals, bridge, wake, dial)
+/wavebar fold           open or close the cache card from the keyboard
+/wavebar cost           print this conversation's cost (Wrap up runs it for the debrief)
+/wavebar progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
 /wavebar progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
-/wavebar wrapup on     show the Wrap up button (default: off)
-/wavebar hold off      stop holding risky git commands (default: on)
+/wavebar wrapup on      show the Wrap up button (default: off)
+/wavebar hold off       stop holding risky git commands (default: on)
+/wavebar                show the settings and the width the band was drawn at
 ```
 
 The Keep warm switch is the button in the band. Settings are saved for every session.

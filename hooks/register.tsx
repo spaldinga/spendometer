@@ -229,13 +229,19 @@ const themeOf = async ($: EngineInterface): Promise<ThemeId> => {
   }
 }
 
+// The answer is shown as markdown: a plain list, the theme in use in bold. A leading * marked it before, and
+// markdown read that one line as a bullet with the lines after it folded into it.
 const themeList = (now: ThemeId): string =>
-  'progress themes:\n' + THEME_IDS.map(id => `${id === now ? '*' : ' '} ${id} - ${THEME_NAMES[id]}${id === DEFAULT_THEME ? ' (default)' : ''}`).join('\n')
+  `Progress themes, pick one with /${SETTINGS} progress <id>:\n` +
+  THEME_IDS.map(id => {
+    const tags = [id === now ? 'in use' : '', id === DEFAULT_THEME ? 'default' : ''].filter(Boolean).join(', ')
+    return `- ${id === now ? `**${id}**` : id}${tags ? ` (${tags})` : ''}: ${THEME_NAMES[id].replace(/^[^:]+: /, '')}`
+  }).join('\n')
 
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 const settingsAnswer = async ($: EngineInterface, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} [status] | cost | fold | progress [id] | wrapup on|off | hold on|off`
+  const usage = `Usage: /${SETTINGS} fold | cost | progress [id] | wrapup on|off | hold on|off. With no argument it shows the settings.`
   const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
@@ -580,7 +586,7 @@ export const register: Register = on => {
       await $.command.register({
         name: SETTINGS,
         description: "Settings for the band above the prompt: the progress row's look, the Wrap up button and the hold for risky git commands",
-        argumentHint: '[status] | cost | fold | progress [id] | wrapup on|off | hold on|off',
+        argumentHint: 'fold | cost | progress [id] | wrapup on|off | hold on|off',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
