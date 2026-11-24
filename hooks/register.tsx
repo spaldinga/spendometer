@@ -33,7 +33,7 @@ import {
 // it reads the engine's own figures and draws.
 //
 // With cache-tax installed it also carries that mod's keep-warm switch: one button,
-// on or off for every session, off until pressed. A keep-warm ping that really read the
+// on or off for each conversation, off until pressed. A keep-warm ping that really read the
 // cache starts the hour again here too, so the band and cache-tax agree.
 
 const CELLS = 10
@@ -41,9 +41,16 @@ const LOW_AT = 15
 const TIGHT_CELLS = 6
 /** How often the band redraws, so the countdown and the warm-to-cold flip stay current. */
 const TICK_MS = 30_000
-/** cache-tax's command, and the key this band remembers the switch under, for every session. */
+/** cache-tax's command, and the key this band remembers the default switch under: what a conversation with no choice of its own gets. */
 const KEEPWARM = 'keepwarm'
 const KEEP_KEY = 'keep'
+/** Each conversation's own switch and renewal record; entries untouched for a month are pruned at session start. */
+const KEEP_PREFIX = 'keep:'
+/** The window a conversation's switch asks cache-tax for, renewed after a turn once this much time has passed. */
+const KEEP_WINDOW = '6h'
+const KEEP_RENEW_MS = 2 * 60 * 60 * 1000
+/** Wait before the start or turn sync runs the command, outside the hook the session or turn waits on. */
+const KEEP_SYNC_DELAY_MS = 2000
 /** The mod's own settings command: one name, so a rename touches one line. */
 const SETTINGS = 'wavebar'
 const WRAP_KEY = 'wrapUp'
@@ -468,10 +475,38 @@ const hasCommand = async ($: EngineInterface, name: string): Promise<boolean> =>
   }
 }
 
-/** The switch as saved: on, off, or null when cache-tax is not there to switch. */
+/** One conversation's keep-warm record: its switch, when its window was last renewed, whether the one-time `off` ran. */
+/**
+ * Whether cache-tax's global `always` may still be on (shared by all conversations): older versions of the button set
+ * it, and a typed `/keepwarm always` sets it. Unset counts as maybe; any `/keepwarm off` clears it.
+ */
+const ALWAYS_MAY_BE_ON = 'keepAlwaysMayBeOn'
+
+type KeepRec ={ on?: boolean; renewedAt?: number; synced?: boolean; at: number }
+
+const readKeepRec = async ($: EngineInterface): Promise<KeepRec | null> => {
+  const r = (await $.store.get(KEEP_PREFIX + (await $.session.id()))) as Partial<KeepRec> | null | undefined
+  if (!r || typeof r !== 'object') return null
+  return {
+    ...(typeof r.on === 'boolean' ? { on: r.on } : {}),
+    ...(typeof r.renewedAt === 'number' ? { renewedAt: r.renewedAt } : {}),
+    ...(r.synced === true ? { synced: true } : {}),
+    at: typeof r.at === 'number' ? r.at : 0,
+  }
+}
+
+/** Merges into this conversation's record and stamps `at`, which is what the month's pruning reads. */
+const putKeepRec = async ($: EngineInterface, patch: Partial<Omit<KeepRec, 'at'>>): Promise<void> => {
+  const was = await readKeepRec($)
+  await $.store.set(KEEP_PREFIX + (await $.session.id()), { ...was, ...patch, at: await $.clock.now() })
+}
+
+/** The conversation's switch as saved: its own, else the default for new conversations; null when cache-tax is not there. */
 const keepState = async ($: EngineInterface): Promise<boolean | null> => {
   try {
     if (!(await hasCommand($, KEEPWARM))) return null
+    const rec = await readKeepRec($)
+    if (rec && typeof rec.on === 'boolean') return rec.on
     return (await $.store.get(KEEP_KEY)) === true
   } catch {
     return null
@@ -489,11 +524,40 @@ export const crewText = (running: Worker[]): string => {
   return s.length > CREW_MAX ? s.slice(0, CREW_MAX - 1) + '…' : s
 }
 
-/** Saves the switch and tells cache-tax: always keeps every session warm, off stops it for good. */
+/**
+ * Saves this conversation's switch and tells cache-tax: on starts this conversation's window, off stops it
+ * (and clears cache-tax's global `always`, which is intended). The default for new conversations is not touched.
+ */
 const setKeep = async ($: EngineInterface, isOn: boolean): Promise<void> => {
-  await $.store.set(KEEP_KEY, isOn)
+  const now = await $.clock.now()
+  await putKeepRec($, isOn ? { on: true, renewedAt: now } : { on: false, synced: true })
+  if (!isOn) await $.store.set(ALWAYS_MAY_BE_ON, false)
   $.ui.invalidate('ui.render')
-  fire($, KEEPWARM, isOn ? 'always' : 'off')
+  fire($, KEEPWARM, isOn ? KEEP_WINDOW : 'off')
+}
+
+/**
+ * Keeps this conversation's window as the switch says, rarely: with the switch on, a fresh window when none was
+ * started in the last 2 hours; with it off, one `off` ever, so a global `always` an older version left in cache-tax
+ * does not keep it warm. Runs from a delayed timer, since a command cannot be run from inside a hook the turn waits on.
+ */
+const syncKeep = async ($: EngineInterface): Promise<void> => {
+  try {
+    const isOn = await keepState($)
+    if (isOn === null) return
+    const rec = await readKeepRec($)
+    if (isOn) {
+      const now = await $.clock.now()
+      if (rec?.renewedAt === undefined || now - rec.renewedAt > KEEP_RENEW_MS) {
+        await putKeepRec($, { renewedAt: now })
+        fire($, KEEPWARM, KEEP_WINDOW)
+      }
+    } else if ((await $.store.get(ALWAYS_MAY_BE_ON)) !== false) {
+      // Once for all conversations, not once each: an `off` clears cache-tax's global always, and every `off` prints a line.
+      await $.store.set(ALWAYS_MAY_BE_ON, false)
+      fire($, KEEPWARM, 'off')
+    }
+  } catch { /* the next turn tries again */ }
 }
 
 // ---------- Hold and show ----------
@@ -637,6 +701,11 @@ export const register: Register = on => {
           await $.store.delete(key)
           continue
         }
+        if (key.startsWith(KEEP_PREFIX)) {
+          const k = (await $.store.get(key)) as Partial<KeepRec> | null | undefined
+          if (k && typeof k.at === 'number' && k.at < cutoff) await $.store.delete(key)
+          continue
+        }
         if (key.startsWith(DAY_PREFIX)) {
           if (isOldDay(key, nowMs, DAY_KEEP_DAYS)) await $.store.delete(key)
           continue
@@ -646,6 +715,8 @@ export const register: Register = on => {
         if (s && typeof s.at === 'number' && s.at < cutoff) await $.store.delete(key)
       }
     } catch { /* an entry that stays is only a few bytes */ }
+    // A resumed conversation with the switch on gets its window again; one with it off gets its one-time `off`.
+    $.clock.after(KEEP_SYNC_DELAY_MS, () => { void syncKeep($) })
     // For a request the model keeps no task list for. Listed up front: nobody goes looking for a progress tool.
     try {
       await $.tool.register({
@@ -687,11 +758,16 @@ export const register: Register = on => {
 
   on('command.run', { command: SETTINGS }, async ($, e) => ({ text: await settingsAnswer($, String(e.args ?? '')) }))
 
-  // A typed /keepwarm always or off moves the switch too. cache-tax answers the command beneath.
+  // A typed /keepwarm always or off sets the default for new conversations and this conversation's switch.
+  // cache-tax answers the command beneath. The band's own runs (origin plugin) are not typed: they leave the default alone.
   on('command.run', { command: KEEPWARM }, async ($, e, next) => {
     const word = String(e.args ?? '').trim().split(/\s+/)[0]
-    if (word === 'always' || word === 'off') {
-      await $.store.set(KEEP_KEY, word === 'always')
+    if ((word === 'always' || word === 'off') && e.origin?.kind !== 'plugin') {
+      const isOn = word === 'always'
+      await $.store.set(KEEP_KEY, isOn)
+      // A typed always switches cache-tax's global always on again, so the next off conversation clears it once more.
+      await $.store.set(ALWAYS_MAY_BE_ON, isOn)
+      await putKeepRec($, isOn ? { on: true } : { on: false, synced: true })
       $.ui.invalidate('ui.render')
     }
     return next(e)
@@ -821,7 +897,13 @@ export const register: Register = on => {
     if ((await read($, ending)) === 'running') {
       await update($, ending, () => null)
       // The debrief is in: stop holding this conversation's cache. The switch stays on for the next one.
-      if ((await keepState($)) === true) $.clock.after(WRAP_DELAY_MS, () => fire($, KEEPWARM, WRAP_WINDOW))
+      if ((await keepState($)) === true) {
+        // The short window counts as this turn's renewal, so the sync below does not undo it.
+        try { await putKeepRec($, { renewedAt: await $.clock.now() }) } catch { /* the sync may then renew once */ }
+        $.clock.after(WRAP_DELAY_MS, () => fire($, KEEPWARM, WRAP_WINDOW))
+      }
+    } else {
+      $.clock.after(KEEP_SYNC_DELAY_MS, () => { void syncKeep($) })
     }
     const now = await $.clock.now()
     const c = await read($, cache)

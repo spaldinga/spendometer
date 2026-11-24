@@ -139,7 +139,7 @@ press **Proceed**.
 
 ### Keep the cache warm, wrap up cleanly
 
-- **Keep warm** (with [cache-tax](https://github.com/karanb192/cache-tax)): one button keeps the
+- **Keep warm** (with [cache-tax](https://github.com/karanb192/cache-tax)): one button, per conversation, keeps the
   prompt cache alive between your messages, so coming back after a break doesn't re-pay for the
   whole context. The card shows what it costs an hour and what it has saved.
 - **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
@@ -159,8 +159,11 @@ press **Proceed**.
 ## What it does
 
 - **Keep warm switch.** With [cache-tax](https://github.com/karanb192/cache-tax) installed, a
-  `Keep warm: on/off` button runs cache-tax's `/keepwarm always` and `/keepwarm off`. It is off
-  until you press it. wavebar also listens to cache-tax's keep-warm pings, so the band says
+  `Keep warm: on/off` button is per conversation: on runs `/keepwarm 6h` for this conversation (wavebar
+  renews it after a turn when the last renewal is over 2 hours old), off runs `/keepwarm off`. Other
+  conversations are not affected. A typed `/keepwarm always` or `/keepwarm off` sets the default for
+  conversations that have not been pressed yet, and this conversation's switch too. It is off
+  until you press it. Each renewal prints cache-tax's one answer line in the conversation. wavebar also listens to cache-tax's keep-warm pings, so the band says
   `WARM` for as long as the cache really is.
 - **Hold for risky git commands.** When Claude runs `git reset --hard`, a `git checkout` or
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
@@ -207,7 +210,7 @@ Remove it with `/plugin uninstall wavebar@wavebar`.
 /wavebar                show the settings and the width the band was drawn at
 ```
 
-The Keep warm switch is the button in the band. Settings are saved for every session.
+The Keep warm switch is the button in the band, saved per conversation (a typed `/keepwarm always|off` sets the default for new conversations). Other settings are saved for every session.
 
 ## How it works
 
