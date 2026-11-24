@@ -1,7 +1,7 @@
-# wavebar: working notes for agents
+# spendometer: working notes for agents
 
 A Claude Code mod: a band above the prompt. A fork of `robonuggets/ribbon` (MIT), installed locally as
-`wavebar@wavebar` from a folder marketplace, so the app reads the files in this repo directly. It
+`spendometer@spendometer` from a folder marketplace, so the app reads the files in this repo directly. It
 drives `cache-tax` (keep-warm) and adds a progress bar, subagent display, session cost, a Wrap up
 button and a hold for risky git commands.
 

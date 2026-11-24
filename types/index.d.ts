@@ -76,7 +76,7 @@ export type Ending = 'asked' | 'running' | null
 
 declare module 'claude-code' {
   interface PluginState {
-    'wavebar': {
+    'spendometer': {
       windows: Window[]
       cache: CacheFacts | null
       fold: Fold | null

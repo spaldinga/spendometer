@@ -1,4 +1,4 @@
-# wavebar
+# spendometer
 
 **Know where you stand while Claude works.** A band above the Claude Code prompt shows how much of
 your usage you have used (as pies) and when it resets, what the conversation has cost, whether the prompt cache is
@@ -7,10 +7,10 @@ still warm, how far the current request has come, and which subagents are runnin
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The wavebar band with its card open: pies for the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
+  <img alt="The spendometer band with its card open: pies for the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
-wavebar is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
+spendometer is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
 model by itself. No setup, no keys, no account. Pictures in this README are mockups with example
 numbers, shown in your GitHub theme.
 
@@ -19,7 +19,7 @@ numbers, shown in your GitHub theme.
 One line in a terminal (bash, zsh or PowerShell 7):
 
 ```bash
-claude plugin marketplace add spaldinga/wavebar && claude plugin install wavebar@wavebar
+claude plugin marketplace add spaldinga/spendometer && claude plugin install spendometer@spendometer
 ```
 
 Then, in a Claude Code session that is already open, run `/reload-plugins --force` (a new session
@@ -28,8 +28,8 @@ picks it up by itself). That's it: the band appears above the prompt.
 Or from inside Claude Code:
 
 ```
-/plugin marketplace add spaldinga/wavebar
-/plugin install wavebar@wavebar
+/plugin marketplace add spaldinga/spendometer
+/plugin install spendometer@spendometer
 /reload-plugins --force
 ```
 
@@ -48,7 +48,7 @@ details.
 
 ### A card with the numbers behind it
 
-Press `+` on the band (or type `/wavebar fold`) to open the card. It has one layout at every
+Press `+` on the band (or type `/spendometer fold`) to open the card. It has one layout at every
 width. Across the top, always, is the pace of each usage window against its reset, one line a
 window: the bar is how much of the limit is used (red when it runs out before the reset), the tick is how much of the window's time has gone, so a bar past the tick is faster than the window allows and one behind it is fine, and the words say whether it
 lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
@@ -80,7 +80,7 @@ cheaper ones).
 ### Progress you can read at a glance, in six styles
 
 While Claude works through a task list, the band shows how far it has come, the step in progress,
-and the subagents running. Pick a style with `/wavebar progress <id>`; the choice is kept for every
+and the subagents running. Pick a style with `/spendometer progress <id>`; the choice is kept for every
 session.
 
 **`comet`** (default): a comet streaks to the current step and sets it ringing.
@@ -129,7 +129,7 @@ progress.
 ### A second look before git throws work away
 
 When Claude runs `git reset --hard`, a discarding `git checkout` or `git restore`, a forced
-`git clean` or a force push, wavebar holds it and shows what would be lost. Nothing runs until you
+`git clean` or a force push, spendometer holds it and shows what would be lost. Nothing runs until you
 press **Proceed**.
 
 <picture>
@@ -159,15 +159,15 @@ press **Proceed**.
 ## What it does
 
 - **Keep warm switch.** With [cache-tax](https://github.com/karanb192/cache-tax) installed, a
-  `Keep warm: on/off` button is per conversation: on runs `/keepwarm 6h` for this conversation (wavebar
+  `Keep warm: on/off` button is per conversation: on runs `/keepwarm 6h` for this conversation (spendometer
   renews it after a turn when the last renewal is over 2 hours old), off runs `/keepwarm off`. Other
   conversations are not affected. A typed `/keepwarm always` or `/keepwarm off` sets the default for
   conversations that have not been pressed yet, and this conversation's switch too. It is off
-  until you press it. Each renewal prints cache-tax's one answer line in the conversation. wavebar also listens to cache-tax's keep-warm pings, so the band says
+  until you press it. Each renewal prints cache-tax's one answer line in the conversation. spendometer also listens to cache-tax's keep-warm pings, so the band says
   `WARM` for as long as the cache really is.
 - **Hold for risky git commands.** When Claude runs `git reset --hard`, a `git checkout` or
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
-  PowerShell tool, wavebar holds the call and shows what it would lose (files, untracked paths,
+  PowerShell tool, spendometer holds the call and shows what it would lose (files, untracked paths,
   or the commits a force push would drop) with **Cancel** and **Proceed**.
 - **Wrap up button** (off by default). Runs your `/debrief` command, writes the conversation's
   cost into the transcript for it to quote, and then stops keeping this conversation's cache
@@ -189,25 +189,25 @@ Built and used on Windows 11 in the Claude desktop app, in dark and light themes
 From a local clone:
 
 ```bash
-git clone https://github.com/spaldinga/wavebar.git
-claude plugin marketplace add ./wavebar
-claude plugin install wavebar@wavebar --scope user
+git clone https://github.com/spaldinga/spendometer.git
+claude plugin marketplace add ./spendometer
+claude plugin install spendometer@spendometer --scope user
 ```
 
 If you have the original `ribbon` mod installed, uninstall it first: both draw the same band.
 
-Remove it with `/plugin uninstall wavebar@wavebar`.
+Remove it with `/plugin uninstall spendometer@spendometer`.
 
 ## Settings
 
 ```
-/wavebar fold           open or close the cache card from the keyboard
-/wavebar cost           print this conversation's cost (Wrap up runs it for the debrief)
-/wavebar progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
-/wavebar progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
-/wavebar wrapup on      show the Wrap up button (default: off)
-/wavebar hold off       stop holding risky git commands (default: on)
-/wavebar                show the settings and the width the band was drawn at
+/spendometer fold           open or close the cache card from the keyboard
+/spendometer cost           print this conversation's cost (Wrap up runs it for the debrief)
+/spendometer progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
+/spendometer progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
+/spendometer wrapup on      show the Wrap up button (default: off)
+/spendometer hold off       stop holding risky git commands (default: on)
+/spendometer                show the settings and the width the band was drawn at
 ```
 
 The Keep warm switch is the button in the band, saved per conversation (a typed `/keepwarm always|off` sets the default for new conversations). Other settings are saved for every session.
@@ -241,11 +241,11 @@ The Keep warm switch is the button in the band, saved per conversation (a typed 
 - **The cache state is a clock, not a server check.** It assumes a one-hour cache lifetime.
 - **Prices are a table in the code** (`hooks/cache-art.ts`) and go stale when list prices change.
   A model the table does not know adds nothing to the cost.
-- **Only one mod can draw the band.** wavebar takes the whole band above the prompt, so another
+- **Only one mod can draw the band.** spendometer takes the whole band above the prompt, so another
   mod that draws there will not show.
 - **The `progress` tool is always listed**, which adds its short description to every request.
 - **On managed (Team/Enterprise) installs**, some session events never reach user-installed mods.
-  wavebar is built around that, but a resumed conversation shows no cache state until its first
+  spendometer is built around that, but a resumed conversation shows no cache state until its first
   reply.
 - Tested by its own test suite and by daily use on one Windows machine. The terminal layout and
   macOS/Linux are covered by tests only.
@@ -279,16 +279,16 @@ types/index.d.ts     the mod's state
 
 ## Credits
 
-wavebar is a fork of [ribbon](https://github.com/robonuggets/ribbon) by Jay E (RoboNuggets),
+spendometer is a fork of [ribbon](https://github.com/robonuggets/ribbon) by Jay E (RoboNuggets),
 which provides the usage bars, the cache card and Robo, the robot. Ideas and behaviour also come
 from:
 
-- [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal: keep-warm, which wavebar
+- [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal: keep-warm, which spendometer
   drives but does not include.
 - [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by
   JohnnyVizz: the idea of a progress bar and a subagent display above the prompt.
 - [Blast Radius](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius)
-  by Anthropic: holding a risky command and showing what it would change. wavebar's git
+  by Anthropic: holding a risky command and showing what it would change. spendometer's git
   measurements follow it.
 
 ## License

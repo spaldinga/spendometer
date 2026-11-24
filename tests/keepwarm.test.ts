@@ -19,7 +19,7 @@ const PROPS = {
   scroll: { offset: 0, bodyRows: 12 },
   view: {},
 } as const
-const BAND = { plugin: 'wavebar', component: 'AbovePrompt', props: PROPS } as const
+const BAND = { plugin: 'spendometer', component: 'AbovePrompt', props: PROPS } as const
 const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
 
 /** Stands in for cache-tax: another mod whose /ping forks the main thread, as a keep-warm ping does. */
@@ -447,7 +447,7 @@ test("the band adds up the conversation's cost, the main session's and its subag
 test('the cost command answers with the line a debrief can quote, and Wrap up still runs the debrief', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { ran } = engine(on, { keep: true, commands: ['keepwarm', 'debrief'], prefill: WRAP })
-  const cost = async () => ((await $.command.run({ command: 'wavebar', args: 'cost', ...RUN })) as { text: string }).text
+  const cost = async () => ((await $.command.run({ command: 'spendometer', args: 'cost', ...RUN })) as { text: string }).text
   await seed($, 18)
   // Nothing spent yet: the command says so rather than printing zeros.
   expect(await cost()).toBe('no cost recorded for this conversation yet')
@@ -461,7 +461,7 @@ test('the cost command answers with the line a debrief can quote, and Wrap up st
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await band.press({ key: 'wrap-up' })
   // The cost is asked for first, then the debrief.
-  expect(ran).toEqual(['wavebar cost', 'debrief'])
+  expect(ran).toEqual(['spendometer cost', 'debrief'])
   await band.unmount()
 })
 
@@ -714,28 +714,28 @@ test('a session id that cannot be read leaves the band without a cost and throws
   await band.unmount()
 })
 
-test('Wrap up is absent by default and appears after /wavebar wrapup on', async ($, on) => {
+test('Wrap up is absent by default and appears after /spendometer wrapup on', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store } = engine(on, { keep: true, commands: ['keepwarm', 'debrief'] })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
-  const r = await $.command.run({ command: 'wavebar', args: 'wrapup on', ...RUN })
+  const r = await $.command.run({ command: 'spendometer', args: 'wrapup on', ...RUN })
   expect(store.get('wrapUp')).toBe(true)
   expect(JSON.stringify(r)).toContain('wrapup')
   expect(await band.find({ key: 'wrap-up' })).toBeDefined()
-  await $.command.run({ command: 'wavebar', args: 'wrapup off', ...RUN })
+  await $.command.run({ command: 'spendometer', args: 'wrapup off', ...RUN })
   expect(store.get('wrapUp')).toBe(false)
   expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
   await band.unmount()
 })
 
-test('/wavebar registers itself, reports status, and answers anything else with usage', async ($, on) => {
+test('/spendometer registers itself, reports status, and answers anything else with usage', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store, registered } = engine(on, { keep: true })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  expect(registered).toContain('wavebar')
-  const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
+  expect(registered).toContain('spendometer')
+  const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
   const status = await text('')
   expect(status).toContain('wrapup: off')
   expect(status).toContain('hold: on')
@@ -754,7 +754,7 @@ test('a command that fails to register does not stop the rest of session start',
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, registerThrows: true })
   const registered: string[] = []
-  on('tool.register', ($, e) => { registered.push(e.name); return { value: { tool: `mcp__wavebar__${e.name}` } } })
+  on('tool.register', ($, e) => { registered.push(e.name); return { value: { tool: `mcp__spendometer__${e.name}` } } })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   expect(registered).toEqual(['progress'])
 })
@@ -891,11 +891,11 @@ test('a session record without the keep-warm figures still reads, and keeps its 
   expect(s.saved).toBeUndefined()
 })
 
-test('/wavebar progress lists the themes, sets one account-wide, and answers a wrong id with the list', async ($, on) => {
+test('/spendometer progress lists the themes, sets one account-wide, and answers a wrong id with the list', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store } = engine(on, { keep: true })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
+  const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
   expect(await text('status')).toContain('progress: comet')
   const list = await text('progress')
   expect(list).toContain('- **comet** (in use, default): a comet')
@@ -916,7 +916,7 @@ test('an unknown saved progress theme is the default', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { progressTheme: 'gone' } })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  const text = async (args: string) => ((await $.command.run({ command: 'wavebar', args, ...RUN })) as { text: string }).text
+  const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
   expect(await text('status')).toContain('progress: comet')
   expect(await text('progress')).toContain('- **comet** (in use, default)')
 })

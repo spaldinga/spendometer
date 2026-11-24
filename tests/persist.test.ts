@@ -8,7 +8,7 @@ const WINDOWS = [
   { kind: 'seven_day', percentUsed: 1 },
 ]
 const BAND = {
-  plugin: 'wavebar',
+  plugin: 'spendometer',
   component: 'AbovePrompt',
   props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 160, scroll: { offset: 0, bodyRows: 12 }, view: {} },
 } as const

@@ -443,7 +443,7 @@ const cometPace = (W: number): string =>
 export const THEME_IDS = ['calm', 'vitals', 'bridge', 'wake', 'dial', 'comet'] as const
 export type ThemeId = (typeof THEME_IDS)[number]
 export const DEFAULT_THEME: ThemeId = 'comet'
-/** What `/wavebar progress` lists for each theme: its name and what it does. */
+/** What `/spendometer progress` lists for each theme: its name and what it does. */
 export const THEME_NAMES: Record<ThemeId, string> = {
   calm: 'Calm: one quiet segment per step, the current one breathing. The least motion',
   vitals: 'Vitals: a monitor pen writes each finished step as a heartbeat; a heart beats at the step in progress',

@@ -27,7 +27,7 @@ test('the band shows percent left for each window once a reading lands', async (
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({
-      plugin: 'wavebar',
+      plugin: 'spendometer',
       surface,
       component: 'AbovePrompt',
       props: PROPS,
@@ -51,7 +51,7 @@ test('in a narrow band the windows shrink to their percent left, with no names, 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({
-    plugin: 'wavebar',
+    plugin: 'spendometer',
     surface: 'desktop',
     component: 'AbovePrompt',
     props: { ...PROPS, bodyColumns: 36 },
@@ -76,7 +76,7 @@ const pies = async (band: { findAll: (q: { type: string }) => Promise<{ props: R
 
 test('on the desktop the wide row draws a pie per window, 5H then 7D, with the percent used', async ($, on) => {
   await usageSetup($, on)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 100 } })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 100 } })
   expect(await pies(band)).toEqual(['5H 58% used', '7D 12.5% used'])
   const row = shown(await band.find({ key: 'row' }))
   expect(row).toContain('58% used')
@@ -88,7 +88,7 @@ test('on the desktop the wide row draws a pie per window, 5H then 7D, with the p
 
 test('on the desktop the compact row is the short name, a pie and the percent used; the last step drops the name', async ($, on) => {
   await usageSetup($, on)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 45 } })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 45 } })
   expect(await pies(band)).toEqual(['5H 58% used', '7D 12.5% used'])
   const row = shown(await band.find({ key: 'row' }))
   expect(row).toContain('5h ')
@@ -97,7 +97,7 @@ test('on the desktop the compact row is the short name, a pie and the percent us
   expect(row).toContain('12.5%')
   await band.unmount()
 
-  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 25 } })
+  const narrow = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 25 } })
   expect(await pies(narrow)).toEqual(['5H 58% used', '7D 12.5% used'])
   const r = shown(await narrow.find({ key: 'row' }))
   expect(r).toContain('58%')
@@ -107,7 +107,7 @@ test('on the desktop the compact row is the short name, a pie and the percent us
 
 test('the terminal keeps its text forms: dots and percent left on the wide row, no drawings', async ($, on) => {
   await usageSetup($, on)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'terminal', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 100 } })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'terminal', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 100 } })
   expect(await band.findAll({ type: 'Svg' })).toEqual([])
   const row = shown(await band.find({ key: 'row' }))
   expect(row).toContain('42% left')

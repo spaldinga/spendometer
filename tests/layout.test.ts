@@ -84,7 +84,7 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   on('command.list', () => ({ value: ['keepwarm', 'cache-tax', 'debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
   await $.session.start({ surface, isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: 200000, model: 'claude-opus-5-5' })
-  return $.ui.mount({ plugin: 'wavebar', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
+  return $.ui.mount({ plugin: 'spendometer', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
 }
 
 test('at 70 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
@@ -452,10 +452,10 @@ test('at 68 columns the open card has two columns, the pace strip and the status
   await band.unmount()
 })
 
-test('/wavebar fold opens and closes the card like the fold button', async ($, on) => {
+test('/spendometer fold opens and closes the card like the fold button', async ($, on) => {
   const band = await mountAt($, on, 160)
   const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
-  const fold = async () => ((await $.command.run({ command: 'wavebar', args: 'fold', ...RUN })) as { text: string }).text
+  const fold = async () => ((await $.command.run({ command: 'spendometer', args: 'fold', ...RUN })) as { text: string }).text
   // Warm: the card starts closed.
   expect(await band.find({ key: 'card' })).toBeUndefined()
   expect(await fold()).toBe('cache card: open')

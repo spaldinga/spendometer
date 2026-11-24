@@ -7,7 +7,7 @@ import { fitOpen, rowsOf } from '../hooks/layout'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const PLAN = 'mcp__ccd_turn__update_plan'
-const REPORT = 'mcp__wavebar__progress'
+const REPORT = 'mcp__spendometer__progress'
 const props = (isWorking: boolean, bodyColumns = 160) => ({
   hasSurvey: false,
   isWorking,
@@ -33,7 +33,7 @@ const engine = (on: On) => {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: [] } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('command.list', () => ({ value: [] }))
-  on('tool.register', ($, e) => { registered.push(e.name); return { value: { tool: `mcp__wavebar__${e.name}` } } })
+  on('tool.register', ($, e) => { registered.push(e.name); return { value: { tool: `mcp__spendometer__${e.name}` } } })
   on('tool.call', () => ({ result: 'beneath' }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('turn.step', async function* ($, e) {
@@ -113,7 +113,7 @@ test('the desktop band draws the segmented bar from the task list, and lets the 
   await step($, 0)
   expect(await $.tool.call({ tool: PLAN, items: ITEMS } as never)).toMatchObject({ result: 'beneath' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
   const bar = (await band.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Progress'))
   expect(bar?.props.alt).toBe('Progress: 1 of 4 done. Now: Write tests')
   expect(await band.find({ text: ' 1/4' })).toBeDefined()
@@ -130,7 +130,7 @@ test('the terminal draws the bar as text', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: PLAN, items: ITEMS } as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'terminal', component: 'AbovePrompt', props: props(true, 100) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'terminal', component: 'AbovePrompt', props: props(true, 100) })
   expect(await band.find({ text: /^[▰▱]+$/ })).toBeDefined()
   expect(await band.find({ text: ' 1/4' })).toBeDefined()
   expect(await band.findAll({ type: 'Svg' })).toEqual([])
@@ -146,7 +146,7 @@ test("the mod's own tool reports progress, for the main session only", async ($,
   const sub = { tool: REPORT, total: 9, done: 9, agentId: 'sub1' }
   expect(await $.tool.call(sub as never)).toMatchObject({ result: 'ignored: only the main session reports progress' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
   expect(await band.find({ text: ' 2/5' })).toBeDefined()
   await band.unmount()
 })
@@ -158,7 +158,7 @@ test('a subagent keeping its own list does not move the bar', async ($, on) => {
   await $.tool.call({ tool: PLAN, items: ITEMS } as never)
   const sub = { tool: 'TodoWrite', todos: [{ content: 'Sub', status: 'completed' }], agentId: 'sub1' }
   await $.tool.call(sub as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
   expect(await band.find({ text: ' 1/4' })).toBeDefined()
   await band.unmount()
 })
@@ -171,13 +171,13 @@ test('with no list, a working turn shows the sweeping segment with steps and tim
   await clock.advance(72000)
   await step($, 1)
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
   const alts = (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
   expect(alts).toContain('Working')
   expect(await band.find({ text: ' working · 2 steps · 1m 12s' })).toBeDefined()
   await band.unmount()
 
-  const idle = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  const idle = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
   expect((await idle.findAll({ type: 'Svg' })).map(s => String(s.props.alt))).not.toContain('Working')
   expect(await idle.find({ text: / working · / })).toBeUndefined()
   await idle.unmount()
@@ -190,7 +190,7 @@ test('a finished list stays until the next request starts, then clears', async (
   await step($, 0)
   await $.tool.call({ tool: PLAN, items: ITEMS.map(i => ({ ...i, status: 'completed' })) } as never)
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
   expect(await band.find({ text: ' 4/4' })).toBeDefined()
   expect(await band.find({ text: ' · done' })).toBeDefined()
 
@@ -204,7 +204,7 @@ test('a narrow band gives the bar a row of its own', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: PLAN, items: ITEMS } as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 60) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true, 60) })
   expect(await band.find({ key: 'progress-row' })).toBeDefined()
   expect(await band.find({ text: ' 1/4' })).toBeDefined()
   await band.unmount()
@@ -230,7 +230,7 @@ test('running subagents stand beside the bar with their kind and requests, and l
   await subStep($, 'a-Explore', 1)
   await subStep($, 'a-sonnet-coder', 0)
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true) })
   const alts = async () => (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
   expect(await alts()).toContain('2 subagents working')
   expect(await band.find({ text: ' ×2' })).toBeDefined()
@@ -248,7 +248,7 @@ test('a background subagent still shows after the main turn has stopped working'
   on('agent.spawn', ($, e) => ({ model: 'claude-sonnet-5-5', agentId: `a-${e.subagentType}` }))
   await start($)
   await $.agent.spawn(spawn('Explore') as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'terminal', component: 'AbovePrompt', props: props(false, 100) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'terminal', component: 'AbovePrompt', props: props(false, 100) })
   expect(await band.find({ text: ' ×1' })).toBeDefined()
   expect(await band.find({ text: ' Explore 0' })).toBeDefined()
   await band.unmount()
@@ -260,7 +260,7 @@ test('on the desktop, a background subagent after the main turn has ended keeps 
   on('agent.spawn', ($, e) => ({ model: 'claude-sonnet-5-5', agentId: `a-${e.subagentType}` }))
   await start($)
   await $.agent.spawn(spawn('sonnet-coder') as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
   const alts = (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
   expect(alts).toContain('Working')
   expect(alts).toContain('1 subagent working')
@@ -273,7 +273,7 @@ test('with nothing working and no subagents, there is no bar', async ($, on) => 
   mock.clock(on, { now: NOW })
   engine(on)
   await start($)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(false) })
   expect(await band.find({ key: 'bar' })).toBeUndefined()
   await band.unmount()
 })
@@ -367,7 +367,7 @@ test('at a compact width a long step name is cut with an ellipsis and the row fi
   engine(on)
   await start($)
   await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 60) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true, 60) })
   const { cols, row } = await rowCols(band)
   expect(row).toContain('…')
   expect(row).not.toContain(LONG)
@@ -380,7 +380,7 @@ test('where not even the count and the smallest bar leave room, the step name is
   engine(on)
   await start($)
   await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 16) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true, 16) })
   expect(await band.find({ key: 'note' })).toBeUndefined()
   expect(await band.find({ text: ' 1/3' })).toBeDefined()
   await band.unmount()
@@ -391,7 +391,7 @@ test('at 160 columns the step name shows in full, up to the note limit', async (
   engine(on)
   await start($)
   await $.tool.call({ tool: PLAN, items: LONG_ITEMS } as never)
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(true, 160) })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true, 160) })
   // NOTE_MAX is 32: the name is cut there, not by the room.
   expect(await band.find({ text: ` · ${LONG.slice(0, 31)}…` })).toBeDefined()
   await band.unmount()
@@ -405,7 +405,7 @@ const themed = async ($: T$, on: On, theme: string | undefined, isWorking: boole
   await start($)
   if (items) await $.tool.call({ tool: PLAN, items } as never)
   else await step($, 0)
-  return $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: props(isWorking) })
+  return $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(isWorking) })
 }
 /** The progress tests' engine, without its own store (the test sets one). */
 const engine2 = (on: On) => {
@@ -413,7 +413,7 @@ const engine2 = (on: On) => {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: [] } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('command.list', () => ({ value: [] }))
-  on('tool.register', ($, e) => ({ value: { tool: `mcp__wavebar__${e.name}` } }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__spendometer__${e.name}` } }))
   on('tool.call', () => ({ result: 'beneath' }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('turn.step', async function* ($, e) {

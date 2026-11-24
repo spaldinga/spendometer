@@ -25,7 +25,7 @@ test('a warm cache shows Robo, the WARM chip and the minutes left, folded', asyn
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: WARM_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
   // Drawings keep no key in the kit, so they are found by what they say.
   const alts = (await band.findAll({ type: 'Svg' })).map(s => s.props.alt)
   // A pie per usage window, 5H first, then Robo and the chip.
@@ -49,7 +49,7 @@ test('a cold cache opens the card with the re-cache price, and Hide folds it to 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: COLD_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
   const card = await band.find({ key: 'card' })
   expect(card).toBeDefined()
   expect(JSON.stringify(card)).toContain('Cache cold. Idle 3d 9h. Next message re-caches 770k tokens.')
@@ -74,13 +74,13 @@ test('squeezed, the folded cache shrinks to the chip and the next cost on the on
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: WARM_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
   // 60 columns: the compact row (both windows, the chip and the next cost, about 30 columns) plus the fold button fits.
-  const half = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 60 } })
+  const half = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 60 } })
   expect(await half.find({ key: 'block' })).toBeDefined()
   expect(String((await half.find({ key: 'row' }))?.text)).not.toContain('m left')
   expect(await half.find({ text: '$0.15' })).toBeDefined()
   await half.unmount()
 
-  const narrow = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 14 } })
+  const narrow = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 14 } })
   expect(await narrow.find({ key: 'cache' })).toBeDefined()
   await narrow.press({ key: 'cache-fold' })
   // Narrow's card is the compact one: 14 columns is a 228 px band.
@@ -97,7 +97,7 @@ test('the terminal draws the cache as text, with no drawings and no fold button'
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: COLD_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
   expect(await band.find({ text: ' COLD ' })).toBeDefined()
   expect(await band.find({ text: '$6.16' })).toBeDefined()
   expect(await band.findAll({ type: 'Svg' })).toEqual([])
@@ -116,7 +116,7 @@ test('a cleared session drops the cache until the next reply', async ($, on) => 
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: COLD_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
   await $.classic.SessionStart({ source: 'clear' })
 
-  const band = await $.ui.mount({ plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  const band = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
   // No cache: no chip or Robo, only the usage pies.
   expect((await band.findAll({ type: 'Svg' })).map(s => s.props.alt)).toEqual(['5H 18% used', '7D 1% used'])
   expect(await band.find({ text: ' 1% used' })).toBeDefined()

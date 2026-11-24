@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Six livelier progress-row mockups for wavebar. Each SVG: dark block then light block; each block a band running
+# Six livelier progress-row mockups for spendometer. Each SVG: dark block then light block; each block a band running
 # a task list (4 of 7, step 4 under way, two subagents) and a band working with no task list. Animated with SMIL.
 set -u
 out="$1"

@@ -1,12 +1,12 @@
 {
-  "name": "wavebar",
-  "description": "wavebar, a band above the Claude Code prompt.",
+  "name": "spendometer",
+  "description": "Spendometer: a spend, pace and cache dashboard above the Claude Code prompt.",
   "owner": { "name": "Spalding Alexander" },
   "plugins": [
     {
-      "name": "wavebar",
+      "name": "spendometer",
       "source": "./",
-      "description": "A band above the prompt: usage left, cache warm or cold, progress, subagents, cost, keep-warm switch, and a hold for risky git commands."
+      "description": "A band above the Claude Code prompt: whether your 5-hour and weekly limits will last, what the session costs and produced, whether the prompt cache is warm, and what is running now."
     }
   ]
 }

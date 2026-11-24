@@ -6,7 +6,7 @@ import { resetHold } from '../hooks/register'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const PROPS = { hasSurvey: false, isWorking: true, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 12 }, view: {} } as const
-const BAND = { plugin: 'wavebar', surface: 'desktop', component: 'AbovePrompt', props: PROPS } as const
+const BAND = { plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: PROPS } as const
 
 type T$ = Parameters<Parameters<typeof test>[1]>[0]
 type Clock = ReturnType<typeof mock.clock>
@@ -113,7 +113,7 @@ test('Cancel refuses the command and tells Claude why', async ($, on) => {
   expect(await band.find({ text: 'Would remove 2 untracked paths' })).toBeDefined()
   await band.press({ key: 'held-cancel' })
   expect(await call).toMatchObject({
-    deny: 'wavebar held this command and did not run it: the user pressed Cancel. It would have: remove 2 untracked paths. Do not retry it unless the user asks you to.',
+    deny: 'spendometer held this command and did not run it: the user pressed Cancel. It would have: remove 2 untracked paths. Do not retry it unless the user asks you to.',
   })
   await band.unmount()
 })
@@ -135,7 +135,7 @@ test('no answer within ten minutes refuses the command', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   engine(on, clock, { git: DIRTY, waitMs: 4 * 60 * 1000 })
   expect(await $.tool.call({ tool: 'Bash', command: 'git reset --hard' } as never)).toMatchObject({
-    deny: 'wavebar held this command and did not run it: no answer within 10 minutes. It would have: discard uncommitted changes in 2 files. Do not retry it unless the user asks you to.',
+    deny: 'spendometer held this command and did not run it: no answer within 10 minutes. It would have: discard uncommitted changes in 2 files. Do not retry it unless the user asks you to.',
   })
 })
 

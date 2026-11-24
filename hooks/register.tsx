@@ -52,7 +52,7 @@ const KEEP_RENEW_MS = 2 * 60 * 60 * 1000
 /** Wait before the start or turn sync runs the command, outside the hook the session or turn waits on. */
 const KEEP_SYNC_DELAY_MS = 2000
 /** The mod's own settings command: one name, so a rename touches one line. */
-const SETTINGS = 'wavebar'
+const SETTINGS = 'spendometer'
 const WRAP_KEY = 'wrapUp'
 const HOLD_KEY = 'hold'
 /** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
@@ -67,17 +67,17 @@ const OLD_PACE_PREFIX = 'pace:'
 /** Daily totals (`day:YYYY-MM-DD`) older than this are dropped at session start. */
 const DAY_KEEP_DAYS = 30
 
-const windows = atom({ plugin: 'wavebar', key: 'windows' } as const, [] as Window[])
-const cache = atom({ plugin: 'wavebar', key: 'cache' } as const, null as CacheFacts | null)
-const fold = atom({ plugin: 'wavebar', key: 'fold' } as const, null as Fold | null)
-const progress = atom({ plugin: 'wavebar', key: 'progress' } as const, null as Progress | null)
-const turn = atom({ plugin: 'wavebar', key: 'turn' } as const, null as Turn | null)
-const crew = atom({ plugin: 'wavebar', key: 'crew' } as const, [] as Worker[])
-const ending = atom({ plugin: 'wavebar', key: 'ending' } as const, null as Ending)
+const windows = atom({ plugin: 'spendometer', key: 'windows' } as const, [] as Window[])
+const cache = atom({ plugin: 'spendometer', key: 'cache' } as const, null as CacheFacts | null)
+const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
+const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
+const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
+const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[])
+const ending = atom({ plugin: 'spendometer', key: 'ending' } as const, null as Ending)
 /** Subagent cost since the last main turn finished: it joins the next main turn's `last`. */
-const subsSince = atom({ plugin: 'wavebar', key: 'subsSince' } as const, 0)
+const subsSince = atom({ plugin: 'spendometer', key: 'subsSince' } as const, 0)
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
-const realAt = atom({ plugin: 'wavebar', key: 'realAt' } as const, null as number | null)
+const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
 
 /** The conversation's cost as one line for the transcript, so a debrief can quote it instead of leaving cost empty. */
 export const spendLine = (s: Spend & { commits?: number; prs?: number }): string =>
@@ -428,7 +428,7 @@ const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFa
 const cacheFacts = async ($: EngineInterface): Promise<CacheFacts | null> => (await read($, cache)) ?? (await readStoredCache($))
 
 /**
- * Opens the cache card if it is closed, closes it if open: the fold button and `/wavebar fold`.
+ * Opens the cache card if it is closed, closes it if open: the fold button and `/spendometer fold`.
  * The fold is kept per cache state (a cold cache opens by default), as the button has always done. Returns
  * whether the card is now open, or null while there is no card yet.
  */
@@ -637,7 +637,7 @@ export const register: Register = on => {
       const command = String(e.command ?? '')
       const risk = classify(command)
       if (risk === null) return pass($, e, next, command)
-      // The hold is on unless /wavebar hold off said otherwise.
+      // The hold is on unless /spendometer hold off said otherwise.
       if (!(await switchOf($, HOLD_KEY, true))) return pass($, e, next, command)
       const interrupted = { deny: refusal('the turn was interrupted', risk.label) }
       // `held` is claimed with no await between the check and the claim, so two waiting calls can't both get through.
@@ -1031,7 +1031,7 @@ export const register: Register = on => {
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
         <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card (or /wavebar fold).' : 'Show the cache card (or /wavebar fold): the cache, the spend, keep warm, pace and the metrics.')}
+        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, keep warm, pace and the metrics.')}
       </Box>
     ) : null
 

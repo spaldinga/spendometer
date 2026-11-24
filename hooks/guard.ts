@@ -162,4 +162,4 @@ export async function measure($: EngineInterface, risk: Risk, cwd: string): Prom
 
 /** The line Claude reads when a held command is refused. */
 export const refusal = (why: string, summary: string): string =>
-  `wavebar held this command and did not run it: ${why}. It would have: ${summary}. Do not retry it unless the user asks you to.`
+  `spendometer held this command and did not run it: ${why}. It would have: ${summary}. Do not retry it unless the user asks you to.`

@@ -1,10 +1,10 @@
 {
-  "name": "wavebar",
-  "version": "1.1.0",
-  "description": "A band above the prompt: usage left, prompt cache warm or cold, a progress line a robot surfs, running subagents, the conversation's cost, a keep-warm switch for cache-tax, and a hold for risky git commands.",
+  "name": "spendometer",
+  "version": "2.0.0",
+  "description": "A band above the Claude Code prompt: whether your 5-hour and weekly limits will last, what the session costs and produced, whether the prompt cache is warm, and what is running now.",
   "author": { "name": "Spalding Alexander" },
-  "homepage": "https://github.com/spaldinga/wavebar",
-  "repository": "https://github.com/spaldinga/wavebar",
+  "homepage": "https://github.com/spaldinga/spendometer",
+  "repository": "https://github.com/spaldinga/spendometer",
   "license": "MIT",
   "keywords": ["usage", "rate-limit", "prompt-cache", "cost", "progress", "subagents", "status", "mod", "claude-code"],
   "types": "./types/index.d.ts"

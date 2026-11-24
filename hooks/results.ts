@@ -18,7 +18,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export const resultsText = (commits: number, prs: number): string =>
   [commits > 0 ? plural(commits, 'commit', 'commits') : '', prs > 0 ? plural(prs, 'PR', 'PRs') : ''].filter(Boolean).join(' · ')
 
-/** The sentence for the alt text and the /wavebar cost answer; '' when there are no results. */
+/** The sentence for the alt text and the /spendometer cost answer; '' when there are no results. */
 export const resultsSentence = (commits: number, prs: number, cost: string | null): string => {
   if (commits <= 0 && prs <= 0) return ''
   const parts = [commits > 0 ? plural(commits, 'commit', 'commits') : '', prs > 0 ? plural(prs, 'pull request', 'pull requests') : ''].filter(Boolean).join(' and ')
