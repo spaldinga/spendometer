@@ -2,8 +2,8 @@
 
 A Claude Code mod: a band above the prompt. A fork of `robonuggets/ribbon` (MIT), installed locally as
 `spendometer@spendometer` from a folder marketplace, so the app reads the files in this repo directly. It
-drives `cache-tax` (keep-warm) and adds a progress bar, subagent display, session cost, a Wrap up
-button and a hold for risky git commands.
+keeps the prompt cache warm itself (`hooks/keepwarm.ts`, ported from cache-tax; it stays passive when cache-tax is
+installed) and adds a progress bar, subagent display, session cost, a Wrap up button and a hold for risky git commands.
 
 ## Branches
 

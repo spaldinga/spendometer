@@ -15,6 +15,10 @@ import {
   MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceRow, TurnUsage } from './cache-art'
+import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
+import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepwarmCommand, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
+export { pingKeptCacheWarm }
+export type { PingUsage } from './keepwarm'
 import { metricsOf, nextGrowth, putSpan } from './metrics'
 import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
@@ -33,25 +37,15 @@ import {
 // cold starts open, and a choice holds until the cache flips. Zero token cost:
 // it reads the engine's own figures and draws.
 //
-// With cache-tax installed it also carries that mod's keep-warm switch: one button,
-// on or off for each conversation, off until pressed. A keep-warm ping that really read the
-// cache starts the hour again here too, so the band and cache-tax agree.
+// It keeps the cache warm itself (hooks/keepwarm.ts): one switch per conversation, off until pressed,
+// that the button, the typed /keepwarm and the ping timer all read. A ping that really read the cache
+// starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
 const CELLS = 10
 const LOW_AT = 15
 const TIGHT_CELLS = 6
 /** How often the band redraws, so the countdown and the warm-to-cold flip stay current. */
 const TICK_MS = 30_000
-/** cache-tax's command, and the key this band remembers the default switch under: what a conversation with no choice of its own gets. */
-const KEEPWARM = 'keepwarm'
-const KEEP_KEY = 'keep'
-/** Each conversation's own switch and renewal record; entries untouched for a month are pruned at session start. */
-const KEEP_PREFIX = 'keep:'
-/** The window a conversation's switch asks cache-tax for, renewed after a turn once this much time has passed. */
-const KEEP_WINDOW = '6h'
-const KEEP_RENEW_MS = 2 * 60 * 60 * 1000
-/** Wait before the start or turn sync runs the command, outside the hook the session or turn waits on. */
-const KEEP_SYNC_DELAY_MS = 2000
 /** The mod's own settings command: one name, so a rename touches one line. */
 const SETTINGS = 'spendometer'
 const WRAP_KEY = 'wrapUp'
@@ -59,17 +53,13 @@ const HOLD_KEY = 'hold'
 /** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
 const THEME_KEY = 'progressTheme'
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
-const SPEND_PREFIX = 'spend:'
 const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
-/** The cache facts per conversation, so a resume that never reaches the band (state is cleared) still knows them. */
-const CACHE_PREFIX = 'cache:'
 /** Pace records an older version kept per window kind; no longer used, deleted at session start. */
 const OLD_PACE_PREFIX = 'pace:'
 /** Daily totals (`day:YYYY-MM-DD`) older than this are dropped at session start. */
 const DAY_KEEP_DAYS = 30
 
 const windows = atom({ plugin: 'spendometer', key: 'windows' } as const, [] as Window[])
-const cache = atom({ plugin: 'spendometer', key: 'cache' } as const, null as CacheFacts | null)
 const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
 const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
 const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
@@ -87,58 +77,6 @@ export const spendLine = (s: Spend & { commits?: number; prs?: number }): string
   `this conversation has cost about ${usd(s.main + s.subs)} so far (main session ${usd(s.main)}, subagents ${usd(s.subs)}). ` +
   'An estimate from token counts at list prices; not a bill.' +
   resultsSentence(s.commits ?? 0, s.prs ?? 0, (s.commits ?? 0) + (s.prs ?? 0) > 0 && s.main + s.subs > 0 ? usd((s.main + s.subs) / ((s.commits ?? 0) + (s.prs ?? 0))) : null)
-
-/** This session's saved cost, or null when there is none or the id or the store cannot be read. */
-const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
-  try {
-    const s = (await $.store.get(SPEND_PREFIX + (await $.session.id()))) as Partial<Spent> | null | undefined
-    if (!s || typeof s.main !== 'number' || typeof s.subs !== 'number') return null
-    const out: Spent = { main: s.main, subs: s.subs, last: typeof s.last === 'number' ? s.last : 0, at: typeof s.at === 'number' ? s.at : 0 }
-    // Records from before keep-warm savings were tracked have neither field.
-    if (typeof s.pings === 'number') out.pings = s.pings
-    if (typeof s.saved === 'number') out.saved = s.saved
-    // The metric figures arrived later still; each is kept only when it is a number.
-    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs', 'rereads', 'rereadTok'] as const) if (typeof s[k] === 'number') out[k] = s[k]
-    for (const k of ['byType', 'byModel', 'byTool'] as const) {
-      const src = s[k]
-      if (src && typeof src === 'object') {
-        const by: Record<string, number> = {}
-        for (const [name, c] of Object.entries(src)) if (typeof c === 'number') by[name] = c
-        out[k] = by
-      }
-    }
-    if (Array.isArray(s.spans)) {
-      out.spans = s.spans
-        .filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && Number.isFinite(x[0]) && Number.isFinite(x[1]))
-        .map(x => [x[0], x[1]] as [number, number])
-    }
-    return out
-  } catch {
-    return null
-  }
-}
-
-/** A session record from `was`, its keep-warm and metric figures carried over, stamped `at`. */
-const recordOf = (was: Spent | null, at: number): Spent => {
-  const next: Spent = { ...(was ?? { main: 0, subs: 0, last: 0 }), at }
-  if (was?.byType) next.byType = { ...was.byType }
-  if (was?.byModel) next.byModel = { ...was.byModel }
-  if (was?.byTool) next.byTool = { ...was.byTool }
-  if (was?.spans) next.spans = was.spans.map(s => [s[0], s[1]] as [number, number])
-  return next
-}
-
-/** Adds keep-warm figures (what a ping cost, what a ping saved) to this session's record. Never touches the total. */
-const addKeepWarm = async ($: EngineInterface, add: { pings?: number; saved?: number }): Promise<void> => {
-  try {
-    const key = SPEND_PREFIX + (await $.session.id())
-    const next = recordOf(await readSpend($), await $.clock.now())
-    if (add.pings) next.pings = (next.pings ?? 0) + add.pings
-    if (add.saved) next.saved = (next.saved ?? 0) + add.saved
-    await $.store.set(key, next)
-    $.ui.invalidate('ui.render')
-  } catch { /* the card shows no savings; the ping goes on */ }
-}
 
 /** Adds the commits and pull requests a shell command made to this session's record. A command that made none writes nothing. */
 const addResults = async ($: EngineInterface, command: string): Promise<void> => {
@@ -369,11 +307,8 @@ const widthLine = (): string =>
     ? 'band: not drawn yet since the mod loaded'
     : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}${lastWidth.fit ? `; open card ${lastWidth.fit}` : ''}`
 
-/** The skill a wrap-up runs, and the window it leaves keep-warm: too short for a ping, so this conversation stops being held. */
+/** The skill a wrap-up runs; its turn's end stops this conversation's keep-warm window. */
 const DEBRIEF = 'debrief'
-const WRAP_WINDOW = '1m'
-/** cache-tax re-arms its window when a turn completes; the wrap-up's short one goes in after that. */
-const WRAP_DELAY_MS = 2000
 const CREW_MAX = 40
 const CREW_SHOWN = 5
 /** How wide a button's hover text is, in columns. */
@@ -421,20 +356,6 @@ const dots = (left: number, cells: number): { on: string; off: string } => {
 }
 
 
-/** The cache figures of one keep-warm ping, as the model reports them. */
-export type PingUsage = { cache_read_input_tokens: number; cache_creation_input_tokens: number }
-
-/**
- * Whether a ping's usage shows the prompt cache was still alive: it read the
- * prefix from the cache and wrote next to nothing. Only then does the band start
- * its hour again; a ping that paid to write the prefix found the cache gone.
- */
-export const pingKeptCacheWarm = (usage: PingUsage | null | undefined): boolean => {
-  if (!usage) return false
-  // The same rule cache-tax scores its own pings by: a write of a tenth of the read or more means the prefix broke.
-  return usage.cache_read_input_tokens > 0 && usage.cache_creation_input_tokens < 0.1 * usage.cache_read_input_tokens
-}
-
 /** What the cache drawings read, or null until a request and its context size are known. */
 export const viewOf = (c: CacheFacts | null, now: number): CacheView | null => {
   if (!c || c.lastAt <= 0 || c.tokens <= 0) return null
@@ -453,36 +374,6 @@ const pull = async ($: EngineInterface): Promise<void> => {
   const u = await $.session.usage()
   await update($, windows, () => clean(u.rateLimits))
 }
-
-/** The cache facts of this conversation as last saved, or null when none, the id or the store cannot be read. */
-const readStoredCache = async ($: EngineInterface): Promise<CacheFacts | null> => {
-  try {
-    const c = (await $.store.get(CACHE_PREFIX + (await $.session.id()))) as Partial<CacheFacts> | null | undefined
-    if (!c || typeof c.lastAt !== 'number' || typeof c.tokens !== 'number') return null
-    return { lastAt: c.lastAt, tokens: c.tokens, window: typeof c.window === 'number' ? c.window : 0, model: typeof c.model === 'string' ? c.model : null }
-  } catch {
-    return null
-  }
-}
-
-/**
- * Updates the cache facts and saves them under this conversation's id; a failing id or store only loses the
- * saving. The saved entry is never deleted here: it is what tells warm from cold after a restart, before the
- * first request. A /clear starts a conversation with a new id, so an old entry is simply not read again, and
- * entries untouched for a month are pruned at session start.
- */
-const putCache = async ($: EngineInterface, f: (c: CacheFacts | null) => CacheFacts | null): Promise<void> => {
-  const was = (await read($, cache)) ?? (await readStoredCache($))
-  await update($, cache, () => f(was))
-  try {
-    const key = CACHE_PREFIX + (await $.session.id())
-    const c = await read($, cache)
-    if (c) await $.store.set(key, { lastAt: c.lastAt, tokens: c.tokens, window: c.window, model: c.model })
-  } catch { /* the facts stay in the atom for this run */ }
-}
-
-/** The cache facts as the band holds them now: the atom, else the saved entry. */
-const cacheFacts = async ($: EngineInterface): Promise<CacheFacts | null> => (await read($, cache)) ?? (await readStoredCache($))
 
 /**
  * Opens the cache card if it is closed, closes it if open: the fold button and `/spendometer fold`.
@@ -532,51 +423,6 @@ const hasCommand = async ($: EngineInterface, name: string): Promise<boolean> =>
   }
 }
 
-/** One conversation's keep-warm record: its switch, when its window was last renewed, whether the one-time `off` ran. */
-/**
- * Whether cache-tax's global `always` may still be on (shared by all conversations): older versions of the button set
- * it, and a typed `/keepwarm always` sets it. Unset counts as maybe; any `/keepwarm off` clears it.
- */
-const ALWAYS_MAY_BE_ON = 'keepAlwaysMayBeOn'
-
-type KeepRec ={ on?: boolean; renewedAt?: number; synced?: boolean; at: number }
-
-const readKeepRec = async ($: EngineInterface): Promise<KeepRec | null> => {
-  const r = (await $.store.get(KEEP_PREFIX + (await $.session.id()))) as Partial<KeepRec> | null | undefined
-  if (!r || typeof r !== 'object') return null
-  return {
-    ...(typeof r.on === 'boolean' ? { on: r.on } : {}),
-    ...(typeof r.renewedAt === 'number' ? { renewedAt: r.renewedAt } : {}),
-    ...(r.synced === true ? { synced: true } : {}),
-    at: typeof r.at === 'number' ? r.at : 0,
-  }
-}
-
-/** Merges into this conversation's record and stamps `at`, which is what the month's pruning reads. */
-const putKeepRec = async ($: EngineInterface, patch: Partial<Omit<KeepRec, 'at'>>): Promise<void> => {
-  const was = await readKeepRec($)
-  await $.store.set(KEEP_PREFIX + (await $.session.id()), { ...was, ...patch, at: await $.clock.now() })
-}
-
-/** The conversation's switch as saved: its own, else the default for new conversations; null when cache-tax is not there. */
-const keepState = async ($: EngineInterface): Promise<boolean | null> => {
-  try {
-    if (!(await hasCommand($, KEEPWARM))) return null
-    const rec = await readKeepRec($)
-    if (rec && typeof rec.on === 'boolean') return rec.on
-    return (await $.store.get(KEEP_KEY)) === true
-  } catch {
-    return null
-  }
-}
-
-/** Whether `/keepwarm <word>` arms a window in cache-tax: bare, or a nonzero duration as its parser reads it (6h, 90m, 1h30m). */
-export const armsWindow = (word: string): boolean => {
-  if (word === '') return true
-  const m = /^(?:(\d+)h)?(?:(\d+)m)?$/.exec(word)
-  return !!m && Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0) > 0
-}
-
 /** A slash command, fired and not awaited: one run from inside a hook the turn waits on can hang. */
 const fire = ($: EngineInterface, command: string, args: string): void => {
   void Promise.resolve($.command.run({ command, args })).catch(() => {})
@@ -588,41 +434,6 @@ export const crewText = (running: Worker[]): string => {
   return s.length > CREW_MAX ? s.slice(0, CREW_MAX - 1) + '…' : s
 }
 
-/**
- * Saves this conversation's switch and tells cache-tax: on starts this conversation's window, off stops it
- * (and clears cache-tax's global `always`, which is intended). The default for new conversations is not touched.
- */
-const setKeep = async ($: EngineInterface, isOn: boolean): Promise<void> => {
-  const now = await $.clock.now()
-  await putKeepRec($, isOn ? { on: true, renewedAt: now } : { on: false, synced: true })
-  if (!isOn) await $.store.set(ALWAYS_MAY_BE_ON, false)
-  $.ui.invalidate('ui.render')
-  fire($, KEEPWARM, isOn ? KEEP_WINDOW : 'off')
-}
-
-/**
- * Keeps this conversation's window as the switch says, rarely: with the switch on, a fresh window when none was
- * started in the last 2 hours; with it off, one `off` ever, so a global `always` an older version left in cache-tax
- * does not keep it warm. Runs from a delayed timer, since a command cannot be run from inside a hook the turn waits on.
- */
-const syncKeep = async ($: EngineInterface): Promise<void> => {
-  try {
-    const isOn = await keepState($)
-    if (isOn === null) return
-    const rec = await readKeepRec($)
-    if (isOn) {
-      const now = await $.clock.now()
-      if (rec?.renewedAt === undefined || now - rec.renewedAt > KEEP_RENEW_MS) {
-        await putKeepRec($, { renewedAt: now })
-        fire($, KEEPWARM, KEEP_WINDOW)
-      }
-    } else if ((await $.store.get(ALWAYS_MAY_BE_ON)) !== false) {
-      // Once for all conversations, not once each: an `off` clears cache-tax's global always, and every `off` prints a line.
-      await $.store.set(ALWAYS_MAY_BE_ON, false)
-      fire($, KEEPWARM, 'off')
-    }
-  } catch { /* the next turn tries again */ }
-}
 
 // ---------- Hold and show ----------
 /** The shells whose command lines are read. */
@@ -693,6 +504,9 @@ async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> |
 }
 
 export const register: Register = on => {
+  /** The keep-warm pinger's state for this process: one conversation at a time. */
+  const kw = freshKeep()
+
   // A git command that throws work away is held until the person answers in the band.
   // Cancel, no answer and an interrupted turn refuse it. A machine that cannot hold,
   // or an error while holding, lets it through with a note: this is a second look,
@@ -786,7 +600,7 @@ export const register: Register = on => {
           continue
         }
         if (key.startsWith(KEEP_PREFIX)) {
-          const k = (await $.store.get(key)) as Partial<KeepRec> | null | undefined
+          const k = (await $.store.get(key)) as { at?: unknown } | null | undefined
           if (k && typeof k.at === 'number' && k.at < cutoff) await $.store.delete(key)
           continue
         }
@@ -799,8 +613,8 @@ export const register: Register = on => {
         if (s && typeof s.at === 'number' && s.at < cutoff) await $.store.delete(key)
       }
     } catch { /* an entry that stays is only a few bytes */ }
-    // A resumed conversation with the switch on gets its window again; one with it off gets its one-time `off`.
-    $.clock.after(KEEP_SYNC_DELAY_MS, () => { void syncKeep($) })
+    // The conversation's window comes back from the store (a restart lost its timer); /keepwarm is registered unless cache-tax is there.
+    try { await startKeep($, kw) } catch { /* the band goes on without keep-warm */ }
     // For a request the model keeps no task list for. Listed up front: nobody goes looking for a progress tool.
     try {
       await $.tool.register({
@@ -842,51 +656,38 @@ export const register: Register = on => {
 
   on('command.run', { command: SETTINGS }, async ($, e) => ({ text: await settingsAnswer($, String(e.args ?? '')) }))
 
-  // A typed /keepwarm always or off sets the default for new conversations and this conversation's switch; a typed
-  // bare /keepwarm or a window (6h, 90m, 1h30m) arms cache-tax for this conversation, so it switches this one on only.
-  // cache-tax answers the command beneath. The band's own runs (origin plugin) are not typed: they leave the switch alone.
-  on('command.run', { command: KEEPWARM }, async ($, e, next) => {
-    const word = String(e.args ?? '').trim().split(/\s+/)[0]
-    if (e.origin?.kind !== 'plugin') {
-      if (word === 'always' || word === 'off') {
-        const isOn = word === 'always'
-        await $.store.set(KEEP_KEY, isOn)
-        // A typed always switches cache-tax's global always on again, so the next off conversation clears it once more.
-        await $.store.set(ALWAYS_MAY_BE_ON, isOn)
-        await putKeepRec($, isOn ? { on: true } : { on: false, synced: true })
-        $.ui.invalidate('ui.render')
-      } else if (armsWindow(word)) {
-        // The window just armed counts as the renewal, so the next turn does not replace it with 6h at once.
-        await putKeepRec($, { on: true, renewedAt: await $.clock.now() })
-        $.ui.invalidate('ui.render')
-      }
-    }
-    return next(e)
+  // The typed /keepwarm: one answer, and the switch, the window and the store move together. With cache-tax
+  // installed the command is its own: this mod stays passive and lets it answer.
+  on('command.run', { command: 'keepwarm' }, async ($, e, next) => {
+    if ((await keepOf($, kw)) === null) return next(e)
+    return { text: await keepwarmCommand($, kw, String(e.args ?? '')) }
   }).catch(($, e, next) => next(e))
 
-  // A keep-warm ping is a fork of the main thread's last request. One that read the cache
-  // kept it alive, so the hour starts again from when it was sent.
-  on('model.fork', async ($, e, next) => {
-    const sentAt = await $.clock.now()
+  // A prompt that would re-write a cold cache: one line with the price, then it goes on. Never dropped.
+  on('prompt.submit', async ($, e, next) => {
+    try { await warnCold($, kw, e as never) } catch { /* a missing warning is only that */ }
+    return next(e)
+  })
+
+  // After a compaction nothing pings until the next turn.
+  on('session.compact', async ($, e, next) => {
     const r = await next(e)
-    const reply = r && typeof r === 'object' && 'value' in r ? r.value : r
-    if (reply && reply.isAnswered !== false && pingKeptCacheWarm(reply.usage)) {
-      // What the ping cost, in this session's record: priced as the model of the cache facts, as it forked that request.
-      const facts = await cacheFacts($)
-      const cost = turnCost(reply.usage, facts?.model)
-      await putCache($, c => (c ? { ...c, lastAt: sentAt } : c))
-      if (cost !== null && cost > 0) await addKeepWarm($, { pings: cost })
-    }
+    if (!e.agentId) { try { await noteCompact($, kw) } catch { /* the next turn re-arms */ } }
     return r
   })
+
 
   // /clear ends the conversation whose facts these are. It does reach mods, unlike a start event after it.
   on('session.end', async ($, e, next) => {
     // A /clear ends this conversation: the band forgets it. Its saved entry stays (the next conversation has
     // another id, so it is never read again) and is pruned after a month.
+    // The keep-warm window belongs to the conversation that ends, under /clear and an in-process resume alike.
+    if (e.reason === 'clear' || e.reason === 'resume') {
+      try { await endConversation($, kw, e.sessionId) } catch { /* the next turn seats the new conversation */ }
+    }
     if (e.reason === 'clear') {
       try {
-        await update($, cache, () => null)
+        await update($, { plugin: 'spendometer', key: 'cache' } as const, () => null)
         await update($, fold, () => null)
         await update($, seen, () => [])
       } catch { /* the band redraws from the next turn */ }
@@ -924,6 +725,8 @@ export const register: Register = on => {
       const model = typeof e.model === 'string' ? e.model : await $.session.model()
       const tokens = typeof e.context_tokens === 'number' ? e.context_tokens : 0
       await putCache($, () => ({ lastAt, tokens, window, model }))
+      // A window restored before this reading was scheduled without a cache clock.
+      try { await noteSeeded($, kw) } catch { /* the next turn re-arms */ }
     }
     return r
   }).catch(($, e, next) => next(e)) // a band that fails to seed never holds up the session
@@ -932,6 +735,7 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     arm($)
     if (!e.agentId) {
+      try { await noteRequest($, kw, e) } catch { /* the pinger reads the next request */ }
       const now = await $.clock.now()
       // Read before putCache overwrites lastAt. A turn that begins after the cache's hour would have found
       // it cold, but pings kept it warm: the difference between a cold re-cache and a cache read is saved.
@@ -992,24 +796,18 @@ export const register: Register = on => {
       return r
     }
     if (paid > 0) await addSpend($, paid, true, e.usage)
-    if ((await read($, ending)) === 'running') {
-      await update($, ending, () => null)
-      // The debrief is in: stop holding this conversation's cache. The switch stays on for the next one.
-      if ((await keepState($)) === true) {
-        // The short window counts as this turn's renewal, so the sync below does not undo it.
-        try { await putKeepRec($, { renewedAt: await $.clock.now() }) } catch { /* the sync may then renew once */ }
-        $.clock.after(WRAP_DELAY_MS, () => fire($, KEEPWARM, WRAP_WINDOW))
-      }
-    } else {
-      $.clock.after(KEEP_SYNC_DELAY_MS, () => { void syncKeep($) })
-    }
+    // The debrief's turn is in: this conversation's window stops and the turn renews nothing. The switch stays as it was.
+    const wrapped = (await read($, ending)) === 'running'
+    if (wrapped) await update($, ending, () => null)
     const now = await $.clock.now()
-    const c = await read($, cache)
+    const c = await read($, { plugin: 'spendometer', key: 'cache' } as const)
     // turn.step stamps the exact request time; when no step of this turn did, the turn's end is the floor.
     const lastAt = !c || now - c.lastAt > e.durationMs ? now : c.lastAt
     try { await pull($) } catch { /* the figures come with the next reading */ }
     await measure($, lastAt, e.usage?.model ?? null)
     await addContext($)
+    // After the cache clock is stamped: the next ping counts from it.
+    try { await afterTurn($, kw, { hasUsage: !!e.usage, wrapped }) } catch { /* the next turn tries again */ }
     return r
   })
 
@@ -1056,9 +854,10 @@ export const register: Register = on => {
     const list = (kept.length > 0 ? kept : await liveWindows($)).map(w =>
       w.resetsAt && Date.parse(w.resetsAt) <= now ? { ...w, percentUsed: 0, resetsAt: undefined } : w,
     )
-    const view = viewOf((await read($, cache)) ?? (await readStoredCache($)), now)
+    const view = viewOf((await read($, { plugin: 'spendometer', key: 'cache' } as const)) ?? (await readStoredCache($)), now)
 
-    const keep = await keepState($)
+    // On while this conversation's switch is on or its window is open; null (no button) beside cache-tax.
+    const keep = await keepOf($, kw)
     // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
     // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
     // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
@@ -1083,12 +882,12 @@ export const register: Register = on => {
     const keepLabel = (isWide: boolean) => `${keep ? '🔥' : '🧊'}${isWide ? ' Keep warm' : ''}`
     const keepButton = (isWide: boolean) => keep === null ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={1}>
-        <Button key="keep-warm" label={keepLabel(isWide)} onPress={() => setKeep($, !keep)} />
+        <Button key="keep-warm" label={keepLabel(isWide)} onPress={() => pressKeep($, kw, keep)} />
         {tip(
           'keep',
           keep
-            ? 'Keep warm is on: cache-tax pings between turns so the prompt cache stays warm (a few cents a ping). Click to turn it off.'
-            : 'Keep warm is off. Click to let cache-tax keep the prompt cache warm between turns.',
+            ? 'Keep warm is on: a short ping between turns keeps the prompt cache warm (a few cents a ping). Click to turn it off.'
+            : 'Keep warm is off. Click to keep the prompt cache warm between turns.',
         )}
       </Box>
     )

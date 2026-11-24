@@ -139,7 +139,7 @@ press **Proceed**.
 
 ### Keep the cache warm, wrap up cleanly
 
-- **Keep warm** (with [cache-tax](https://github.com/karanb192/cache-tax)): one button, per conversation, keeps the
+- **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): one button, per conversation, keeps the
   prompt cache alive between your messages, so coming back after a break doesn't re-pay for the
   whole context. The card shows what it costs an hour and what it has saved.
 - **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
@@ -158,13 +158,17 @@ press **Proceed**.
 
 ## What it does
 
-- **Keep warm switch.** With [cache-tax](https://github.com/karanb192/cache-tax) installed, a
-  `Keep warm: on/off` button is per conversation: on runs `/keepwarm 6h` for this conversation (spendometer
-  renews it after a turn when the last renewal is over 2 hours old), off runs `/keepwarm off`. Other
-  conversations are not affected. A typed `/keepwarm always` or `/keepwarm off` sets the default for
-  conversations that have not been pressed yet, and this conversation's switch too. It is off
-  until you press it. Each renewal prints cache-tax's one answer line in the conversation. spendometer also listens to cache-tax's keep-warm pings, so the band says
-  `WARM` for as long as the cache really is.
+- **Keep warm switch** (built in). One button per conversation and the typed `/keepwarm` drive one state. While
+  a window is open and the cache is warm, a short ping goes out 50 minutes after your last request, so the
+  cache is read, not re-written, when you come back. The button is 🔥 when this conversation's switch is on
+  or a window is open, else 🧊: pressing it turns the switch off and stops the window, or turns it on and
+  opens 6 hours. With the switch on, every turn that reached the cache renews the window to at least 6 hours.
+  `/keepwarm` (bare: switch on, 6h), `6h` / `90m` / `1h30m` (a one-off window), `always` (the default for new
+  conversations on), `off` (default off, window stopped), `status` (time left, next ping, last ping).
+  It is off until you turn it on. A ping that fails or finds the cache gone stops the window and says why.
+  Before a send that would re-write a cold cache of 50,000 tokens or more, one line says what it will cost.
+  With cache-tax installed spendometer stays passive (no pings, no button) and says so once: uninstall it with
+  `claude plugin uninstall cache-tax@claude-code-mods`.
 - **Hold for risky git commands.** When Claude runs `git reset --hard`, a `git checkout` or
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
   PowerShell tool, spendometer holds the call and shows what it would lose (files, untracked paths,
@@ -178,8 +182,9 @@ press **Proceed**.
 
 - Claude Code 2.1.287 or later (mods load by default from that version).
 - `git` on your `PATH`, for the hold.
-- Optional: [cache-tax](https://github.com/karanb192/cache-tax) for the Keep warm switch, and a
-  `/debrief` command or skill for the Wrap up button. Without them those buttons do not appear.
+- Optional: a `/debrief` command or skill for the Wrap up button. Without it that button does not appear.
+  Keep warm is built in. Uninstall cache-tax (`claude plugin uninstall cache-tax@claude-code-mods`): installed, it
+  pings too, and spendometer stays passive.
 
 Built and used on Windows 11 in the Claude desktop app, in dark and light themes. See
 [Limitations](#limitations) for what that means elsewhere.
@@ -216,7 +221,7 @@ The Keep warm switch is the button in the band, saved per conversation (a typed 
 
 - **No model calls.** Everything is read from events Claude Code already raises: rate limits,
   turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm switch
-  (cache-tax's pings cost tokens) and Wrap up (runs your debrief).
+  (its pings cost a few cents each) and Wrap up (runs your debrief).
 - **Progress without tokens.** The bar follows the task-list tool calls Claude makes
   (`TodoWrite`, the Task tools, the desktop app's plan). The text bar counts a step in progress as half; the drawn bar
   pulses the step in progress and turns it solid when it lands.
@@ -283,8 +288,8 @@ spendometer is a fork of [ribbon](https://github.com/robonuggets/ribbon) by Jay 
 which provides the usage bars, the cache card and Robo, the robot. Ideas and behaviour also come
 from:
 
-- [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal: keep-warm, which spendometer
-  drives but does not include.
+- [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal: keep-warm. spendometer's pinger in
+  `hooks/keepwarm.ts` is ported from it (MIT, see the table below), so cache-tax is no longer needed.
 - [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by
   JohnnyVizz: the idea of a progress bar and a subagent display above the prompt.
 - [Blast Radius](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius)
@@ -302,7 +307,7 @@ Third-party material:
 |---|---|---|
 | The band, usage bars, cache card, Robo and their tests | [ribbon](https://github.com/robonuggets/ribbon), Copyright (c) 2026 Jay E \| RoboNuggets | MIT, in [LICENSE](LICENSE) |
 | Parts of `hooks/guard.ts`: how risky git commands are measured and reported | [Blast Radius](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius), Copyright 2026 Anthropic PBC | Apache-2.0, in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt); the changes are listed at the top of the file |
-| The rule for "a ping kept the cache warm" in `hooks/register.tsx` | [cache-tax](https://github.com/karanb192/cache-tax), Copyright (c) 2026 Karan Bansal | MIT |
+| The keep-warm pinger in `hooks/keepwarm.ts`: its timing, retries and race handling, and the rule for "a ping kept the cache warm" | [cache-tax](https://github.com/karanb192/cache-tax), Copyright (c) 2026 Karan Bansal | MIT |
 | The embedded font | [Outfit](https://github.com/Outfitio/Outfit-Fonts) | SIL Open Font License 1.1 |
 
 [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress)

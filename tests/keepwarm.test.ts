@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On, Plugin } from 'claude-code'
+import type { On } from 'claude-code'
 
 import { turnCost, usd } from '../hooks/cache-art'
 import { dayKey } from '../hooks/days'
@@ -11,6 +11,7 @@ import { pingKeptCacheWarm } from '../hooks/register'
 const BG = '#24221c'
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const MIN = 60_000
+const HOUR = 60 * MIN
 const PROPS = {
   hasSurvey: false,
   isWorking: false,
@@ -22,29 +23,34 @@ const PROPS = {
 const BAND = { plugin: 'spendometer', component: 'AbovePrompt', props: PROPS } as const
 const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
 
-/** Stands in for cache-tax: another mod whose /ping forks the main thread, as a keep-warm ping does. */
-const pinger: Plugin = {
-  name: 'pinger',
-  register(on) {
-    on('command.run', { command: 'ping' }, async $ => {
-      await $.model.fork({ prompt: 'Reply with the single word: warm' })
-      return { text: '' }
-    })
-  },
+/** What a fork answers: a ping's cache figures, null (the engine sent nothing), or the whole result. */
+type Answer = { read: number; write: number } | null | { isAnswered: false; reason: 'nothing-to-fork' | 'aborted' | 'api-error'; status?: number | null; error?: string }
+const WARM: Answer = { read: 200000, write: 0 }
+const COLD: Answer = { read: 0, write: 200000 }
+const BUSY: Answer = { isAnswered: false, reason: 'api-error', status: 429, error: 'rate_limit' }
+
+type Opts = {
+  keep?: boolean
+  commands?: string[]
+  /** The forks' answers in order; once they run out every fork answers WARM. */
+  forks?: Answer[]
+  prefill?: Record<string, unknown>
+  idThrows?: boolean
+  registerThrows?: boolean
+  /** Holds each fork until released; `forks.length` says how many were sent. */
+  gate?: () => Promise<void>
 }
 
-type Fork ={ read: number; write: number } | null
-
-/** The engine beneath the band: a store to inspect, cache-tax's commands, and what a fork answers. */
-const engine = (on: On, opts: { keep?: boolean; commands?: string[]; fork?: Fork; prefill?: Record<string, unknown>; idThrows?: boolean; registerThrows?: boolean; bare?: boolean } = {}) => {
+/** The engine beneath the band: a store to inspect, the commands it lists, and what a fork answers. */
+const engine = (on: On, opts: Opts = {}) => {
   const store = new Map<string, unknown>(Object.entries(opts.prefill ?? {}))
   if (opts.keep !== undefined) store.set('keep', opts.keep)
-  // Unless bare, S1 has already been synced and renewed, so a start or a turn fires nothing of its own.
-  if (!opts.bare && !store.has('keep:S1')) store.set('keep:S1', { synced: true, renewedAt: NOW, at: NOW })
-  if (!opts.bare && !store.has('keepAlwaysMayBeOn')) store.set('keepAlwaysMayBeOn', false)
   const ran: string[] = []
+  const logs: string[] = []
+  const forks: number[] = []
   const session = { id: 'S1' }
   const registered: string[] = []
+  const answers = [...(opts.forks ?? [])]
   on('session.id', () => { if (opts.idThrows) throw new Error('no id'); return { value: session.id } })
   on('command.register', ($, e) => { if (opts.registerThrows) throw new Error('nope'); registered.push(e.name); return { value: undefined } })
   on('store.get', ($, e) => ({ value: store.get(e.key) }))
@@ -52,35 +58,48 @@ const engine = (on: On, opts: { keep?: boolean; commands?: string[]; fork?: Fork
   on('store.keys', () => ({ value: [...store.keys()] }))
   on('store.delete', ($, e) => { store.delete(e.key); return { value: undefined } })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: [] } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.compact', ($, e) => ({ messages: e.messages }))
   on('classic.SessionStart', () => ({}))
   on('turn.complete', ($, e) => ({ text: e.answer }))
-  on('command.list', () => ({
-    value: (opts.commands ?? ['keepwarm', 'cache-tax']).map(name => ({ name, description: '', source: 'plugin' as const })),
-  }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('ui.log', ($, e) => { logs.push(e.text); return { value: undefined } })
+  on('command.list', () => ({ value: (opts.commands ?? []).map(name => ({ name, description: '', source: 'plugin' as const })) }))
   on('command.run', ($, e) => { ran.push(`${e.command} ${e.args}`.trim()); return { text: '' } })
-  on('model.fork', () => {
-    const f = opts.fork
-    if (!f) return { value: { isAnswered: false as const, reason: 'api-error' as const, status: 500, error: 'down' } }
+  on('model.fork', async () => {
+    forks.push(forks.length)
+    if (opts.gate) await opts.gate()
+    const a = answers.length ? answers.shift()! : WARM
+    if (a === null) return { value: null as never }
+    if ('isAnswered' in a) return { value: a as never }
     return {
       value: {
         isAnswered: true as const,
         text: 'warm',
-        usage: { input_tokens: 2, output_tokens: 1, cache_read_input_tokens: f.read, cache_creation_input_tokens: f.write },
+        usage: { input_tokens: 2, output_tokens: 1, cache_read_input_tokens: a.read, cache_creation_input_tokens: a.write },
       },
     }
   })
-  return { store, ran, session, registered }
+  return { store, ran, logs, forks, session, registered }
 }
 
 const WRAP = { wrapUp: true }
+type $ = Parameters<Parameters<typeof test>[1]>[0]
 
 /** A session whose last main-thread request was `idleMin` minutes before the clock's now. */
-const seed = async ($: Parameters<Parameters<typeof test>[1]>[0], idleMin: number) => {
+const seed = async ($: $, idleMin: number, extra: { tokens?: number; model?: string } = {}) => {
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: 200000, model: 'claude-opus-5-5' })
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: extra.tokens ?? 200000, model: extra.model ?? 'claude-opus-5-5' })
 }
+
+/** The typed command's answer. */
+const keepwarm = async ($: $, args: string) => ((await $.command.run({ command: 'keepwarm', args, ...RUN })) as { text: string }).text
+const settle = () => new Promise<void>(r => { (globalThis as unknown as { setTimeout(fn: () => void, ms: number): unknown }).setTimeout(r, 20) })
+const recOf = (store: Map<string, unknown>, id = 'S1') => store.get(`keep:${id}`) as { on?: boolean; deadline?: number; every?: number; at: number } | undefined
+const label = async (b: Awaited<ReturnType<$['ui']['mount']>>) => (await b.find({ key: 'keep-warm' }))?.props.label
+const submit = ($: $, text: string, origin: { kind: string } = { kind: 'composer' }) => $.prompt.submit({ text, wait: false, origin } as never)
 
 test('the ping rule: a read with next to no write kept the cache; anything else did not', () => {
   const u = (read: number, write: number) => ({ input_tokens: 2, output_tokens: 1, cache_read_input_tokens: read, cache_creation_input_tokens: write })
@@ -95,81 +114,370 @@ test('the ping rule: a read with next to no write kept the cache; anything else 
   expect(pingKeptCacheWarm(undefined)).toBe(false)
 })
 
-test('a keep-warm ping that read the cache starts the hour again', { plugins: [pinger] }, async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  engine(on, { keep: true, fork: { read: 200000, write: 0 } })
-  await seed($, 0)
-  await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  await clock.advance(30 * MIN)
+// ---------- The pinger ----------
 
-  // 80 minutes after the last turn, 30 after the ping: warm, with 30 minutes left.
+test('an open window pings 50 idle minutes after the last request; the ping starts the hour again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on)
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(49 * MIN)
+  expect(forks.length).toBe(0)
+  await clock.advance(MIN)
+  expect(forks.length).toBe(1)
+  await clock.advance(30 * MIN)
+  // 80 minutes after the last turn, 30 after the ping: warm, with 30 minutes left; the next ping is 50 after the first.
+  expect(forks.length).toBe(1)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect((await band.findAll({ type: 'Svg' })).map(s => s.props.alt)).toEqual(['Robo, bobbing', 'WARM'])
   expect(await band.find({ text: ' 30m left' })).toBeDefined()
   await band.unmount()
+  await clock.advance(20 * MIN)
+  expect(forks.length).toBe(2)
 })
 
-test('a ping that found the cache gone leaves the band cold', { plugins: [pinger] }, async ($, on) => {
+test('a ping that kept the cache warm adds its cost to the session record, not to the total', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  engine(on, { keep: true, fork: { read: 0, write: 200000 } })
+  const { store } = engine(on)
   await seed($, 0)
+  await keepwarm($, '6h')
   await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  await clock.advance(30 * MIN)
+  // Opus: 2 in at $4, 1 out at $20, 200k read at $0.20, per million.
+  const first = stored(store)
+  expect(Math.abs(first.pings! - (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
+  expect(first.main + first.subs).toBe(0)
+  await clock.advance(50 * MIN)
+  expect(Math.abs(stored(store).pings! - 2 * (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
+})
 
+test('a ping that found the cache gone stops the window with its reason and costs nothing in the record', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, { forks: [COLD] })
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toMatch(/stopped, the ping read 0 and wrote 200k tokens \(\$1\.60\)/)
+  expect(store.has('spend:S1')).toBe(false)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  await clock.advance(3 * HOUR)
+  expect(forks.length).toBe(1)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ text: ' COLD ' })).toBeDefined()
   await band.unmount()
 })
 
-test('a ping the API refused leaves the clock alone', { plugins: [pinger] }, async ($, on) => {
+test('a ping the engine did not send, or that was interrupted, stops the window', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  engine(on, { keep: true, fork: null })
+  const { forks } = engine(on, { forks: [null, { isAnswered: false, reason: 'aborted' }] })
   await seed($, 0)
+  await keepwarm($, '6h')
   await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  await clock.advance(30 * MIN)
-
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ text: ' COLD ' })).toBeDefined()
-  await band.unmount()
+  expect(await keepwarm($, 'status')).toMatch(/stopped, the engine did not send the ping/)
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(2)
+  expect(await keepwarm($, 'status')).toMatch(/stopped, the ping was interrupted/)
 })
 
-const recOf = (store: Map<string, unknown>, id = 'S1') => store.get(`keep:${id}`) as { on?: boolean; renewedAt?: number; synced?: boolean; at: number }
+test('a 429 is retried after 1, 2 and 4 minutes, then the window stops', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [BUSY, BUSY, BUSY, BUSY] })
+  await seed($, 0)
+  await keepwarm($, '3h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toMatch(/API busy, ping retry 1 of 3/)
+  await clock.advance(7 * MIN)
+  expect(forks.length).toBe(4)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the API call failed (429) after 3 retries')
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(4)
+})
 
-test("the switch asks cache-tax for this conversation's window or stops it, and never writes the default", async ($, on) => {
+test('a 429 that clears is retried and the loop goes on', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [BUSY, WARM] })
+  await seed($, 0)
+  await keepwarm($, '3h')
+  await clock.advance(51 * MIN)
+  expect(forks.length).toBe(2)
+  expect(await keepwarm($, 'status')).toMatch(/ping in 50m · last ping read 200k/)
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(3)
+})
+
+test('a retry that would land within a minute of the cache going cold is not tried', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [BUSY] })
+  await seed($, 0)
+  await keepwarm($, '3h every 58m')
+  await clock.advance(58 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the API call failed (429)')
+})
+
+test('no ping goes out after the deadline', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks, store } = engine(on)
+  await seed($, 0)
+  await keepwarm($, '30m')
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+  expect(recOf(store)?.deadline).toBeUndefined()
+})
+
+test('no ping goes out on a cold cache; the first one comes 50 minutes after the next turn', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on)
+  await seed($, 70)
+  expect(await keepwarm($, '6h')).toContain('The cache is cold now')
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(await keepwarm($, 'status')).toMatch(/cold now, first ping 50m after the next turn/)
+  await done($, { usage: null })
+  await clock.advance(49 * MIN)
+  expect(forks.length).toBe(0)
+  await clock.advance(MIN)
+  expect(forks.length).toBe(1)
+})
+
+test('with nothing to fork the window waits for the next turn instead of stopping', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [{ isAnswered: false, reason: 'nothing-to-fork' }] })
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toMatch(/nothing to fork yet, first ping after the next turn/)
+  await clock.advance(5 * MIN)
+  expect(forks.length).toBe(1)
+  await done($, { usage: null })
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(2)
+  expect(await keepwarm($, 'status')).toMatch(/ping in 50m · last ping read 200k/)
+})
+
+test('a new turn resets the countdown, and a subagent turn does not', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on)
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(40 * MIN)
+  await done($, { usage: null, agentId: 'sub1' })
+  await clock.advance(10 * MIN)
+  expect(forks.length).toBe(1)
+  await done($, { usage: null })
+  await clock.advance(40 * MIN)
+  expect(forks.length).toBe(1)
+  await clock.advance(10 * MIN)
+  expect(forks.length).toBe(2)
+})
+
+test('a compaction stops the pings until the next turn, whether session.compact arrives or only a shorter transcript', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on)
+  stopStep(on)
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never)
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(await keepwarm($, 'status')).toMatch(/waiting for the first turn after compaction/)
+  await done($, { usage: null })
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  // The same without session.compact: a request over under half the messages of the one before.
+  for await (const c of $.turn.step({ turnId: 'A', index: 0, model: 'claude-opus-5-5', messageCount: 60 })) void c
+  for await (const c of $.turn.step({ turnId: 'A', index: 1, model: 'claude-opus-5-5', messageCount: 4 })) void c
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(1)
+  await done($, { usage: null })
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(2)
+})
+
+// ---------- Races ----------
+
+test('a main request while a ping is out supersedes its cold reply', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = hold()
+  const { forks } = engine(on, { forks: [COLD, WARM], gate: held.gate })
+  stopStep(on)
+  await seed($, 0)
+  await keepwarm($, '3h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  await clock.advance(MIN)
+  for await (const c of $.turn.step({ turnId: 'next', index: 0, model: 'claude-opus-5-5', messageCount: 5 })) void c
+  held.release()
+  await settle()
+  expect(await keepwarm($, 'status')).not.toMatch(/stopped/)
+  await done($, { usage: null })
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(2)
+})
+
+test('a ping out when the window is extended sends no second ping, and its cold reply still stops the window', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = hold()
+  const { forks } = engine(on, { forks: [COLD, WARM], gate: held.gate })
+  await seed($, 0)
+  await keepwarm($, '3h')
+  await clock.advance(50 * MIN)
+  await keepwarm($, '6h')
+  await clock.advance(5000)
+  expect(forks.length).toBe(1)
+  held.release()
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toMatch(/stopped, the ping read 0 and wrote 200k/)
+})
+
+test('an off while a window is being opened wins: a turn that finishes after it opens nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, { keep: true })
+  stopStep(on)
+  await seed($, 0)
+  for await (const c of $.turn.step({ turnId: 'T', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
+  await keepwarm($, 'off')
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(recOf(store)?.on).toBe(false)
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+})
+
+// ---------- The switch, the button and the command ----------
+
+test('bare /keepwarm switches this conversation on with a window of 6 hours; the default is left alone', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { store, ran } = engine(on, { keep: true })
+  const { store, registered } = engine(on)
+  await seed($, 0)
+  expect(registered).toContain('keepwarm')
+  const text = await keepwarm($, '')
+  expect(text).toContain('keepwarm is on for this conversation')
+  expect(text).toContain('6h00m')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(recOf(store)?.every).toBeUndefined()
+  expect(store.has('keep')).toBe(false)
+  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 6h00m left · ping in 50m$/)
+})
+
+test('a duration opens a one-off window and leaves the switch as it was; every is a testing knob kept in the record', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { prefill: { 'keep:S1': { on: false, at: NOW } } })
+  await seed($, 0)
+  expect(await keepwarm($, '1h30m')).toContain('window of 1h30m')
+  expect(recOf(store)).toMatchObject({ on: false, deadline: NOW + 90 * MIN })
+  expect(await keepwarm($, '90m every 2m')).toContain('a ping 2m after each idle stretch')
+  expect(recOf(store)).toMatchObject({ on: false, deadline: NOW + 90 * MIN, every: 2 * MIN })
+  expect(await keepwarm($, '2h')).toContain('window of 2h00m')
+  expect(recOf(store)?.every).toBeUndefined()
+  expect(await keepwarm($, '2h every 60m')).toBe('every takes a period from 1m to 59m')
+  expect(await keepwarm($, '2h every')).toBe('every takes a period from 1m to 59m')
+})
+
+test('always turns the default and this conversation on, off turns both off and closes the window', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 0)
+  expect(await keepwarm($, 'always')).toContain('keepwarm is on for this conversation and for new ones')
+  expect(store.get('keep')).toBe(true)
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(await keepwarm($, 'off')).toContain('keepwarm is off')
+  expect(store.get('keep')).toBe(false)
+  expect(recOf(store)?.on).toBe(false)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+})
+
+test('status says what is left, the next ping and the last one; on without a window and stopped read differently', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  engine(on, { prefill: { 'keep:S1': { on: true, at: NOW } } })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  expect(await keepwarm($, 'status')).toBe('keepwarm is on, no window open: the next turn opens one')
+  await keepwarm($, '3h')
+  expect(await keepwarm($, 'status')).toBe('keepwarm 3h00m left · waiting for the first turn')
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 0, context_tokens: 200000, model: 'claude-opus-5-5' })
+  await clock.advance(50 * MIN)
+  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 2h10m left · ping in 50m · last ping read 200k \$0\.04$/)
+})
+
+test('anything else is answered with the usage line and changes nothing', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 0)
+  for (const args of ['soon', '0m', '5', '6h now']) expect(await keepwarm($, args)).toBe('keepwarm takes a window such as 6h or 90m, or always, off, or status')
+  expect(store.has('keep:S1')).toBe(false)
+})
+
+test('the button follows an open window a typed duration opened, and follows off', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  engine(on)
   await seed($, 18)
-
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🧊 Keep warm')
+  await keepwarm($, '90m')
+  expect(await label(band)).toBe('🔥 Keep warm')
+  await clock.advance(2 * HOUR)
+  expect(await label(band)).toBe('🧊 Keep warm')
+  await keepwarm($, '3h')
+  expect(await label(band)).toBe('🔥 Keep warm')
+  await keepwarm($, 'off')
+  expect(await label(band)).toBe('🧊 Keep warm')
+  await keepwarm($, '')
+  expect(await label(band)).toBe('🔥 Keep warm')
+  await band.unmount()
+})
+
+test('pressing the button while it is on turns the switch off and stops the window; while off it turns on and opens 6 hours', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, { keep: true })
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('🔥 Keep warm')
 
   await band.press({ key: 'keep-warm' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
-  expect(recOf(store).on).toBe(false)
+  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(recOf(store)?.on).toBe(false)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  // The default for new conversations is not touched by the button.
   expect(store.get('keep')).toBe(true)
-  expect(ran).toEqual(['keepwarm off'])
 
   await band.press({ key: 'keep-warm' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
-  expect(recOf(store).on).toBe(true)
-  expect(recOf(store).renewedAt).toBe(NOW)
-  expect(store.get('keep')).toBe(true)
-  expect(ran).toEqual(['keepwarm off', 'keepwarm 6h'])
+  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(forks.length).toBe(0)
+
+  // A window opened by a typed duration, switch off: the button is 🔥, and pressing it stops the window.
+  await keepwarm($, 'off')
+  await keepwarm($, '90m')
+  expect(await label(band)).toBe('🔥 Keep warm')
+  await band.press({ key: 'keep-warm' })
+  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+  await band.unmount()
+})
+
+test('the tooltip no longer names cache-tax', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(JSON.stringify(await band.findAll({ type: 'Text' }))).not.toContain('cache-tax')
   await band.unmount()
 })
 
 test('two conversations in one store: a press in A leaves B as it was', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { store, ran, session } = engine(on, { keep: true })
+  const { store, session } = engine(on, { keep: true })
   await seed($, 18)
-  const label = async (b: Awaited<ReturnType<typeof $.ui.mount>>) => (await b.find({ key: 'keep-warm' }))?.props.label
   const a = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await a.press({ key: 'keep-warm' })
   expect(await label(a)).toBe('🧊 Keep warm')
-  expect(ran).toEqual(['keepwarm off'])
+  await a.unmount()
 
   // Conversation B has no choice of its own: it reads the default.
   session.id = 'S2'
@@ -177,27 +485,21 @@ test('two conversations in one store: a press in A leaves B as it was', async ($
   expect(await label(b)).toBe('🔥 Keep warm')
   expect(store.has('keep:S2')).toBe(false)
   await b.unmount()
-
-  session.id = 'S1'
-  const again = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(again)).toBe('🧊 Keep warm')
-  await again.unmount()
-  await a.unmount()
 })
 
 test('a conversation with no choice of its own follows the default; its own choice wins over it', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { session } = engine(on, { keep: true, prefill: { 'keep:S2': { on: false, at: NOW } } })
   await seed($, 18)
-  const label = async () => {
+  const shown = async () => {
     const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
-    const l = (await b.find({ key: 'keep-warm' }))?.props.label
+    const l = await label(b)
     await b.unmount()
     return l
   }
-  expect(await label()).toBe('🔥 Keep warm')
+  expect(await shown()).toBe('🔥 Keep warm')
   session.id = 'S2'
-  expect(await label()).toBe('🧊 Keep warm')
+  expect(await shown()).toBe('🧊 Keep warm')
 })
 
 test('the switch shows in the terminal too, and before the first reply', async ($, on) => {
@@ -206,138 +508,156 @@ test('the switch shows in the terminal too, and before the first reply', async (
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊 Keep warm')
   await band.unmount()
 })
 
-test('the first conversation with the switch off clears a leftover cache-tax always once, for all conversations, and a typed always arms it again', async ($, on) => {
+test('the first session ever stores nothing; a later session leaves a saved choice alone', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store, ran } = engine(on, { bare: true })
+  const { store, ran } = engine(on)
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   await clock.advance(5000)
   expect(store.has('keep')).toBe(false)
-  expect(ran).toEqual(['keepwarm off'])
-  expect(store.get('keepAlwaysMayBeOn')).toBe(false)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
-  await band.unmount()
-  // A second start of the same conversation does not run it again.
-  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  await clock.advance(5000)
-  expect(ran).toEqual(['keepwarm off'])
-  // A typed always turns cache-tax's global always on again, so the next off conversation clears it once more.
-  await $.command.run({ command: 'keepwarm', args: 'always', ...RUN })
-  expect(store.get('keepAlwaysMayBeOn')).toBe(true)
-})
-
-test('a later session leaves a saved choice alone', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { store, ran } = engine(on, { keep: false })
-  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  await clock.advance(5000)
-  expect(store.get('keep')).toBe(false)
+  expect(store.has('keep:S1')).toBe(false)
   expect(ran).toEqual([])
-})
-
-test('a typed /keepwarm off or always sets the default and this conversation', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true })
-  await seed($, 18)
-  await $.command.run({ command: 'keepwarm', args: 'off', ...RUN })
+  store.set('keep', false)
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   expect(store.get('keep')).toBe(false)
-  expect(recOf(store).on).toBe(false)
-  await $.command.run({ command: 'keepwarm', args: 'always', ...RUN })
-  expect(store.get('keep')).toBe(true)
-  expect(recOf(store).on).toBe(true)
 })
 
-test('a typed window or bare /keepwarm turns this conversation on and leaves the default alone', async ($, on) => {
+test('with the switch on, a turn that reached the cache renews the window to 6 hours, and never shortens a longer one', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: false, prefill: { 'keep:S1': { on: false, synced: true, at: NOW } } })
+  const { store } = engine(on, { prefill: { 'keep:S1': { on: true, at: NOW } } })
   await seed($, 18)
-  const label = async () => {
-    const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
-    const l = (await b.find({ key: 'keep-warm' }))?.props.label
-    await b.unmount()
-    return l
-  }
-  expect(await label()).toBe('🧊 Keep warm')
-  // status, a typo or a zero window arm nothing in cache-tax: the switch stays off.
-  for (const args of ['status', 'soon', '0m']) await $.command.run({ command: 'keepwarm', args, ...RUN })
-  expect(recOf(store).on).toBe(false)
-
-  await clock.advance(MIN)
-  await $.command.run({ command: 'keepwarm', args: '1h30m', ...RUN })
-  expect(recOf(store).on).toBe(true)
-  expect(recOf(store).renewedAt).toBe(NOW + MIN)
-  expect(store.get('keep')).toBe(false)
-  expect(await label()).toBe('🔥 Keep warm')
-
-  await $.command.run({ command: 'keepwarm', args: 'off', ...RUN })
-  await $.command.run({ command: 'keepwarm', args: '', ...RUN })
-  expect(recOf(store).on).toBe(true)
-  expect(store.get('keep')).toBe(false)
-})
-
-/** A main turn that ends, then the delay the renewal waits. */
-const turnEnds = async ($: Parameters<Parameters<typeof test>[1]>[0], clock: { advance: (ms: number) => Promise<unknown> }) => {
+  // A turn that reported no usage touched nothing: no window.
   await done($, { usage: null })
-  await clock.advance(3000)
-}
-
-test('after a main turn the window is renewed only when the switch is on and 2 hours have passed', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { store, ran } = engine(on, { keep: true })
-  await seed($, 18)
-  // Renewed just now (the engine's default record): a turn fires nothing.
-  await turnEnds($, clock)
-  expect(ran).toEqual([])
-  await clock.advance(116 * MIN)
-  await turnEnds($, clock)
-  expect(ran).toEqual([])
-  // Past 2 hours since the last renewal.
-  await clock.advance(5 * MIN)
-  await turnEnds($, clock)
-  expect(ran).toEqual(['keepwarm 6h'])
-  expect(typeof recOf(store).renewedAt).toBe('number')
-  expect((recOf(store).renewedAt ?? 0) > NOW).toBe(true)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+  await clock.advance(4 * HOUR)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 10 * HOUR)
+  await keepwarm($, '24h')
+  await clock.advance(HOUR)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 4 * HOUR + 24 * HOUR)
   // A subagent's turn renews nothing.
-  await clock.advance(3 * 60 * MIN)
-  await done($, { usage: null, agentId: 'sub1' })
-  await clock.advance(3000)
-  expect(ran).toEqual(['keepwarm 6h'])
+  const before = recOf(store)?.deadline
+  await clock.advance(HOUR)
+  await done($, { usage: USED, agentId: 'sub1' })
+  expect(recOf(store)?.deadline).toBe(before)
 })
 
-test('a turn in a conversation with the switch off fires nothing', async ($, on) => {
+test('with the switch off a turn opens no window, and a window a typed duration opened is left as it is', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: false })
+  const { store } = engine(on, { keep: false })
   await seed($, 18)
-  await clock.advance(5 * 60 * MIN)
-  await turnEnds($, clock)
-  await turnEnds($, clock)
-  expect(ran).toEqual([])
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBeUndefined()
+  await keepwarm($, '2h')
+  await clock.advance(30 * MIN)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 2 * HOUR)
 })
 
-test('a conversation resumed with the switch on and no recent renewal gets its window at start', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: true, bare: true })
-  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  await clock.advance(5000)
-  expect(ran).toEqual(['keepwarm 6h'])
-})
-
-test('a conversation with its own switch on while the default is off still renews', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: false, prefill: { 'keep:S1': { on: true, renewedAt: NOW - 3 * 60 * MIN, at: NOW } } })
+test('a conversation with its own switch on while the default is off renews too', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: false, prefill: { 'keep:S1': { on: true, at: NOW } } })
   await seed($, 18)
-  await clock.advance(5000)
-  expect(ran).toEqual(['keepwarm 6h'])
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+})
+
+test("a restart restores the conversation's window from the store, with its testing period", async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { prefill: { 'keep:S1': { on: false, deadline: NOW + 3 * HOUR, every: 20 * MIN, at: NOW } } })
+  await seed($, 5)
+  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 3h00m left · ping in 15m/)
+  await clock.advance(14 * MIN)
+  expect(forks.length).toBe(0)
+  await clock.advance(MIN)
+  expect(forks.length).toBe(1)
+})
+
+test('a restart with nothing to fork waits for the first turn instead of stopping', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [{ isAnswered: false, reason: 'nothing-to-fork' }], prefill: { 'keep:S1': { deadline: NOW + 3 * HOUR, at: NOW } } })
+  await seed($, 40)
+  await clock.advance(10 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toMatch(/nothing to fork yet/)
+})
+
+test('a window that ran out while the app was closed is not restored', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { prefill: { 'keep:S1': { deadline: NOW - MIN, at: NOW - HOUR } } })
+  await seed($, 40)
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+})
+
+test('/clear drops the old conversation\'s window; the next one arms from its own switch at its first turn', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, session, forks } = engine(on, { keep: true })
+  await seed($, 0)
+  await keepwarm($, '6h')
+  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+  await $.session.end({ sessionId: 'S1', reason: 'clear' } as never)
+  session.id = 'S2'
+  expect(recOf(store)?.deadline).toBeUndefined()
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  // The new conversation has no choice of its own: it follows the default, on.
+  await done($, { usage: USED })
+  expect(recOf(store, 'S2')?.deadline).toBe(NOW + 2 * HOUR + 6 * HOUR)
+  expect(recOf(store)?.deadline).toBeUndefined()
+})
+
+test('a ping in flight when /clear lands is dropped: nothing is counted for the new conversation and its window is not stopped', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = hold()
+  const { store, session, forks } = engine(on, { forks: [COLD], gate: held.gate })
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  await $.session.end({ sessionId: 'S1', reason: 'clear' } as never)
+  session.id = 'S2'
+  await keepwarm($, '3h')
+  held.release()
+  await settle()
+  expect(await keepwarm($, 'status')).not.toMatch(/stopped/)
+  expect(recOf(store, 'S2')?.deadline).toBe(NOW + 50 * MIN + 3 * HOUR)
+})
+
+test('a conversation that changed without a session.end is told by its id: the old window goes', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, session, forks } = engine(on)
+  await seed($, 0)
+  await keepwarm($, '6h')
+  session.id = 'S2'
+  await done($, { usage: null })
+  expect(recOf(store)?.deadline).toBeUndefined()
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+})
+
+test('a session id that cannot be read leaves the commands answering and throws nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { idThrows: true })
+  await seed($, 0)
+  expect(await keepwarm($, '1h')).toContain('window of 1h00m')
+  await clock.advance(2 * HOUR)
+  expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+  // Nothing can be written under an id that is not there.
+  expect([...store.keys()].filter(k => k.startsWith('keep:'))).toEqual([])
 })
 
 test('session records of conversations untouched for a month are pruned with the others', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const old = NOW - 31 * 24 * 60 * MIN
-  const { store } = engine(on, { keep: true, prefill: { 'keep:OLD': { on: true, renewedAt: old, synced: true, at: old }, 'keep:NEW': { on: true, at: NOW - MIN } } })
+  const { store } = engine(on, { keep: true, prefill: { 'keep:OLD': { on: true, at: old }, 'keep:NEW': { on: true, at: NOW - MIN } } })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   await clock.advance(5000)
   expect(store.has('keep:OLD')).toBe(false)
@@ -345,14 +665,92 @@ test('session records of conversations untouched for a month are pruned with the
   expect(store.get('keep')).toBe(true)
 })
 
-test('without cache-tax there is no switch', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { commands: [] })
+// ---------- cache-tax installed ----------
+
+test('with cache-tax installed the mod stays passive: one note, no command, no button, no pings', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, logs, registered, forks } = engine(on, { commands: ['keepwarm', 'cache-tax'], keep: true })
   await seed($, 18)
+  expect(logs.filter(l => l.includes('cache-tax'))).toEqual([
+    'cache-tax is installed and would ping too. Uninstall it with `claude plugin uninstall cache-tax@claude-code-mods` so spendometer keeps the cache warm.',
+  ])
+  expect(registered).not.toContain('keepwarm')
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
-  expect(ran).toEqual([])
   await band.unmount()
+  await done($, { usage: USED })
+  await clock.advance(3 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(store.has('keep:S1')).toBe(false)
+  // Nor does it warn about a cold send: cache-tax's guard does.
+  await submit($, 'hi')
+  expect(logs.length).toBe(1)
+})
+
+test('without cache-tax there is a button, and the note is not shown', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { logs } = engine(on)
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  expect(logs).toEqual([])
+  await band.unmount()
+})
+
+// ---------- The cold send ----------
+
+test('a cold send is warned about once, with what it costs and what a warm turn would have; the prompt goes on', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { logs } = engine(on)
+  await seed($, 70)
+  const r = await submit($, 'hello again')
+  expect((r as { drop?: string }).drop).toBeUndefined()
+  expect(logs.length).toBe(1)
+  // 200k tokens on Opus: a cold write is $4 x 2 a million, a read $0.20 a million.
+  expect(logs[0]).toContain('$1.60')
+  expect(logs[0]).toContain('$0.04')
+  expect(logs[0]).toContain('200,000 tokens')
+  await submit($, 'and again')
+  expect(logs.length).toBe(1)
+})
+
+test('the cold-send warning comes again after the cache was warm in between', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { logs } = engine(on)
+  await seed($, 70)
+  await submit($, 'one')
+  await done($, { usage: null })
+  await submit($, 'warm: nothing')
+  expect(logs.length).toBe(1)
+  await clock.advance(70 * MIN)
+  await submit($, 'two')
+  expect(logs.length).toBe(2)
+})
+
+test('no cold-send warning for a slash command, a command prompt, a plugin prompt, a warm cache or under 50k tokens', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { logs } = engine(on)
+  await seed($, 70)
+  await submit($, '/wavebar fold')
+  await $.prompt.submit({ text: 'x', command: 'review', wait: false, origin: { kind: 'composer' } } as never)
+  await submit($, 'from a plugin', { kind: 'plugin' })
+  expect(logs).toEqual([])
+  await seed($, 70, { tokens: 49_999 })
+  await submit($, 'small')
+  expect(logs).toEqual([])
+  await seed($, 10)
+  await submit($, 'warm')
+  expect(logs).toEqual([])
+})
+
+test('a model the table does not price gets the token count without a price', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { logs } = engine(on)
+  await seed($, 70, { model: 'mystery-1' })
+  await submit($, 'hi')
+  expect(logs.length).toBe(1)
+  expect(logs[0]).toContain('200,000 tokens')
+  expect(logs[0]).not.toContain('$')
 })
 
 test('the band and the card paint no background of their own', async ($, on) => {
@@ -368,14 +766,25 @@ test('the band and the card paint no background of their own', async ($, on) => 
   await band.unmount()
 })
 
-test('Wrap up runs the debrief, then lets this conversation go cold while the switch stays on', async ($, on) => {
+/** Holds each fork until released. */
+function hold() {
+  const releases: Array<() => void> = []
+  let first = true
+  return {
+    gate: async () => {
+      if (!first) return
+      first = false
+      await new Promise<void>(r => { releases.push(r) })
+    },
+    release: () => { for (const r of releases) r() },
+  }
+}
+test('Wrap up runs the debrief; its turn stops the window and renews nothing while the switch stays on', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store, ran } = engine(on, { keep: true, commands: ['keepwarm', 'cache-tax', 'debrief'], prefill: WRAP })
-  on('turn.step', async function* ($, e) {
-    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
-  })
+  const { store, ran, forks } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
+  stopStep(on)
   await seed($, 18)
+  await keepwarm($, '6h')
   const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } })
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
 
@@ -386,21 +795,27 @@ test('Wrap up runs the debrief, then lets this conversation go cold while the sw
   await band.press({ key: 'wrap-up' })
   expect(ran).toEqual(['debrief'])
 
-  // The debrief's own turn starts and ends; only then is the cache let go.
+  // The debrief's own turn starts and ends; only then is the window stopped.
   for await (const c of $.turn.step({ turnId: 'T9', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
-  await clock.advance(5000)
+  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+  await done($, { usage: USED })
   expect(ran).toEqual(['debrief'])
-  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ reason: 'answer', answer: 'ok', usage: null, durationMs: 1000 })
-  await clock.advance(5000)
-  expect(ran).toEqual(['debrief', 'keepwarm 1m'])
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(recOf(store)?.on).toBeUndefined()
   expect(store.get('keep')).toBe(true)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, wrapped up')
+  await clock.advance(3 * HOUR)
+  expect(forks.length).toBe(0)
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
+  // The switch stays on: the next ordinary turn opens a window again.
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBeGreaterThan(NOW)
   await band.unmount()
 })
 
 test('a turn already running when Wrap up is pressed does not end the conversation early', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: true, commands: ['keepwarm', 'debrief'], prefill: WRAP })
+  const { ran } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await band.press({ key: 'wrap-up' })
@@ -412,7 +827,7 @@ test('a turn already running when Wrap up is pressed does not end the conversati
 
 test('with keep-warm off, Wrap up only runs the debrief; without the debrief skill there is no button', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: false, commands: ['keepwarm', 'debrief'], prefill: WRAP })
+  const { ran } = engine(on, { keep: false, commands: ['debrief'], prefill: WRAP })
   on('turn.step', async function* ($, e) {
     yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
@@ -470,7 +885,7 @@ test("the band adds up the conversation's cost, the main session's and its subag
 
 test('the cost command answers with the line a debrief can quote, and Wrap up still runs the debrief', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: true, commands: ['keepwarm', 'debrief'], prefill: WRAP })
+  const { ran } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
   const cost = async () => ((await $.command.run({ command: 'spendometer', args: 'cost', ...RUN })) as { text: string }).text
   await seed($, 18)
   // Nothing spent yet: the command says so rather than printing zeros.
@@ -740,7 +1155,7 @@ test('a session id that cannot be read leaves the band without a cost and throws
 
 test('Wrap up is absent by default and appears after /spendometer wrapup on', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, commands: ['keepwarm', 'debrief'] })
+  const { store } = engine(on, { keep: true, commands: ['debrief'] })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
@@ -844,37 +1259,14 @@ test('no pace key is written, even with the card open', async ($, on) => {
   await band.unmount()
 })
 
-test('a ping that kept the cache warm adds its cost to the session record, not to the total', { plugins: [pinger] }, async ($, on) => {
+test('a turn that begins after the hour on a cache the pings kept warm records what it saved', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
-  await seed($, 0)
-  await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  // Opus: 2 in at $4, 1 out at $20, 200k read at $0.20, per million.
-  const first = stored(store)
-  expect(Math.abs(first.pings! - (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
-  expect(first.main + first.subs).toBe(0)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  expect(Math.abs(stored(store).pings! - 2 * (8 + 20 + 40000) / 1e6)).toBeLessThan(1e-9)
-})
-
-test('a ping that found the cache gone costs nothing in the record', { plugins: [pinger] }, async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, fork: { read: 0, write: 200000 } })
-  await seed($, 0)
-  await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
-  expect(store.has('spend:S1')).toBe(false)
-})
-
-test('a turn that begins after the hour on a cache the pings kept warm records what it saved', { plugins: [pinger] }, async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
+  const { store } = engine(on)
   stopStep(on)
   await seed($, 0)
   await step($, 0)
+  await keepwarm($, '6h')
   await clock.advance(50 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
   await clock.advance(30 * MIN)
   await step($, 0)
   // 200k tokens on Opus: a cold write is $4 x 2 a million, a read $0.20 a million.
@@ -886,9 +1278,9 @@ test('a turn that begins after the hour on a cache the pings kept warm records w
   expect(Math.abs(stored(store).saved! - (1.6 - 0.04))).toBeLessThan(1e-9)
 })
 
-test('no savings without pings, or when the gap since the last real request is under the hour', { plugins: [pinger] }, async ($, on) => {
+test('no savings without pings, or when the gap since the last real request is under the hour', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, fork: { read: 200000, write: 0 } })
+  const { store } = engine(on)
   stopStep(on)
   await seed($, 0)
   await step($, 0)
@@ -897,8 +1289,9 @@ test('no savings without pings, or when the gap since the last real request is u
   await step($, 0)
   expect(store.get('spend:S1')).toBeUndefined()
   // A ping and a request inside the hour: the cache would have been warm anyway.
-  await clock.advance(30 * MIN)
-  await $.command.run({ command: 'ping', args: '', ...RUN })
+  await keepwarm($, '6h every 10m')
+  await clock.advance(10 * MIN)
+  expect(stored(store).pings).toBeGreaterThan(0)
   await clock.advance(10 * MIN)
   await step($, 0)
   expect(stored(store).saved).toBeUndefined()

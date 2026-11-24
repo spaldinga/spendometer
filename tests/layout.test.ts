@@ -81,7 +81,7 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: WINDOWS } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('classic.SessionStart', () => ({}))
-  on('command.list', () => ({ value: ['keepwarm', 'cache-tax', 'debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
+  on('command.list', () => ({ value: ['debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
   await $.session.start({ surface, isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: 200000, model: 'claude-opus-5-5' })
   return $.ui.mount({ plugin: 'spendometer', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
