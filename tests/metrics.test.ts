@@ -159,3 +159,14 @@ test('delegation measures only the subagent cost tracked with its main-model pri
   expect(d.saved).toBe(2)
   expect(Math.abs(d.costRatio - 1 / 3)).toBeLessThan(1e-9)
 })
+
+test('the tool output figures: top three tools, the sum over all, and the re-reads', () => {
+  const s: Spent = { main: 1, subs: 0, last: 0, at: 0, byTool: { Bash: 18000, Read: 12000, Grep: 6000, Glob: 500 }, rereads: 4, rereadTok: 9000 }
+  const m = metricsOf(s, 0)!
+  expect(m.tools).toEqual([['Bash', 18000], ['Read', 12000], ['Grep', 6000]])
+  expect(m.toolTok).toBe(36500)
+  expect(m.rereads).toBe(4)
+  expect(m.rereadTok).toBe(9000)
+  const old = metricsOf({ main: 1, subs: 0, last: 0, at: 0 }, 0)!
+  expect([old.tools, old.toolTok, old.rereads, old.rereadTok]).toEqual([[], 0, 0, 0])
+})

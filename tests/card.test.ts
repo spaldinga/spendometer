@@ -13,6 +13,7 @@ const DELEG = { saved: 3.1, costRatio: 0.4, workMs: 12 * 60000, wallMs: 5 * 6000
 const METRICS: Metrics = {
   hit: 0.963, perM: 0.62, avg: 0.38, last: 2.11, multiple: 6, runway: 40.4, growth: 6200,
   models: [['opus', 14.2], ['sonnet', 5.1], ['haiku', 1.09]], deleg: DELEG, subs: 5.14, top: [['Explore', 3.9], ['coder', 1.24]],
+  tools: [['Bash', 18000], ['Read', 12000], ['Grep', 6000]], toolTok: 41000, rereads: 4, rereadTok: 9000,
 }
 /** The pace strip's height, where the columns start; a zone's title is 24 px below. */
 const YC = 88
@@ -427,12 +428,13 @@ test('the alt text names today and the week, and the savings when above zero', (
 
 // ---------- the metric row (three columns and up) ----------
 const row = (s: string) => s.slice(s.indexOf('>CACHE HIT<') - 40)
-const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [] }
-const METRIC_TITLES = ['CACHE HIT', 'PER TURN', 'BY MODEL']
+const titleOf = (s: string, title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="[0-9.]+"[^>]*>${title}<`).exec(s)![1])
+const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [], tools: [], toolTok: 0, rereads: 0, rereadTok: 0 }
+const METRIC_TITLES = ['CACHE HIT', 'PER TURN', 'BY MODEL', 'TOOL OUTPUT']
 /** The metric cells' column width and x at a card width. */
-const mcolW = (w: number) => Math.floor((w - 26 - 2 * 26) / 3)
+const mcolW = (w: number) => Math.floor((w - 26 - 3 * 26) / 4)
 
-test('the metric row is under the columns from three columns, warm and cold, 92 px taller, with three equal cells and no DELEGATION', () => {
+test('the metric row is under the columns from three columns, warm and cold, 92 px taller, with four equal cells and no DELEGATION', () => {
   for (const [w, top] of [[1100, YC + ROW + 31], [1400, YC + ROW]] as const)
     for (const v of [WARM, COLD]) {
       const plain = cardSvg(v, w, SPEND, [PACE_OK])
@@ -443,10 +445,10 @@ test('the metric row is under the columns from three columns, warm and cold, 92 
       // DELEGATION is a column above, once, never a cell here.
       expect(s.split('>DELEGATION<').length - 1).toBe(1)
       expect(row(s)).not.toContain('DELEGATION')
-      // The rule above it, and three equal cells across the card.
+      // The rule above it, and four equal cells across the card.
       expect(s).toContain(`<rect x="13" y="${top}" width="${w - 26}" height="1"`)
       const titleAt = (title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="${top + 2 + 22}"[^>]*>${title}<`).exec(s)![1])
-      expect(METRIC_TITLES.map(titleAt)).toEqual([0, 1, 2].map(i => 13 + i * (mcolW(w) + 26)))
+      expect(METRIC_TITLES.map(titleAt)).toEqual([0, 1, 2, 3].map(i => 13 + i * (mcolW(w) + 26)))
       expect(s).toContain('font-size="14" font-weight="700" fill="#8d8775" letter-spacing="1.4"')
     }
 })
@@ -506,7 +508,9 @@ test("by model: the biggest share as the figure in its colour, a split bar in th
   expect(bars[1].w).toBeGreaterThan(bars[2].w)
   // The caption: the first entry is the figure's model, so its name is left out; each ■ in its model's colour.
   // The third entry goes while it does not fit the cell, and is there on a wider card.
-  expect(plainText(s)).toContain('■ $14.20 · ■ Sonnet $5.10')
+  expect(plainText(s)).toContain('■ $14.20')
+  expect(plainText(s)).not.toContain('Sonnet $5.10')
+  expect(plainText(row(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS).source)))).toContain('■ $14.20 · ■ Sonnet $5.10')
   expect(plainText(s)).not.toContain('Haiku $1.09')
   const wideCard = row(body(cardSvg(WARM, 1800, SPEND, [PACE_OK], METRICS).source))
   expect(plainText(wideCard)).toContain('■ $14.20 · ■ Sonnet $5.10 · ■ Haiku $1.09')
@@ -649,8 +653,8 @@ test('an unknown metric shows its title, a dash and when it will be known', () =
   // One known: the row, with the others as dashes (the DELEGATION column above has its own dash).
   const s = row(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...NONE, hit: 0.5 }).source))
   expect(s).toContain('<tspan font-size="26">50%</tspan>')
-  expect(s.split('<tspan font-size="26">—</tspan>').length - 1).toBe(2)
-  expect(s.split('>after a few turns<').length - 1).toBe(2)
+  expect(s.split('<tspan font-size="26">—</tspan>').length - 1).toBe(3)
+  expect(s.split('>after a few turns<').length - 1).toBe(3)
   expect(s).toContain('>of input read from cache<')
   expect(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...NONE, hit: 0.5 }).source)).toContain('>no subagents this thread<')
   // Subagent cost alone is enough to show the row.
@@ -733,4 +737,46 @@ test('the pie is an EMPTY circle with a wedge in the window colour; full when 10
   expect(at(100)).toBe(`</style><circle cx="8" cy="8" r="7" fill="${ORANGE}"/></svg>`)
   expect(pieSvg(50, YELLOW)).toContain('prefers-color-scheme: light')
   expect(pieSvg(50, YELLOW)).toContain('width="16" height="16"')
+})
+
+// ---------- TOOL OUTPUT ----------
+test('tool output: the figure in tokens, the top tools and the re-reads in orange as the caption', () => {
+  const s = row(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS).source))
+  expect(s).toContain('>TOOL OUTPUT<')
+  expect(s).toContain('<tspan font-size="26">41k</tspan><tspan font-size="14" font-weight="500" fill="#8d8775" dx="7">tokens</tspan>')
+  // Four cells: the fourth title is at the fourth column.
+  expect(titleOf(s, 'TOOL OUTPUT')).toBe(13 + 3 * (mcolW(1400) + 26))
+  // 1400: the column fits Bash and Read and the re-reads; Grep is cut from the back.
+  expect(s).toContain(`>Bash 18k · Read 12k<tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
+  const wide = row(body(cardSvg(WARM, 1800, SPEND, [PACE_OK], METRICS).source))
+  expect(wide).toContain(`>Bash 18k · Read 12k · Grep 6k<tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
+  // No re-reads: no orange part. One re-read is singular.
+  const none = row(body(cardSvg(WARM, 1800, SPEND, [PACE_OK], { ...METRICS, rereads: 0, rereadTok: 0 }).source))
+  expect(none).toContain('>Bash 18k · Read 12k · Grep 6k</text>')
+  expect(none).not.toContain('re-read')
+  expect(row(body(cardSvg(WARM, 1800, SPEND, [PACE_OK], { ...METRICS, rereads: 1 }).source))).toContain('> · 1 re-read</tspan>')
+})
+
+test('tool output: at the narrowest width the row shows, the re-read part stays and tools are cut from the back', () => {
+  const s = row(body(cardSvg(WARM, 1023, SPEND, [PACE_OK], METRICS).source))
+  expect(s).toContain('>TOOL OUTPUT<')
+  expect(s).toContain(`>Bash 18k<tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
+  // Every caption in the row fits its cell (0.56 em a character, as the card estimates).
+  const size = 16
+  for (const m of s.matchAll(/<text x="[\d.]+" y="\d+" font-size="16" font-weight="500"[^>]*>(.*?)<\/text>/g)) expect(plainText(m[1]).length * size * 0.56).toBeLessThanOrEqual(mcolW(1023))
+})
+
+test('tool output: unknown shows a dash, and it alone is enough to show the row', () => {
+  const c = cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...NONE, toolTok: 500, tools: [['Bash', 500]] })
+  expect(c.h).toBe(310)
+  expect(plainText(row(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...NONE, hit: 0.5 }).source)))).toContain('TOOL OUTPUT—after a few turns')
+})
+
+test('the alt text has the tool output sentence, the re-read part only when there are re-reads, and only with the row', () => {
+  expect(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS).alt).toContain(' Tool output into the context: about 41k tokens (Bash 18k, Read 12k, Grep 6k); 4 re-reads of unchanged files, about 9k tokens.')
+  const none = cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...METRICS, rereads: 0, rereadTok: 0 }).alt
+  expect(none).toContain(' Tool output into the context: about 41k tokens (Bash 18k, Read 12k, Grep 6k).')
+  expect(none).not.toContain('re-read')
+  expect(cardSvg(WARM, 800, SPEND, [PACE_OK], METRICS).alt).not.toContain('Tool output')
+  expect(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...METRICS, toolTok: 0, tools: [], rereads: 0 }).alt).not.toContain('Tool output')
 })

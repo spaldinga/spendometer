@@ -8,6 +8,7 @@ import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './prog
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
 import { isCommit, isPr, resultsSentence } from './results'
+import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, ORANGE, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
@@ -78,6 +79,8 @@ const ending = atom({ plugin: 'spendometer', key: 'ending' } as const, null as E
 const subsSince = atom({ plugin: 'spendometer', key: 'subsSince' } as const, 0)
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
+/** Read keys (path and range) the main thread read and has not edited since: a second read of one is a re-read. Lost on a reload. */
+const seen = atom({ plugin: 'spendometer', key: 'seen' } as const, [] as string[])
 
 /** The conversation's cost as one line for the transcript, so a debrief can quote it instead of leaving cost empty. */
 export const spendLine = (s: Spend & { commits?: number; prs?: number }): string =>
@@ -95,8 +98,8 @@ const readSpend = async ($: EngineInterface): Promise<Spent | null> => {
     if (typeof s.pings === 'number') out.pings = s.pings
     if (typeof s.saved === 'number') out.saved = s.saved
     // The metric figures arrived later still; each is kept only when it is a number.
-    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs'] as const) if (typeof s[k] === 'number') out[k] = s[k]
-    for (const k of ['byType', 'byModel'] as const) {
+    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs', 'rereads', 'rereadTok'] as const) if (typeof s[k] === 'number') out[k] = s[k]
+    for (const k of ['byType', 'byModel', 'byTool'] as const) {
       const src = s[k]
       if (src && typeof src === 'object') {
         const by: Record<string, number> = {}
@@ -120,6 +123,7 @@ const recordOf = (was: Spent | null, at: number): Spent => {
   const next: Spent = { ...(was ?? { main: 0, subs: 0, last: 0 }), at }
   if (was?.byType) next.byType = { ...was.byType }
   if (was?.byModel) next.byModel = { ...was.byModel }
+  if (was?.byTool) next.byTool = { ...was.byTool }
   if (was?.spans) next.spans = was.spans.map(s => [s[0], s[1]] as [number, number])
   return next
 }
@@ -149,6 +153,59 @@ const addResults = async ($: EngineInterface, command: string): Promise<void> =>
     await $.store.set(key, next)
     $.ui.invalidate('ui.render')
   } catch { /* the card shows no results; the command went on */ }
+}
+
+/** Adds a tool call's output tokens (and a re-read of an unchanged file) to this session's record. Nothing to add writes nothing. */
+const addToolOut = async ($: EngineInterface, tool: string, tokens: number, reread: boolean): Promise<void> => {
+  if (tokens <= 0 && !reread) return
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const next = recordOf(await readSpend($), await $.clock.now())
+    if (tokens > 0) next.byTool = { ...next.byTool, [tool]: (next.byTool?.[tool] ?? 0) + tokens }
+    if (reread) {
+      next.rereads = (next.rereads ?? 0) + 1
+      next.rereadTok = (next.rereadTok ?? 0) + tokens
+    }
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the card shows no tool output; the call went on */ }
+}
+
+/** True for a hook result that refused the call. */
+const isDeny = (r: unknown): boolean => !!r && typeof r === 'object' && 'deny' in r
+
+/**
+ * Counts a finished call's output in the main context: the size of the text the model read, by tool name.
+ * Subagent calls are left out (their output never enters the main context), and so are refused ones.
+ * A Read of a range already read and not edited since is a re-read; an errored Read is not recorded as seen.
+ */
+const measureCall = async ($: EngineInterface, tool: string, e: unknown, r: unknown): Promise<void> => {
+  try {
+    const a = e as { agentId?: string; file_path?: unknown; offset?: unknown; limit?: unknown }
+    if (a.agentId || isDeny(r)) return
+    const res = r as { text?: unknown; isError?: unknown } | null | undefined
+    const tokens = tokOf(res?.text)
+    let reread = false
+    if (tool === 'Read' && typeof a.file_path === 'string' && !res?.isError) {
+      const key = readKey(a.file_path, typeof a.offset === 'number' ? a.offset : undefined, typeof a.limit === 'number' ? a.limit : undefined)
+      await update($, seen, s => {
+        const n = noteRead(s, key)
+        reread = n.reread
+        return n.seen
+      })
+    }
+    await addToolOut($, tool, tokens, reread)
+  } catch { /* the figure misses this call */ }
+}
+
+/** Forgets the reads of a file the main thread just changed. */
+const forgetPath = async ($: EngineInterface, e: unknown, r: unknown): Promise<void> => {
+  try {
+    const a = e as { agentId?: string; file_path?: unknown; notebook_path?: unknown }
+    const path = typeof a.file_path === 'string' ? a.file_path : typeof a.notebook_path === 'string' ? a.notebook_path : null
+    // A subagent's edit changes the file for the main thread too, so it counts here, unlike its output.
+    if (path !== null && !isDeny(r)) await update($, seen, s => dropPath(s, path))
+  } catch { /* a re-read may then be counted that was not one */ }
 }
 
 /** The last seven days' totals, oldest first, 0 for a day with none (or an unreadable one). */
@@ -621,9 +678,10 @@ export const resetHold = (): void => {
  * Lets a shell command run and counts its commits and pull requests when it did. The call's result carries
  * no exit status the mod can read, so "ran" means nothing in front of it refused it (no `deny` in the result).
  */
-async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> | R, command: string): Promise<R> {
+async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> | R, command: string, tool: string): Promise<R> {
   const r = await next(e)
-  if (!(r && typeof r === 'object' && 'deny' in r)) await addResults($, command)
+  if (!isDeny(r)) await addResults($, command)
+  await measureCall($, tool, e, r)
   return r
 }
 
@@ -636,9 +694,9 @@ export const register: Register = on => {
     on('tool.call', { tool }, async ($, e, next) => {
       const command = String(e.command ?? '')
       const risk = classify(command)
-      if (risk === null) return pass($, e, next, command)
+      if (risk === null) return pass($, e, next, command, tool)
       // The hold is on unless /spendometer hold off said otherwise.
-      if (!(await switchOf($, HOLD_KEY, true))) return pass($, e, next, command)
+      if (!(await switchOf($, HOLD_KEY, true))) return pass($, e, next, command, tool)
       const interrupted = { deny: refusal('the turn was interrupted', risk.label) }
       // `held` is claimed with no await between the check and the claim, so two waiting calls can't both get through.
       while (held !== null) {
@@ -647,7 +705,7 @@ export const register: Register = on => {
       }
       if (waitAt === -1) {
         void Promise.resolve($.ui.log(`could not hold \`${risk.label}\` to show what it changes: this machine has no way to wait. It runs as usual.`)).catch(() => {})
-        return pass($, e, next, command)
+        return pass($, e, next, command, tool)
       }
       const mine: Held = { command, risk, report: null, decision: null }
       held = mine
@@ -671,7 +729,26 @@ export const register: Register = on => {
       if (mine.decision !== 'proceed') {
         void Promise.resolve($.ui.log(`could not keep holding \`${risk.label}\`, so it runs as usual.`)).catch(() => {})
       }
-      return pass($, e, next, command)
+      return pass($, e, next, command, tool)
+    })
+  }
+
+  // Tool output that enters the main context, by tool. Only these tools are hooked: a hook on a tool turns off its
+  // move to the background and its live output. The call is awaited and returned as it is; the measuring never throws.
+  for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'] as const) {
+    on('tool.call', { tool }, async ($, e, next) => {
+      const r = await next(e)
+      await measureCall($, tool, e, r)
+      return r
+    })
+  }
+  // An edit makes the file new: reading it again is not a re-read. Its own output counts like any tool's.
+  for (const tool of ['Edit', 'Write', 'NotebookEdit'] as const) {
+    on('tool.call', { tool }, async ($, e, next) => {
+      const r = await next(e)
+      await forgetPath($, e, r)
+      await measureCall($, tool, e, r)
+      return r
     })
   }
 
@@ -797,6 +874,7 @@ export const register: Register = on => {
       try {
         await update($, cache, () => null)
         await update($, fold, () => null)
+        await update($, seen, () => [])
       } catch { /* the band redraws from the next turn */ }
     }
     return next(e)
@@ -808,6 +886,11 @@ export const register: Register = on => {
     }
     if (e.changed.includes('context') && e.context.tokens && e.context.tokens > 0) {
       const tokens = e.context.tokens
+      // The context fell below half of what it was: a compaction, after which reading a file again is legitimate.
+      try {
+        const was = (await cacheFacts($))?.tokens ?? 0
+        if (was > 0 && tokens < was / 2) await update($, seen, () => [])
+      } catch { /* the seen-set stays */ }
       await putCache($, c => (c ? { ...c, tokens, window: e.context.window || c.window } : c))
     }
     return next(e)
@@ -819,6 +902,7 @@ export const register: Register = on => {
     if (e.source === 'clear' || e.source === 'compact') {
       await putCache($, () => null)
       await update($, fold, () => null)
+      await update($, seen, () => [])
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
       const lastAt = now - e.seconds_since_last_response * 1000

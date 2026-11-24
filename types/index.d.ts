@@ -64,6 +64,11 @@ export type Spent = Spend & {
   growth?: number
   byType?: Record<string, number>
   byModel?: Record<string, number>
+  /** Tokens of tool output that entered the main conversation's context, per tool (about 4 characters a token). */
+  byTool?: Record<string, number>
+  /** Files the main thread read again unchanged, and the tokens those re-reads cost. */
+  rereads?: number
+  rereadTok?: number
   totTok?: number
   subsAtMain?: number
   /** Subagent cost counted from the same moment as subsAtMain, so a record from before that does not skew the saving. */
@@ -86,6 +91,7 @@ declare module 'claude-code' {
       ending: Ending
       subsSince: number
       realAt: number | null
+      seen: string[]
     }
   }
 }

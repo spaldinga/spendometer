@@ -55,7 +55,7 @@ lasts. Under it come the columns that fit, most important first: delegation (wha
 the cache, the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost) and what keeping the
 cache warm costs. A zone with no column of its own becomes one status line below. From three
 columns the card adds a row with the cache hit rate, the cost per turn (red when the last turn cost
-three times the average or more) and the cost by model.
+three times the average or more), the cost by model and the tool output (the tokens of tool output that entered the conversation, by tool, with how many files were read again unchanged).
 
 **Wide.** Three columns and the metric row.
 

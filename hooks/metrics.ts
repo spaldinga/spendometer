@@ -1,6 +1,7 @@
 // The metric row's figures. Pure: the per-session record in, what the card writes out.
 
 import type { Spent } from '../types'
+import { topTools } from './toolout'
 
 /** The weight of the newest context increase in the running growth figure. */
 export const GROWTH_ALPHA = 0.3
@@ -115,6 +116,12 @@ export type Metrics = {
   /** All subagent cost, and the top types by cost (for the card's alt text). */
   subs: number
   top: [string, number][]
+  /** Tool output tokens that entered the main context: the top tools, the sum over all of them. */
+  tools: [string, number][]
+  toolTok: number
+  /** Files re-read unchanged, and what those re-reads cost in tokens. */
+  rereads: number
+  rereadTok: number
 }
 
 /** The metrics of a session record with `free` tokens of context left; null when the record knows none of them. */
@@ -138,5 +145,9 @@ export const metricsOf = (s: Spent | null, free: number): Metrics | null => {
     deleg: delegationOf(s),
     subs: s.subs,
     top: topTypes(s.byType, 3),
+    tools: topTools(s.byTool, 3),
+    toolTok: Object.values(s.byTool ?? {}).reduce((a, n) => a + (n > 0 ? n : 0), 0),
+    rereads: s.rereads ?? 0,
+    rereadTok: s.rereadTok ?? 0,
   }
 }

@@ -101,7 +101,7 @@ export const turnCost = (u: TurnUsage | null | undefined, fallbackModel?: string
 }
 
 export const usd = (n: number): string => '$' + n.toFixed(2)
-export const tok = (n: number): string => (n >= 1e6 ? `${Number((n / 1e6).toFixed(1))}M` : `${Math.round(n / 1000)}k`)
+export const tok = (n: number): string => (n >= 1e6 ? `${Number((n / 1e6).toFixed(1))}M` : n < 1000 ? `${Math.round(n)}` : `${Math.round(n / 1000)}k`)
 
 /** Idle time the way the card writes it: 18m, 2h 5m, 3d 9h. */
 export const fmtIdle = (ms: number): string => {
@@ -712,12 +712,30 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       return head(2, 'BY MODEL') + fig + bar + cap
     }
 
+    // TOOL OUTPUT: tokens of tool output in the main context as the figure; the top tools as the caption, with the
+    // re-reads of unchanged files in orange after them. Tools are cut from the back until the line fits; the re-read part stays.
+    const toolOut = () => {
+      const reread = m.rereads > 0 ? `${m.rereads} re-read${m.rereads === 1 ? '' : 's'}` : ''
+      const parts = m.tools.map(([name, n]) => `${name} ${tok(n)}`)
+      let list = parts
+      const len = (l: string[]) => (l.join(' · ') + (reread ? (l.length ? ' · ' : '') + reread : '')).length
+      while (list.length > 1 && len(list) * size * 0.56 > colW) list = list.slice(0, -1)
+      const cap =
+        `<text x="${colX(3)}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
+        esc(list.join(' · ')) +
+        (reread ? `<tspan fill="${ORANGE}" font-weight="700">${list.length ? ' · ' : ''}${reread}</tspan>` : '') +
+        '</text>'
+      return cell(3, 'TOOL OUTPUT', m.toolTok > 0, tok(m.toolTok), 'tokens', cap)
+    }
+
     return (
       cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, m.perM !== null ? `${usd(m.perM)} per 1M tokens` : 'of input read from cache')) +
       rule(1) +
       cell(1, 'PER TURN', m.avg !== null, usd(m.avg ?? 0), 'avg', last) +
       rule(2) +
-      byModel()
+      byModel() +
+      rule(3) +
+      toolOut()
     )
   }
 
@@ -773,9 +791,9 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   }
 
   // The metric row under its rule, once any of its figures is known and there are columns enough to carry it.
-  const showMetrics = n >= 3 && H + METRIC_H + CARD_TOP <= maxH && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0)
+  const showMetrics = n >= 3 && H + METRIC_H + CARD_TOP <= maxH && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0 || metrics.toolTok > 0)
   if (showMetrics) {
-    const mcolW = Math.floor((W - 26 - 2 * 26) / 3)
+    const mcolW = Math.floor((W - 26 - 3 * 26) / 4)
     g += hline(H) + metricsRow(mcolW, i => 13 + i * (mcolW + 26), H + 2)
     H += METRIC_H
   }
@@ -791,6 +809,11 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
       (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${id[0].toUpperCase() + id.slice(1)} ${usd(c)}`).join(', ')}.` : '') +
       (m.subs > 0 ? ` Subagents cost ${usd(m.subs)}${m.top.length ? ` (${m.top.map(([k, c]) => `${k} ${usd(c)}`).join(', ')})` : ''}.` : '') +
+      (m.toolTok > 0
+        ? ` Tool output into the context: about ${tok(m.toolTok)} tokens${m.tools.length ? ` (${m.tools.map(([k, n]) => `${k} ${tok(n)}`).join(', ')})` : ''}` +
+          (m.rereads > 0 ? `; ${m.rereads} re-read${m.rereads === 1 ? '' : 's'} of unchanged files, about ${tok(m.rereadTok)} tokens` : '') +
+          '.'
+        : '') +
       delegAlt +
       (runwayLine ? ` Context runway: ${runwayLine}.` : '')
     : delegAlt
