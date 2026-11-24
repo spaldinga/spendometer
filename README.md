@@ -294,7 +294,7 @@ from:
 ## License
 
 MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Jay E | RoboNuggets for the original ribbon;
-changes in this fork are under the same licence.
+Copyright (c) 2026 Alexander Spalding for the changes in this fork, under the same licence.
 
 Third-party material:
 
