@@ -239,7 +239,7 @@ test('a later session leaves a saved choice alone', async ($, on) => {
   expect(ran).toEqual([])
 })
 
-test('a typed /keepwarm off or always sets the default and this conversation, a timed window neither', async ($, on) => {
+test('a typed /keepwarm off or always sets the default and this conversation', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store } = engine(on, { keep: true })
   await seed($, 18)
@@ -249,10 +249,34 @@ test('a typed /keepwarm off or always sets the default and this conversation, a 
   await $.command.run({ command: 'keepwarm', args: 'always', ...RUN })
   expect(store.get('keep')).toBe(true)
   expect(recOf(store).on).toBe(true)
-  // A timed window is neither: the switch stays where it was.
-  await $.command.run({ command: 'keepwarm', args: '3h', ...RUN })
-  expect(store.get('keep')).toBe(true)
+})
+
+test('a typed window or bare /keepwarm turns this conversation on and leaves the default alone', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: false, prefill: { 'keep:S1': { on: false, synced: true, at: NOW } } })
+  await seed($, 18)
+  const label = async () => {
+    const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    const l = (await b.find({ key: 'keep-warm' }))?.props.label
+    await b.unmount()
+    return l
+  }
+  expect(await label()).toBe('🧊 Keep warm')
+  // status, a typo or a zero window arm nothing in cache-tax: the switch stays off.
+  for (const args of ['status', 'soon', '0m']) await $.command.run({ command: 'keepwarm', args, ...RUN })
+  expect(recOf(store).on).toBe(false)
+
+  await clock.advance(MIN)
+  await $.command.run({ command: 'keepwarm', args: '1h30m', ...RUN })
   expect(recOf(store).on).toBe(true)
+  expect(recOf(store).renewedAt).toBe(NOW + MIN)
+  expect(store.get('keep')).toBe(false)
+  expect(await label()).toBe('🔥 Keep warm')
+
+  await $.command.run({ command: 'keepwarm', args: 'off', ...RUN })
+  await $.command.run({ command: 'keepwarm', args: '', ...RUN })
+  expect(recOf(store).on).toBe(true)
+  expect(store.get('keep')).toBe(false)
 })
 
 /** A main turn that ends, then the delay the renewal waits. */

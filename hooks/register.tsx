@@ -570,6 +570,13 @@ const keepState = async ($: EngineInterface): Promise<boolean | null> => {
   }
 }
 
+/** Whether `/keepwarm <word>` arms a window in cache-tax: bare, or a nonzero duration as its parser reads it (6h, 90m, 1h30m). */
+export const armsWindow = (word: string): boolean => {
+  if (word === '') return true
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?$/.exec(word)
+  return !!m && Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0) > 0
+}
+
 /** A slash command, fired and not awaited: one run from inside a hook the turn waits on can hang. */
 const fire = ($: EngineInterface, command: string, args: string): void => {
   void Promise.resolve($.command.run({ command, args })).catch(() => {})
@@ -835,17 +842,24 @@ export const register: Register = on => {
 
   on('command.run', { command: SETTINGS }, async ($, e) => ({ text: await settingsAnswer($, String(e.args ?? '')) }))
 
-  // A typed /keepwarm always or off sets the default for new conversations and this conversation's switch.
-  // cache-tax answers the command beneath. The band's own runs (origin plugin) are not typed: they leave the default alone.
+  // A typed /keepwarm always or off sets the default for new conversations and this conversation's switch; a typed
+  // bare /keepwarm or a window (6h, 90m, 1h30m) arms cache-tax for this conversation, so it switches this one on only.
+  // cache-tax answers the command beneath. The band's own runs (origin plugin) are not typed: they leave the switch alone.
   on('command.run', { command: KEEPWARM }, async ($, e, next) => {
     const word = String(e.args ?? '').trim().split(/\s+/)[0]
-    if ((word === 'always' || word === 'off') && e.origin?.kind !== 'plugin') {
-      const isOn = word === 'always'
-      await $.store.set(KEEP_KEY, isOn)
-      // A typed always switches cache-tax's global always on again, so the next off conversation clears it once more.
-      await $.store.set(ALWAYS_MAY_BE_ON, isOn)
-      await putKeepRec($, isOn ? { on: true } : { on: false, synced: true })
-      $.ui.invalidate('ui.render')
+    if (e.origin?.kind !== 'plugin') {
+      if (word === 'always' || word === 'off') {
+        const isOn = word === 'always'
+        await $.store.set(KEEP_KEY, isOn)
+        // A typed always switches cache-tax's global always on again, so the next off conversation clears it once more.
+        await $.store.set(ALWAYS_MAY_BE_ON, isOn)
+        await putKeepRec($, isOn ? { on: true } : { on: false, synced: true })
+        $.ui.invalidate('ui.render')
+      } else if (armsWindow(word)) {
+        // The window just armed counts as the renewal, so the next turn does not replace it with 6h at once.
+        await putKeepRec($, { on: true, renewedAt: await $.clock.now() })
+        $.ui.invalidate('ui.render')
+      }
     }
     return next(e)
   }).catch(($, e, next) => next(e))

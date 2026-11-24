@@ -1,6 +1,6 @@
 {
   "name": "spendometer",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "A band above the Claude Code prompt: whether your 5-hour and weekly limits will last, what the session costs and produced, whether the prompt cache is warm, and what is running now.",
   "author": { "name": "Spalding Alexander" },
   "homepage": "https://github.com/spaldinga/spendometer",
