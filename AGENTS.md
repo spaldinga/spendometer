@@ -5,6 +5,18 @@ A Claude Code mod: a band above the prompt. A fork of `robonuggets/ribbon` (MIT)
 keeps the prompt cache warm itself (`hooks/keepwarm.ts`, ported from cache-tax; it stays passive when cache-tax is
 installed) and adds a progress bar, subagent display, session cost, a Wrap up button and a hold for risky git commands.
 
+## Read first
+
+- [`docs/architecture.md`](docs/architecture.md): how the mod fits together, which file does what, where state lives.
+  Update it in the same commit when a change moves a responsibility.
+- [`docs/adr/`](docs/adr/): why it is built this way. Check before undoing a decision; a new decision worth keeping
+  gets a new ADR.
+- [`docs/backlog/`](docs/backlog/): what is next, one file per item. Work on one item per thread; set its
+  `status: done` (file and table) in the commit that finishes it. New ideas become new items, not scope creep.
+- [`docs/plans/`](docs/plans/): plans for larger changes.
+
+The repo is public: nothing internal (work paths, host names, people's names) goes into `docs/`.
+
 ## Branches
 
 - **`dev`** is where work goes. Commit there and push `dev` (`git push origin dev`) once the tests pass.
