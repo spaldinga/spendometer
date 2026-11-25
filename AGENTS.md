@@ -13,6 +13,8 @@ installed) and adds a progress bar, subagent display, session cost, a Wrap up bu
   gets a new ADR.
 - [`docs/backlog/`](docs/backlog/): what is next, one file per item. Work on one item per thread; set its
   `status: done` (file and table) in the commit that finishes it. New ideas become new items, not scope creep.
+  Before building an item, restate its purpose in two or three lines and check that it has Why, What, Done when
+  and Open. If it does not, or the user's view of it differs, refine it with the user first.
 - [`docs/plans/`](docs/plans/): plans for larger changes.
 
 The repo is public: nothing internal (work paths, host names, people's names) goes into `docs/`.
