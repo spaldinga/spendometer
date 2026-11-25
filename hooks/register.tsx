@@ -16,7 +16,8 @@ import {
 } from './cache-art'
 import type { CacheView, PaceMode, PaceRow, Tab, TurnUsage } from './cache-art'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
-import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepwarmCommand, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
+import type { Keep } from './keepwarm'
+import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, keepwarmCommand, keepwarmStatus, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './keepwarm'
 import { metricsOf, nextGrowth, putSpan } from './metrics'
@@ -37,7 +38,7 @@ import {
 // cold starts open, and a choice holds until the cache flips. Zero token cost:
 // it reads the engine's own figures and draws.
 //
-// It keeps the cache warm itself (hooks/keepwarm.ts): one switch per conversation, off until pressed,
+// It keeps the cache warm itself (hooks/keepwarm.ts): one switch per conversation, on until unticked,
 // that the button, the typed /keepwarm and the ping timer all read. A ping that really read the cache
 // starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
@@ -274,9 +275,14 @@ const themeList = (now: ThemeId): string =>
   }).join('\n')
 
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
-const settingsAnswer = async ($: EngineInterface, args: string): Promise<string> => {
+const settingsAnswer = async ($: EngineInterface, kw: Keep, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | wrapup on|off | hold on|off. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | wrapup on|off | hold on|off | keepwarm [on|off|status|90m|always]. With no argument it shows the settings.`
+  // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
+  if (name === 'keepwarm') {
+    if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
+    return keepwarmCommand($, kw, args.trim().slice('keepwarm'.length))
+  }
   const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
@@ -317,6 +323,7 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
   return (
     `wrapup: ${wrap ? 'on' : 'off'} - a Wrap up button that runs the debrief skill and lets this conversation go cold\n` +
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
+    `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
     `tab: ${await tabOf($)} - the card shows one tab at a time: overview, context or cost\n` +
     `progress: ${await themeOf($)}\n` +
     widthLine()
@@ -683,7 +690,7 @@ export const register: Register = on => {
     return { result: p ? `ok: ${labelOf(p).count}` : 'ok' }
   })
 
-  on('command.run', { command: SETTINGS }, async ($, e) => ({ text: await settingsAnswer($, String(e.args ?? '')) }))
+  on('command.run', { command: SETTINGS }, async ($, e) => ({ text: await settingsAnswer($, kw, String(e.args ?? '')) }))
 
   // The typed /keepwarm: one answer, and the switch, the window and the store move together. With cache-tax
   // installed the command is its own: this mod stays passive and lets it answer.
@@ -886,7 +893,8 @@ export const register: Register = on => {
     const view = viewOf((await read($, { plugin: 'spendometer', key: 'cache' } as const)) ?? (await readStoredCache($)), now)
 
     // On while this conversation's switch is on or its window is open; null (no button) beside cache-tax.
-    const keep = await keepOf($, kw)
+    const keepView = await keepOf($, kw)
+    const keep = keepView === null ? null : keepView.on
     // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
     // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
     // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
@@ -907,17 +915,13 @@ export const register: Register = on => {
           <Text wrap="wrap">{text}</Text>
         </Box>
       ) : null
-    // The keep warm button is the flame alone at every width: its figures are the chip's hover.
-    const keepLabel = keep ? '🔥' : '🧊'
-    const keepButton = keep === null ? null : (
+    // The keep warm button is a checkbox at every width: ☑ ticked, ☐ unticked. Its hover says what the state means,
+    // the cold cache included; the figures are the chip's hover.
+    const keepLabel = keep ? '☑' : '☐'
+    const keepButton = keepView === null ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        <Button key="keep-warm" label={keepLabel} onPress={() => pressKeep($, kw, keep)} />
-        {tip(
-          'keep',
-          keep
-            ? 'Keep warm is on: a short ping between turns keeps the prompt cache warm (a few cents a ping). Click to turn it off.'
-            : 'Keep warm is off. Click to keep the prompt cache warm between turns.',
-        )}
+        <Button key="keep-warm" label={keepLabel} onPress={() => pressKeep($, kw)} />
+        {tip('keep', keepTip(keepView))}
       </Box>
     )
     // Ends the conversation: runs the debrief, then lets go of this conversation's cache.
@@ -1049,7 +1053,9 @@ export const register: Register = on => {
     // The cache state shows in the row whether the card is open or not.
     const hasCache = view !== null
     // The keep button sits right after the chip, so its columns belong to the cache part, not to the buttons.
-    const keepWideCols = keep !== null ? buttonCols(keepLabel, BUTTON_GAP, k) : 0
+    // ☑ and ☐ are one character, but a font may draw them as two-column emoji: measured as the two columns the flame took, so no layout is chosen that is too wide.
+    const keepButtonCols = buttonCols('  ', BUTTON_GAP, k)
+    const keepWideCols = keep !== null ? keepButtonCols : 0
     const keepCompactCols = keep !== null ? COMPACT_BUTTON_COLS : 0
     const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + keepWideCols + CACHE_MARGIN : 0
     const cacheBlockCols =
@@ -1061,7 +1067,7 @@ export const register: Register = on => {
     const buttonsWideCols =
       (button ? FOLD_COLS : 0) +
       (tabsShown ? TABS.reduce((n, id) => n + buttonCols(tabLabel(id, true), BUTTON_GAP, k), 0) : 0) +
-      (keepAlone ? buttonCols(keepLabel, BUTTON_GAP, k) : 0) +
+      (keepAlone ? keepButtonCols : 0) +
       (wrapShown ? buttonCols(wrapLabel(true), BUTTON_GAP, k) : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
     // The tabs: a glyph button each, and the one in use has its two brackets.

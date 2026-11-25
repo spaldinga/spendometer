@@ -77,7 +77,7 @@ test('the alt text and the cost answer say what the conversation made', () => {
 /** The engine beneath: a store to inspect, and what the shell call ends as. */
 const engine = (on: On, deny: boolean) => {
   resetHold()
-  const store = new Map<string, unknown>([['keep', true]])
+  const store = new Map<string, unknown>([['keepDefault', true]])
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: store.get(e.key) }))
   on('store.set', ($, e) => { store.set(e.key, e.value); return { value: undefined } })

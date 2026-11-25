@@ -44,7 +44,7 @@ type Opts = {
 /** The engine beneath the band: a store to inspect, the commands it lists, and what a fork answers. */
 const engine = (on: On, opts: Opts = {}) => {
   const store = new Map<string, unknown>(Object.entries(opts.prefill ?? {}))
-  if (opts.keep !== undefined) store.set('keep', opts.keep)
+  if (opts.keep !== undefined) store.set('keepDefault', opts.keep)
   const ran: string[] = []
   const logs: string[] = []
   const forks: number[] = []
@@ -219,7 +219,7 @@ test('a retry that would land within a minute of the cache going cold is not tri
 
 test('no ping goes out after the deadline', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { forks, store } = engine(on)
+  const { forks, store } = engine(on, { keep: false })
   await seed($, 0)
   await keepwarm($, '30m')
   await clock.advance(2 * HOUR)
@@ -351,18 +351,18 @@ test('an off while a window is being opened wins: a turn that finishes after it 
 
 // ---------- The switch, the button and the command ----------
 
-test('bare /keepwarm switches this conversation on with a window of 6 hours; the default is left alone', async ($, on) => {
+test('bare /keepwarm switches this conversation on with a window of 24 hours; the default is left alone', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store, registered } = engine(on)
   await seed($, 0)
   expect(registered).toContain('keepwarm')
   const text = await keepwarm($, '')
   expect(text).toContain('keepwarm is on for this conversation')
-  expect(text).toContain('6h00m')
-  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(text).toContain('24h00m')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
   expect(recOf(store)?.every).toBeUndefined()
-  expect(store.has('keep')).toBe(false)
-  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 6h00m left · ping in 50m$/)
+  expect(store.has('keepDefault')).toBe(false)
+  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 24h00m left · ping in 50m$/)
 })
 
 test('a duration opens a one-off window and leaves the switch as it was; every is a testing knob kept in the record', async ($, on) => {
@@ -384,10 +384,10 @@ test('always turns the default and this conversation on, off turns both off and 
   const { store } = engine(on)
   await seed($, 0)
   expect(await keepwarm($, 'always')).toContain('keepwarm is on for this conversation and for new ones')
-  expect(store.get('keep')).toBe(true)
-  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(store.get('keepDefault')).toBe(true)
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
   expect(await keepwarm($, 'off')).toContain('keepwarm is off')
-  expect(store.get('keep')).toBe(false)
+  expect(store.get('keepDefault')).toBe(false)
   expect(recOf(store)?.on).toBe(false)
   expect(recOf(store)?.deadline).toBeUndefined()
   expect(await keepwarm($, 'status')).toBe('keepwarm is off')
@@ -409,55 +409,76 @@ test('anything else is answered with the usage line and changes nothing', async 
   mock.clock(on, { now: NOW })
   const { store } = engine(on)
   await seed($, 0)
-  for (const args of ['soon', '0m', '5', '6h now']) expect(await keepwarm($, args)).toBe('keepwarm takes a window such as 6h or 90m, or always, off, or status')
+  for (const args of ['soon', '0m', '5', '6h now']) expect(await keepwarm($, args)).toBe('keepwarm takes on, a window such as 90m or 6h, or always, off, or status')
   expect(store.has('keep:S1')).toBe(false)
 })
 
 test('the button follows an open window a typed duration opened, and follows off', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  engine(on)
+  engine(on, { keep: false })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   await keepwarm($, '90m')
-  expect(await label(band)).toBe('🔥')
+  expect(await label(band)).toBe('☑')
   await clock.advance(2 * HOUR)
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   await keepwarm($, '3h')
-  expect(await label(band)).toBe('🔥')
+  expect(await label(band)).toBe('☑')
   await keepwarm($, 'off')
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   await keepwarm($, '')
-  expect(await label(band)).toBe('🔥')
+  expect(await label(band)).toBe('☑')
   await band.unmount()
 })
 
-test('pressing the button while it is on turns the switch off and stops the window; while off it turns on and opens 6 hours', async ($, on) => {
+test('pressing the button while it is on turns the switch off and stops the window; while off it turns on and opens 24 hours', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store, forks } = engine(on, { keep: true })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(band)).toBe('🔥')
+  expect(await label(band)).toBe('☑')
 
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   expect(recOf(store)?.on).toBe(false)
   expect(recOf(store)?.deadline).toBeUndefined()
   // The default for new conversations is not touched by the button.
-  expect(store.get('keep')).toBe(true)
+  expect(store.get('keepDefault')).toBe(true)
 
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🔥')
-  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
+  expect(await label(band)).toBe('☑')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
   expect(forks.length).toBe(0)
 
   // A window opened by a typed duration, switch off: the button is 🔥, and pressing it stops the window.
   await keepwarm($, 'off')
   await keepwarm($, '90m')
-  expect(await label(band)).toBe('🔥')
+  expect(await label(band)).toBe('☑')
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   expect(await keepwarm($, 'status')).toBe('keepwarm is off')
+  await band.unmount()
+})
+
+test('one press redraws the band after the switch is saved, so the box flips on the first click either way', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  // What the switch held each time the band was told to redraw: the last redraw must see the new value.
+  const seen: (boolean | undefined)[] = []
+  on('ui.invalidate', () => { seen.push(recOf(store)?.on); return { value: undefined } })
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  seen.length = 0
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(seen.at(-1)).toBe(false)
+
+  seen.length = 0
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(seen.at(-1)).toBe(true)
   await band.unmount()
 })
 
@@ -476,13 +497,13 @@ test('two conversations in one store: a press in A leaves B as it was', async ($
   await seed($, 18)
   const a = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await a.press({ key: 'keep-warm' })
-  expect(await label(a)).toBe('🧊')
+  expect(await label(a)).toBe('☐')
   await a.unmount()
 
   // Conversation B has no choice of its own: it reads the default.
   session.id = 'S2'
   const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(b)).toBe('🔥')
+  expect(await label(b)).toBe('☑')
   expect(store.has('keep:S2')).toBe(false)
   await b.unmount()
 })
@@ -497,9 +518,9 @@ test('a conversation with no choice of its own follows the default; its own choi
     await b.unmount()
     return l
   }
-  expect(await shown()).toBe('🔥')
+  expect(await shown()).toBe('☑')
   session.id = 'S2'
-  expect(await shown()).toBe('🧊')
+  expect(await shown()).toBe('☐')
 })
 
 test('the switch shows in the terminal too, and before the first reply', async ($, on) => {
@@ -508,7 +529,7 @@ test('the switch shows in the terminal too, and before the first reply', async (
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await label(band)).toBe('🧊')
+  expect(await label(band)).toBe('☐')
   await band.unmount()
 })
 
@@ -517,15 +538,15 @@ test('the first session ever stores nothing; a later session leaves a saved choi
   const { store, ran } = engine(on)
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   await clock.advance(5000)
-  expect(store.has('keep')).toBe(false)
+  expect(store.has('keepDefault')).toBe(false)
   expect(store.has('keep:S1')).toBe(false)
   expect(ran).toEqual([])
-  store.set('keep', false)
+  store.set('keepDefault', false)
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-  expect(store.get('keep')).toBe(false)
+  expect(store.get('keepDefault')).toBe(false)
 })
 
-test('with the switch on, a turn that reached the cache renews the window to 6 hours, and never shortens a longer one', async ($, on) => {
+test('with the switch on, a turn that reached the cache renews the window to 24 hours from then, and never shortens a longer one', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { store } = engine(on, { prefill: { 'keep:S1': { on: true, at: NOW } } })
   await seed($, 18)
@@ -533,14 +554,15 @@ test('with the switch on, a turn that reached the cache renews the window to 6 h
   await done($, { usage: null })
   expect(recOf(store)?.deadline).toBeUndefined()
   await done($, { usage: USED })
-  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+  expect(recOf(store)?.deadline).toBe(NOW + 24 * HOUR)
   await clock.advance(4 * HOUR)
   await done($, { usage: USED })
-  expect(recOf(store)?.deadline).toBe(NOW + 10 * HOUR)
-  await keepwarm($, '24h')
+  // Each message starts the 24 hours again from then, restarting the window rather than extending it a fixed step.
+  expect(recOf(store)?.deadline).toBe(NOW + 4 * HOUR + 24 * HOUR)
+  await keepwarm($, '48h')
   await clock.advance(HOUR)
   await done($, { usage: USED })
-  expect(recOf(store)?.deadline).toBe(NOW + 4 * HOUR + 24 * HOUR)
+  expect(recOf(store)?.deadline).toBe(NOW + 4 * HOUR + 48 * HOUR)
   // A subagent's turn renews nothing.
   const before = recOf(store)?.deadline
   await clock.advance(HOUR)
@@ -565,7 +587,7 @@ test('a conversation with its own switch on while the default is off renews too'
   const { store } = engine(on, { keep: false, prefill: { 'keep:S1': { on: true, at: NOW } } })
   await seed($, 18)
   await done($, { usage: USED })
-  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
+  expect(recOf(store)?.deadline).toBe(NOW + 24 * HOUR)
 })
 
 test("a restart restores the conversation's window from the store, with its testing period", async ($, on) => {
@@ -590,7 +612,7 @@ test('a restart with nothing to fork waits for the first turn instead of stoppin
 
 test('a window that ran out while the app was closed is not restored', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { forks } = engine(on, { prefill: { 'keep:S1': { deadline: NOW - MIN, at: NOW - HOUR } } })
+  const { forks } = engine(on, { keep: false, prefill: { 'keep:S1': { deadline: NOW - MIN, at: NOW - HOUR } } })
   await seed($, 40)
   await clock.advance(2 * HOUR)
   expect(forks.length).toBe(0)
@@ -610,7 +632,7 @@ test('/clear drops the old conversation\'s window; the next one arms from its ow
   expect(forks.length).toBe(0)
   // The new conversation has no choice of its own: it follows the default, on.
   await done($, { usage: USED })
-  expect(recOf(store, 'S2')?.deadline).toBe(NOW + 2 * HOUR + 6 * HOUR)
+  expect(recOf(store, 'S2')?.deadline).toBe(NOW + 2 * HOUR + 24 * HOUR)
   expect(recOf(store)?.deadline).toBeUndefined()
 })
 
@@ -645,7 +667,7 @@ test('a conversation that changed without a session.end is told by its id: the o
 
 test('a session id that cannot be read leaves the commands answering and throws nothing', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { store } = engine(on, { idThrows: true })
+  const { store } = engine(on, { idThrows: true, keep: false })
   await seed($, 0)
   expect(await keepwarm($, '1h')).toContain('window of 1h00m')
   await clock.advance(2 * HOUR)
@@ -662,7 +684,7 @@ test('session records of conversations untouched for a month are pruned with the
   await clock.advance(5000)
   expect(store.has('keep:OLD')).toBe(false)
   expect(store.has('keep:NEW')).toBe(true)
-  expect(store.get('keep')).toBe(true)
+  expect(store.get('keepDefault')).toBe(true)
 })
 
 // ---------- cache-tax installed ----------
@@ -802,7 +824,7 @@ test('Wrap up runs the debrief; its turn stops the window and renews nothing whi
   expect(ran).toEqual(['debrief'])
   expect(recOf(store)?.deadline).toBeUndefined()
   expect(recOf(store)?.on).toBeUndefined()
-  expect(store.get('keep')).toBe(true)
+  expect(store.get('keepDefault')).toBe(true)
   expect(await keepwarm($, 'status')).toBe('keepwarm stopped, wrapped up')
   await clock.advance(3 * HOUR)
   expect(forks.length).toBe(0)
@@ -1367,4 +1389,147 @@ test('an unknown saved progress theme is the default', async ($, on) => {
   const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
   expect(await text('status')).toContain('progress: comet')
   expect(await text('progress')).toContain('- **comet** (in use, default)')
+})
+
+// ---------- On by default, 24 hours, the checkbox ----------
+
+test('a new conversation with no switch and no default is on: a turn with usage opens a 24-hour window', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 18)
+  expect(await keepwarm($, 'status')).toBe('keepwarm is on, no window open: the next turn opens one')
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 24 * HOUR)
+  // Nothing is written for the switch or the default: it is on because nothing says off.
+  expect(recOf(store)?.on).toBeUndefined()
+  expect(store.has('keepDefault')).toBe(false)
+})
+
+test('every message restarts the 24 hours: a second turn 5 hours later ends 24 hours from then', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 18)
+  await done($, { usage: USED })
+  await clock.advance(5 * HOUR)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 5 * HOUR + 24 * HOUR)
+})
+
+test('the default turned off by /keepwarm off leaves a new conversation unticked; a stale false under the old key does not', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, session } = engine(on)
+  await seed($, 18)
+  await keepwarm($, 'off')
+  expect(store.get('keepDefault')).toBe(false)
+  session.id = 'S2'
+  await done($, { usage: USED })
+  expect(recOf(store, 'S2')?.deadline).toBeUndefined()
+  const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(b)).toBe('☐')
+  await b.unmount()
+})
+
+test('a false stored under the old keep key is ignored: the default is still on', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { prefill: { keep: false } })
+  await seed($, 18)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 24 * HOUR)
+  const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(b)).toBe('☑')
+  await b.unmount()
+})
+
+test('unticking is sticky: the next turn opens no window and the box stays unticked', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on)
+  await seed($, 0)
+  await done($, { usage: USED })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('☑')
+  await band.press({ key: 'keep-warm' })
+  expect(await label(band)).toBe('☐')
+  expect(recOf(store)?.on).toBe(false)
+  await clock.advance(HOUR)
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(recOf(store)?.on).toBe(false)
+  expect(await label(band)).toBe('☐')
+  await clock.advance(3 * HOUR)
+  expect(forks.length).toBe(0)
+  await band.press({ key: 'keep-warm' })
+  expect(await label(band)).toBe('☑')
+  await band.unmount()
+})
+
+test('/keepwarm on is the bare form: this conversation on with a 24-hour window', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { prefill: { 'keep:S1': { on: false, at: NOW } } })
+  await seed($, 0)
+  const text = await keepwarm($, 'on')
+  expect(text).toBe(await keepwarm($, ''))
+  expect(text).toContain('keepwarm is on for this conversation')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
+  expect(await keepwarm($, 'on 3h')).toContain('keepwarm takes on')
+})
+
+test('/spendometer keepwarm does what /keepwarm does; /spendometer status has a keepwarm line', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 0)
+  const spend = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
+  expect(await spend('keepwarm status')).toBe(await keepwarm($, 'status'))
+  expect(await spend('status')).toContain('keepwarm: on, no window open: the next turn opens one\n')
+  expect(await spend('keepwarm 90m')).toContain('window of 1h30m')
+  expect(recOf(store)?.deadline).toBe(NOW + 90 * MIN)
+  expect(await spend('status')).toContain('keepwarm: 1h30m left')
+  expect(await spend('keepwarm off')).toContain('keepwarm is off')
+  expect(store.get('keepDefault')).toBe(false)
+  expect(await spend('status')).toContain('keepwarm: off\n')
+  expect(await spend('keepwarm on')).toContain('keepwarm is on for this conversation')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
+  expect(await spend('nonsense')).toContain('keepwarm [on|off|status|90m|always]')
+})
+
+test('beside cache-tax /spendometer keepwarm says cache-tax is in charge', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { commands: ['cache-tax'] })
+  await seed($, 0)
+  const spend = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
+  expect(await spend('keepwarm status')).toContain('cache-tax')
+  expect(await spend('status')).toContain('keepwarm: cache-tax is in charge')
+})
+
+test('the checkbox hover tells ticked and warm, ticked and cold, ticked and stopped, and unticked apart', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [COLD] })
+  await seed($, 18 * 60)
+  const hover = async () => {
+    const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    const text = JSON.stringify(await b.findAll({ type: 'Text' }))
+    await b.unmount()
+    return text
+  }
+  // Ticked, but the cache has been idle 18 hours: nothing could ping.
+  expect(await hover()).toContain('Ticked, but the cache went cold')
+  expect(await hover()).toContain('starts the pings again')
+  // A turn warms it: ticked and warm.
+  await done($, { usage: USED })
+  const warm = await hover()
+  expect(warm).toContain('Keep warm is on until 24h after your last message')
+  expect(warm).toContain('every 50 idle minutes')
+  expect(warm).toContain('Untick to stop')
+  // A ping that finds the cache gone stops the window, and the box says why.
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  const stopped = await hover()
+  expect(stopped).toContain('Ticked, but keep warm stopped: the ping read 0')
+  expect(stopped).toContain('re-writes the cache')
+  // Unticked.
+  const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await b.press({ key: 'keep-warm' })
+  await b.unmount()
+  const off = await hover()
+  expect(off).toContain('Keep warm is off in this conversation')
+  expect(off).toContain('for 24h after each message')
 })

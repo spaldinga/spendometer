@@ -15,15 +15,18 @@ import type { EngineInterface } from 'claude-code'
 import { addKeepWarm, cacheFacts, putCache } from './cache-store'
 import { MODELS, TTL_MS, coldCost, familyOf, turnCost, usd, warmCost } from './cache-art'
 
-/** The default for conversations with no switch of their own. */
-export const KEEP_KEY = 'keep'
+/**
+ * The default for conversations with no switch of their own: on unless it is exactly false. Its own key, so a stale
+ * false under the old 'keep' key (when the default was off) does not turn it off.
+ */
+export const KEEP_KEY = 'keepDefault'
 /** Each conversation's record: its switch, and its window's deadline and period. Pruned after a month. */
 export const KEEP_PREFIX = 'keep:'
 const PING_AFTER_MS = 50 * 60 * 1000
 const MIN_PING_MS = 60 * 1000
 const MAX_RETRIES = 3
-/** What a switch that is on holds the cache for after every turn that reached it. */
-const WINDOW_MS = 6 * 60 * 60 * 1000
+/** What a switch that is on holds the cache for after every turn that reached it: every message starts the 24 hours again. */
+const WINDOW_MS = 24 * 60 * 60 * 1000
 /** A cold send is warned about from this much context up. */
 const COLD_WARN_TOKENS = 50_000
 const PING_PROMPT = 'Reply with the single word: warm'
@@ -139,7 +142,7 @@ async function switchOn($: EngineInterface, sid: string): Promise<boolean> {
   try {
     const rec = await readKeepRec($, sid)
     if (rec && typeof rec.on === 'boolean') return rec.on
-    return (await $.store.get(KEEP_KEY)) === true
+    return (await $.store.get(KEEP_KEY)) !== false
   } catch {
     return false
   }
@@ -418,8 +421,8 @@ export async function startKeep($: EngineInterface, s: Keep) {
   try {
     await $.command.register({
       name: 'keepwarm',
-      description: 'Keep the prompt cache warm: bare for 6h, a window such as 90m, always, off, or status',
-      argumentHint: '[6h | 90m | always | off | status]',
+      description: 'Keep the prompt cache warm: on (bare) for 24h after each message, a window such as 90m, always, off, or status',
+      argumentHint: '[on | 90m | always | off | status]',
       immediate: true,
     })
   } catch { /* without the command the button still works */ }
@@ -463,7 +466,7 @@ export async function noteSeeded($: EngineInterface, s: Keep) {
 
 /**
  * The main thread's turn finished. With the switch on and a response that reached the cache, the window becomes
- * at least six hours from now. A wrap-up's debrief turn ends the window instead and renews nothing; the switch stays.
+ * at least 24 hours from now. A wrap-up's debrief turn ends the window instead and renews nothing; the switch stays.
  */
 export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: boolean; wrapped: boolean }) {
   if (!(await active($, s))) return
@@ -488,15 +491,45 @@ export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: bool
 
 // ---------- The switch, the button and the command ----------
 
-/** The button's state: on when this conversation's switch is on or its window is open; null when cache-tax is installed, so there is no button. */
-export async function keepOf($: EngineInterface, s: Keep): Promise<boolean | null> {
+/** What the button shows: the switch (or a window a typed duration opened), and why a ticked box may not be keeping anything warm. */
+export type KeepView = {
+  on: boolean
+  /** The cache went cold while the box is ticked: nothing could ping (the computer slept or was off). */
+  cold: boolean
+  /** The reason the window stopped while the box is ticked, such as a ping that found the cache gone. */
+  stopped: string | null
+}
+
+/** The button's state; null when cache-tax is installed, so there is no button. */
+export async function keepOf($: EngineInterface, s: Keep): Promise<KeepView | null> {
   try {
     if (!(await seat($, s)) && s.passive === null) return null
     if (s.passive) return null
-    return (await switchOn($, s.sid)) || s.deadline > (await $.clock.now())
+    const now = await $.clock.now()
+    const on = (await switchOn($, s.sid)) || s.deadline > now
+    return { on, cold: on && isCold(await lastAtOf($), now), stopped: on ? s.stopped : null }
   } catch {
     return null
   }
+}
+
+/** The button's hover: what the box means in the state it is in. */
+export const keepTip = (v: KeepView): string =>
+  !v.on
+    ? 'Keep warm is off in this conversation. Tick it to keep the cache warm for 24h after each message.'
+    : v.stopped
+      ? `Ticked, but keep warm stopped: ${v.stopped}. Your next message re-writes the cache and starts the pings again.`
+      : v.cold
+        ? 'Ticked, but the cache went cold (the computer slept or was off, so nothing could ping). Your next message re-writes the cache and starts the pings again.'
+        : 'Keep warm is on until 24h after your last message. A short ping every 50 idle minutes keeps the cache warm (a few cents a ping). Untick to stop.'
+
+/** The answer to `/keepwarm status`, for `/spendometer status` too. */
+export async function keepwarmStatus($: EngineInterface, s: Keep): Promise<string> {
+  await seat($, s)
+  const now = await $.clock.now()
+  const open = s.deadline > 0 && now < s.deadline
+  if (!s.stopped && !open && (await switchOn($, s.sid))) return 'keepwarm is on, no window open: the next turn opens one'
+  return statusText(s, now, await lastAtOf($))
 }
 
 async function switchOff($: EngineInterface, s: Keep, alsoDefault: boolean) {
@@ -504,6 +537,8 @@ async function switchOff($: EngineInterface, s: Keep, alsoDefault: boolean) {
   await stop($, s, null, true)
   if (alsoDefault) await $.store.set(KEEP_KEY, false)
   await putKeepRec($, s.sid, { on: false })
+  // stop() redrew before the switch was saved, when the box still read as ticked (on is the default): redraw now it reads off.
+  $.ui.invalidate('ui.render')
 }
 
 async function switchOnWithWindow($: EngineInterface, s: Keep, alsoDefault: boolean) {
@@ -513,14 +548,15 @@ async function switchOnWithWindow($: EngineInterface, s: Keep, alsoDefault: bool
   $.ui.invalidate('ui.render')
 }
 
-/** The Keep warm button: on turns this conversation's switch off and stops its window; off turns it on and opens six hours. */
-export async function pressKeep($: EngineInterface, s: Keep, isOn: boolean) {
+/** The keep warm checkbox: ticked turns this conversation's switch off and stops its window; unticked ticks it and opens 24 hours. */
+export async function pressKeep($: EngineInterface, s: Keep) {
   if (!(await active($, s))) return
-  if (isOn) await switchOff($, s, false)
+  // Read now, not from the drawing the click landed on: a click before the redraw would repeat the last press.
+  if ((await keepOf($, s))?.on) await switchOff($, s, false)
   else await switchOnWithWindow($, s, false)
 }
 
-const USAGE = 'keepwarm takes a window such as 6h or 90m, or always, off, or status'
+const USAGE = 'keepwarm takes on, a window such as 90m or 6h, or always, off, or status'
 
 /** The answer to a typed `/keepwarm`; the effect is on the switch, the window and the store. */
 export async function keepwarmCommand($: EngineInterface, s: Keep, args: string): Promise<string> {
@@ -538,15 +574,11 @@ export async function keepwarmCommand($: EngineInterface, s: Keep, args: string)
     await switchOnWithWindow($, s, true)
     return `keepwarm is on for this conversation and for new ones: each turn keeps a window of ${fmtDuration(WINDOW_MS)}, ${armed(PING_AFTER_MS)}; /keepwarm off turns it off`
   }
-  if (!words.length) {
+  if (!words.length || (words[0] === 'on' && words.length === 1)) {
     await switchOnWithWindow($, s, false)
     return `keepwarm is on for this conversation: window ${fmtDuration(WINDOW_MS)}, renewed by each turn; ${armed(PING_AFTER_MS)}`
   }
-  if (words[0] === 'status') {
-    const open = s.deadline > 0 && now < s.deadline
-    if (!s.stopped && !open && (await switchOn($, s.sid))) return 'keepwarm is on, no window open: the next turn opens one'
-    return statusText(s, now, lastAt)
-  }
+  if (words[0] === 'status') return keepwarmStatus($, s)
   const window = parseDuration(words[0])
   if (!window) return USAGE
   // "every 2m" is a testing knob and lasts only for the window it was given with.

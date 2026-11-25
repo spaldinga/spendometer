@@ -75,7 +75,7 @@ let lastKv = new Map<string, unknown>()
 /** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
 const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW, limits: readonly object[] = QUIET) => {
   mock.clock(on, { now })
-  const kv = (lastKv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
+  const kv = (lastKv = new Map<string, unknown>([['keepDefault', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: kv.get(e.key) }))
   on('store.set', ($, e) => { kv.set(e.key, e.value); return { value: undefined } })
@@ -95,7 +95,7 @@ test('at 70 columns the compact row holds only the essentials, buttons inline as
   const band = await mountAt($, on, 70)
   // The estimate: the compact row is 50 columns here (step 0), the icon buttons 18 and 2 columns of slack: 70 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌')
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
   expect(await band.find({ text: '99% left' })).toBeDefined()
@@ -127,15 +127,15 @@ test('where even step 4 does not fit inline (37 columns with buttons), the butto
 test('at 160 columns the same content is one wide row, buttons inline with their words', async ($, on) => {
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
 
-test('with keep-warm off the label is the bare 🧊, at the wide width too', async ($, on) => {
+test('with keep-warm off the label is the bare ☐, at the wide width too', async ($, on) => {
   const band = await mountAt($, on, 160, false)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☐')
   await band.unmount()
 })
 
@@ -173,10 +173,10 @@ test('compact, card open: every hover tip sits wholly above its button, so its f
 /** The keys of a box's children, in order. */
 const keysOf = (b: { children?: { props?: { key?: string } }[] } | undefined) => (b?.children ?? []).map(c => c.props?.key)
 
-test('wide: the keep button is the flame right after the chip, not among the right-hand buttons', async ($, on) => {
+test('wide: the keep button is the checkbox right after the chip, not among the right-hand buttons', async ($, on) => {
   const wide = await mountAt($, on, 160)
   expect(keysOf(await wide.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
-  expect((await wide.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await wide.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   expect(keysOf(await wide.find({ key: 'row' })).includes('keep')).toBe(false)
   await wide.unmount()
 })
@@ -248,7 +248,7 @@ test('narrow: the keep button is on the cache row after the chip, before the spa
 test('the keep button is there in the terminal too, right after the chip', async ($, on) => {
   const band = await mountAt($, on, 160, true, 22, 'terminal')
   expect(keysOf(await band.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   await band.unmount()
 })
 
@@ -501,13 +501,13 @@ test('the card element is sized to the band on screen, so the shrunk drawing lea
 test('at 104 columns, with a cold cache idle 18 hours, the wide row and its word buttons no longer fit', async ($, on) => {
   // Measured on 2026-11-18: at 104 columns the wide row cut off the minutes and pushed the buttons out of view.
   const band = await mountAt($, on, 104, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   await band.unmount()
 })
 
 test('at 150 columns the same row stays wide, the buttons with their words', async ($, on) => {
   const band = await mountAt($, on, 150, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('☑')
   await band.unmount()
 })
 

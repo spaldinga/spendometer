@@ -13,9 +13,10 @@ cannot, so a later change does not undo a decision without knowing it.
 | [0001](0001-fork-of-ribbon-as-a-local-mod.md) | A fork of ribbon, installed from this folder | accepted |
 | [0002](0002-hook-only-listed-tools.md) | Hook only the tools that are measured | accepted |
 | [0003](0003-card-is-one-svg.md) | The card is one hand-drawn SVG; the terminal gets no card | accepted |
-| [0004](0004-keep-warm-built-in.md) | Keep warm is built in, passive beside cache-tax | accepted |
+| [0004](0004-keep-warm-built-in.md) | Keep warm is built in, passive beside cache-tax | accepted, partly superseded by 0007 |
 | [0005](0005-card-tabs-replace-metric-row.md) | Tabs on the card replace the metric row | accepted |
 | [0006](0006-docs-live-in-the-repo.md) | Backlog, ADRs and architecture notes live in the repo | accepted |
+| [0007](0007-keep-warm-on-by-default-24h.md) | Keep warm is on by default, 24h after each message, shown as a checkbox (partly supersedes 0004) | accepted |
 
 Template:
 

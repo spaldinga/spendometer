@@ -6,7 +6,7 @@ the same commit. Why things are as they are: [`adr/`](adr/). What is next: [`bac
 ## What it is
 
 A Claude Code mod that draws a band above the prompt: usage limits, the conversation's cost, the cache state with a
-keep-warm switch, a progress bar, the subagents at work, and a card that opens under it with tabs. It also holds risky
+keep-warm checkbox, a progress bar, the subagents at work, and a card that opens under it with tabs. It also holds risky
 git commands until the user answers, and keeps the prompt cache warm between messages.
 
 ## Entry point
@@ -20,7 +20,7 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display and delegation figures |
 | `tool.call` | The git hold ([guard](../hooks/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
-| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme) and `/keepwarm` |
+| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
 
 On this machine `classic.SessionStart` is skipped for user-installed mods; don't rely on it (see `AGENTS.md`).
@@ -33,7 +33,7 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | File | Role | Pure |
 |---|---|---|
 | `register.tsx` | All event wiring; the band's render; the settings command | no |
-| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries ([ADR 0004](adr/0004-keep-warm-built-in.md)) | no |
+| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message) and the checkbox state and hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cache-store.ts` | Reads and writes the cache facts and the session's `Spent` record in atoms and the store | no |
 | `cache-art.ts` | Prices and models; the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |
@@ -52,7 +52,7 @@ never been type-checked.
 | Where | Lifetime | Holds |
 |---|---|---|
 | Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files |
-| `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `wrapUp`, `hold`), `spend:<sessionId>`, `keep:<id>`, days |
+| `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `wrapUp`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command), timers |
 
 The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; new fields must be carried by both.
@@ -62,7 +62,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 1. Read the cache view, usage windows, spend and keep-warm state.
 2. Estimate each layout's width in columns from the text it will show (`textCols`; about half a column a character
    on the desktop) and let `layoutOf` pick wide, compact (5 steps) or tight. Buttons that do not fit go to their own row.
-3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm button, then the
+3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm checkbox (☑/☐, measured as two columns), then the
    tab buttons (card open), fold and wrap-up.
 4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` draws the chosen tab at the
    band's width; `fitOpen` drops the progress row if the band would pass `maxRows`.

@@ -48,7 +48,7 @@ details.
 
 ### A card with the numbers behind it
 
-Press `+` on the band (or type `/spendometer fold`) to open the card. It shows one tab at a time, picked with the buttons before `−` (words on a wide band, a glyph each on a narrow one; the one in use is in brackets) or with `/spendometer tab overview|context|cost`; the choice is kept. **Overview** is the pace of each usage window against its reset (the bar is how much of the limit is used, red when it runs out before the reset; the tick is how much of the window's time has gone), then delegation (what subagents saved) and the spend (this thread and the last seven days, with the commits and pull requests it made and what a result cost). **Context** is the conversation size with the turns left, and the tool output (tokens by tool, with how many files were read again unchanged). **Cost** is the cache discount, the cost per message (red when the last one cost three times the average or more) and the cost by model. What keeping the cache warm costs is the hover of the WARM/COLD chip, beside the 🔥 button. A zone with no column of its own becomes one status line below.
+Press `+` on the band (or type `/spendometer fold`) to open the card. It shows one tab at a time, picked with the buttons before `−` (words on a wide band, a glyph each on a narrow one; the one in use is in brackets) or with `/spendometer tab overview|context|cost`; the choice is kept. **Overview** is the pace of each usage window against its reset (the bar is how much of the limit is used, red when it runs out before the reset; the tick is how much of the window's time has gone), then delegation (what subagents saved) and the spend (this thread and the last seven days, with the commits and pull requests it made and what a result cost). **Context** is the conversation size with the turns left, and the tool output (tokens by tool, with how many files were read again unchanged). **Cost** is the cache discount, the cost per message (red when the last one cost three times the average or more) and the cost by model. What keeping the cache warm costs is the hover of the WARM/COLD chip, beside the keep warm checkbox. A zone with no column of its own becomes one status line below.
 
 **Wide.** Overview in two columns.
 
@@ -130,9 +130,9 @@ press **Proceed**.
 
 ### Keep the cache warm, wrap up cleanly
 
-- **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): one button, per conversation, keeps the
-  prompt cache alive between your messages, so coming back after a break doesn't re-pay for the
-  whole context. The button is the flame right after the WARM/COLD chip; hover the chip to see what keeping warm costs an hour and what it has saved.
+- **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): a checkbox, per conversation, on by default. It keeps the
+  prompt cache alive for 24 hours after each of your messages (every message starts the 24 hours again), so coming back after a break doesn't re-pay for the
+  whole context. The box is ☑ ticked or ☐ unticked, right after the WARM/COLD chip: untick it and it stays off in that conversation. Its hover says what the state means, including "ticked, but the cache went cold" when the computer slept or was off and nothing could ping. Hover the chip to see what keeping warm costs an hour and what it has saved.
 - **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
   conversation's cache go cold.
 
@@ -149,14 +149,19 @@ press **Proceed**.
 
 ## What it does
 
-- **Keep warm switch** (built in). One button per conversation and the typed `/keepwarm` drive one state. While
-  a window is open and the cache is warm, a short ping goes out 50 minutes after your last request, so the
-  cache is read, not re-written, when you come back. The button is 🔥 when this conversation's switch is on
-  or a window is open, else 🧊: pressing it turns the switch off and stops the window, or turns it on and
-  opens 6 hours. With the switch on, every turn that reached the cache renews the window to at least 6 hours.
-  `/keepwarm` (bare: switch on, 6h), `6h` / `90m` / `1h30m` (a one-off window), `always` (the default for new
-  conversations on), `off` (default off, window stopped), `status` (time left, next ping, last ping).
-  It is off until you turn it on. A ping that fails or finds the cache gone stops the window and says why.
+- **Keep warm checkbox** (built in). One box per conversation and the typed `/keepwarm` drive one state. It is on
+  by default. With it on, every turn that reached the cache holds a window of 24 hours from then, so each message
+  starts the 24 hours again; while the window is open and the cache is warm, a short ping goes out 50 minutes after
+  your last request, so the cache is read, not re-written, when you come back. The box is ☑ when this conversation's
+  switch is on (or a one-off window is open), else ☐: unticking turns the switch off and stops the window, and the
+  conversation stays unticked until you tick it again; a message does not tick it back. A computer that is off or
+  asleep cannot ping, so the cache can still go cold overnight: the box stays ☑, its hover says so, and the next
+  message re-writes the cache and starts the pings again.
+  `/keepwarm` or `/keepwarm on` (switch on, 24h), `90m` / `1h30m` (a one-off window), `always` (on for this and new
+  conversations), `off` (off for this and new conversations, window stopped), `status` (time left, next ping, last ping).
+  `/spendometer keepwarm [on | off | status | 90m | always]` does the same, and `/spendometer status` has a
+  `keepwarm:` line.
+  A ping that fails or finds the cache gone stops the window and says why.
   Before a send that would re-write a cold cache of 50,000 tokens or more, one line says what it will cost.
   With cache-tax installed spendometer stays passive (no pings, no button) and says so once: uninstall it with
   `claude plugin uninstall cache-tax@claude-code-mods`.
@@ -206,12 +211,12 @@ Remove it with `/plugin uninstall spendometer@spendometer`.
 /spendometer                show the settings and the width the band was drawn at
 ```
 
-The Keep warm switch is the button in the band, saved per conversation (a typed `/keepwarm always|off` sets the default for new conversations). Other settings are saved for every session.
+The Keep warm checkbox is in the band, saved per conversation (on until unticked; a typed `/keepwarm always|off` sets the default for new conversations). Other settings are saved for every session.
 
 ## How it works
 
 - **No model calls.** Everything is read from events Claude Code already raises: rate limits,
-  turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm switch
+  turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm checkbox
   (its pings cost a few cents each) and Wrap up (runs your debrief).
 - **Progress without tokens.** The bar follows the task-list tool calls Claude makes
   (`TodoWrite`, the Task tools, the desktop app's plan). The text bar counts a step in progress as half; the drawn bar

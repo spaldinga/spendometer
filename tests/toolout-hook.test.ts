@@ -10,7 +10,7 @@ type Rec = { byTool?: Record<string, number>; rereads?: number; rereadTok?: numb
 /** The engine beneath: a store to inspect, and a tool stub that answers with `text` (4 characters a token) or refuses. */
 const engine = (on: On, o: { deny?: boolean; text?: string; isError?: boolean } = {}) => {
   resetHold()
-  const store = new Map<string, unknown>([['keep', true]])
+  const store = new Map<string, unknown>([['keepDefault', true]])
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: store.get(e.key) }))
   on('store.set', ($, e) => { store.set(e.key, e.value); return { value: undefined } })
