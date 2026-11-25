@@ -21,11 +21,15 @@ The repo is public: nothing internal (work paths, host names, people's names) go
 
 - **`dev`** is where work goes. Commit there and push `dev` (`git push origin dev`) once the tests pass.
 - **`main`** is what people install from GitHub. It only moves when the user says the change works as
-  expected in the app: then fast-forward it to `dev` (`git switch main && git merge --ff-only dev`),
-  push `main`, and switch back to `dev`. Never commit straight to `main`, and never push `main` on
-  your own judgement.
+  expected in the app: then fast-forward it to `dev` without leaving `dev`
+  (`git fetch . dev:main && git push origin main`). This refuses anything but a fast-forward and works
+  with uncommitted files, which `git switch main` does not. Never commit straight to `main`, and never
+  push `main` on your own judgement.
 - The app runs whatever branch is checked out here (the plugin is installed from this folder), so keep
   `dev` checked out while working.
+- At the start of a session, if `git status` shows changes this session did not make, name them and ask
+  the user to keep, commit or discard them before starting work. Don't leave work in progress
+  uncommitted without saying so.
 
 ## Dev loop
 
