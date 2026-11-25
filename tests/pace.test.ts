@@ -65,3 +65,12 @@ test('paceOf: a window already full runs out now', () => {
   expect(p.lastsMs).toBe(0)
   expect(p.ok).toBe(false)
 })
+
+test('paceOf: atReset is the forecast share at the reset, whole percent', () => {
+  // 39% used, 4h03m of 5h gone: 39 / 0.81 = 48.1.
+  expect(paceOf({ percentUsed: 39, resetsAt: resetIn(FIVE - (4 * HOUR + 3 * MIN)) }, FIVE, NOW)!.atReset).toBe(48)
+  // Exactly on pace: 100% at the reset, and ok.
+  const p = paceOf({ percentUsed: 50, resetsAt: resetIn(2.5 * HOUR) }, FIVE, NOW)!
+  expect(p.atReset).toBe(100)
+  expect(p.ok).toBe(true)
+})

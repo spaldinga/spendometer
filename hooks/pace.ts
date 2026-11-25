@@ -10,8 +10,8 @@ export const WINDOW_MS: Record<string, number> = { five_hour: 5 * HOUR_MS, seven
 
 /** A window as the band holds it. */
 export type PaceWindow = { percentUsed: number; resetsAt?: string }
-/** When the window runs out at the pace so far, against when it resets; `ok` when it lasts until the reset. */
-export type Pace = { lastsMs: number; untilResetMs: number; ok: boolean }
+/** When the window runs out at the pace so far, against when it resets; `ok` when it lasts until the reset. `atReset` is the whole percent used at the reset if the pace holds (used / share of the time gone). */
+export type Pace = { lastsMs: number; untilResetMs: number; ok: boolean; atReset: number }
 
 /**
  * The pace of a window over its whole length so far, or null while it is unknown: no reset time, a reset
@@ -25,5 +25,5 @@ export const paceOf = (w: PaceWindow, windowMs: number, now: number): Pace | nul
   if (!(elapsed >= PACE_MIN_MS) || !(w.percentUsed > 0)) return null
   const rate = w.percentUsed / elapsed
   const lastsMs = Math.max(0, 100 - w.percentUsed) / rate
-  return { lastsMs, untilResetMs, ok: lastsMs >= untilResetMs }
+  return { lastsMs, untilResetMs, ok: lastsMs >= untilResetMs, atReset: Math.round((w.percentUsed * windowMs) / elapsed) }
 }

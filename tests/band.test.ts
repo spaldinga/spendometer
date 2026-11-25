@@ -71,8 +71,8 @@ const usageSetup = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Para
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: WINDOWS } }))
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 }
-/** The alt text of every drawing in the band, in order. */
-const pies = async (band: { findAll: (q: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }) => (await band.findAll({ type: 'Svg' })).map(s => s.props.alt)
+/** The alt text of every drawing in the band, in order; the pace track is left out (it has its own tests). */
+const pies = async (band: { findAll: (q: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }) => (await band.findAll({ type: 'Svg' })).map(s => s.props.alt).filter(a => !String(a).includes(' pace: '))
 
 test('on the desktop the wide row draws a pie per window, 5H then 7D, with the percent used', async ($, on) => {
   await usageSetup($, on)

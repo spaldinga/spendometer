@@ -151,3 +151,9 @@ export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, 
 
 /** The usage pie, 16 px, as a drawing: about 2 columns at DESKTOP_COL_PX. The spaces around it are counted as text. */
 export const PIE_COLS = 2
+
+/**
+ * The 5h pace track in the top row (PACE_TRACK_PX in cache-art.ts, 64, 44 and 30 px) as columns at DESKTOP_COL_PX,
+ * rounded up, plus the one column of margin before it. The words after it are counted as text.
+ */
+export const PACE_TRACK_COLS = { wide: 8 + 1, compact: 6 + 1, tight: 4 + 1 } as const

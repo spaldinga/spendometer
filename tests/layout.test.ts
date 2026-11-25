@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { DANGER } from '../hooks/cache-art'
 import { dayKey } from '../hooks/days'
 import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fitOpen, layoutOf, rowsOf, TIP_LIFT } from '../hooks/layout'
 
@@ -60,16 +61,19 @@ const PROPS = {
   scroll: { offset: 0, bodyRows: 12 },
   view: {},
 } as const
+/** 1h 29m left of the 5h window, 18% used: the pace is known (~59% at reset). */
 const WINDOWS = [
   { kind: 'five_hour', percentUsed: 18, resetsAt: '2098-12-31T23:29:00Z' },
   { kind: 'seven_day', percentUsed: 1, resetsAt: '2099-01-02T22:00:00Z' },
-]
+] as const
+/** The default: the 5h reset is further off than the window is long, so no pace shows in the row and the ladder is that of the row without it. */
+const QUIET = [{ ...WINDOWS[0], resetsAt: '2099-01-01T03:30:00Z' }, WINDOWS[1]]
 
 /** The store of the last mountAt, for tests that read what the band wrote. */
 let lastKv = new Map<string, unknown>()
 
 /** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
-const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW) => {
+const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW, limits: readonly object[] = QUIET) => {
   mock.clock(on, { now })
   const kv = (lastKv = new Map<string, unknown>([['keep', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
   on('session.id', () => ({ value: 'S1' }))
@@ -78,7 +82,7 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   on('store.keys', () => ({ value: [...kv.keys()] }))
   on('store.delete', ($, e) => { kv.delete(e.key); return { value: undefined } })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: WINDOWS } }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: limits } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('classic.SessionStart', () => ({}))
   on('command.list', () => ({ value: ['debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
@@ -379,16 +383,16 @@ test('compact, with the card open, the chip still shows', async ($, on) => {
 })
 
 test('hovering a usage window on the wide row shows its name, what is left and when it resets', async ($, on) => {
-  const band = await mountAt($, on, 160)
+  const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW, WINDOWS)
   expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in 2d 0h$/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m · pace ~26% at reset. /, })).toBeDefined()
   await band.unmount()
 })
 
 test('hovering a usage window on the compact row shows the same', async ($, on) => {
-  const band = await mountAt($, on, 68)
+  const band = await mountAt($, on, 68, true, 22, 'desktop', 40, NOW, WINDOWS)
   expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in 2d 0h$/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m$/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m · pace ~26% at reset. /, })).toBeDefined()
   await band.unmount()
 })
 
@@ -509,7 +513,7 @@ test('at 150 columns the same row stays wide, the buttons with their words', asy
 
 test('a window whose reset time has passed shows 100% left, not the old share and "resetting"', async ($, on) => {
   // Two hours on: the 5-hour window reset at 23:29, the 7-day one has not.
-  const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW + 2 * 3600_000)
+  const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW + 2 * 3600_000, WINDOWS)
   const row = shown((await band.find({ key: 'row' }))!)
   expect(row).toContain('0% used')
   expect(row).not.toContain('resetting')
@@ -524,7 +528,7 @@ test('a render keeps no pace samples in the store: the pace comes from the windo
 })
 
 test('the open wide card shows the pace from the first reading, with the forecast under each bar, and no keep warm column', async ($, on) => {
-  const band = await mountAt($, on, 160)
+  const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW, WINDOWS)
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
   for (const z of ['PACE VS RESET', ' · resets 1h 29m']) expect(w).toContain(z)
@@ -544,7 +548,7 @@ test('the open wide card draws the last seven days of spend from the store, toda
 })
 
 test('the open card at 68 columns has no keep warm status line and has the pace strip', async ($, on) => {
-  const band = await mountAt($, on, 68)
+  const band = await mountAt($, on, 68, true, 22, 'desktop', 40, NOW, WINDOWS)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).not.toContain('keep warm $')
@@ -598,5 +602,111 @@ test('/spendometer fold opens and closes the card like the fold button', async (
   // The button and the command share one state.
   await band.press({ key: 'cache-fold' })
   expect(await fold()).toBe('cache card: closed')
+  await band.unmount()
+})
+
+// ---------- The 5h pace in the top row (backlog 70) ----------
+/** 18% used, 1h 29m left: on pace, about 26% at the reset. */
+const ON_PACE = WINDOWS
+/** 60% used, 3h left (2h gone of 5): over pace, it runs out in 1h 20m. */
+const OVER_PACE = [{ kind: 'five_hour', percentUsed: 60, resetsAt: '2099-01-01T01:00:00Z' }, WINDOWS[1]]
+type Ctx = Parameters<Parameters<typeof test>[1]>
+const paced = ($: Ctx[0], on: Ctx[1], cols: number, limits: readonly object[], surface: 'desktop' | 'terminal' = 'desktop') => mountAt($, on, cols, true, 22, surface, 40, NOW, limits)
+const rowOf = async (band: Awaited<ReturnType<typeof mountAt>>) => shown((await band.find({ key: 'row' }))!)
+const tracks = async (band: Awaited<ReturnType<typeof mountAt>>) => (await band.findAll({ type: 'Svg' })).filter(s => String(s.props.alt).includes(' pace: '))
+
+test('wide row, on pace: a 64 px track after the percent, then "~26% at reset ✓"; the reset time moves to the tip', async ($, on) => {
+  const band = await paced($, on, 160, ON_PACE)
+  const row = await rowOf(band)
+  expect(row).toContain('5H  18% used ~26% at reset ✓')
+  expect(row).not.toContain('· 1h 29m')
+  const t = await tracks(band)
+  expect(t.length).toBe(1)
+  expect(t[0].props.width).toBe(64)
+  expect(t[0].props.height).toBe(16)
+  expect(await band.find({ type: 'Text', text: /^5-hour limit · 18% used, 82% left · resets in 1h 29m · pace ~26% at reset\. The white line/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('wide row, over pace: "out in ~1h 20m" in red, the track fill red', async ($, on) => {
+  const band = await paced($, on, 160, OVER_PACE)
+  const row = await rowOf(band)
+  expect(row).toContain('5H  60% used out in ~1h 20m')
+  expect(row).not.toContain('✓')
+  expect((await tracks(band))[0].props.source).toContain(`width="38" height="6" rx="3" fill="${DANGER}"`)
+  expect(await band.find({ type: 'Text', text: ' out in ~1h 20m', props: { color: DANGER } })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /pace runs out in ~1h 20m\./ })).toBeDefined()
+  await band.unmount()
+})
+
+test('compact row: a 44 px track and the check on pace, "out 1h" in red over pace; 7D has none', async ($, on) => {
+  const on1 = await paced($, on, 70, ON_PACE)
+  expect(await rowOf(on1)).toContain('5h 18% ✓')
+  const t = await tracks(on1)
+  expect(t.length).toBe(1)
+  expect(t[0].props.width).toBe(44)
+  await on1.unmount()
+})
+
+test('compact row, over pace', async ($, on) => {
+  const band = await paced($, on, 75, OVER_PACE)
+  expect(await rowOf(band)).toContain('5h 60% out 1h')
+  expect(await band.find({ type: 'Text', text: ' out 1h', props: { color: DANGER } })).toBeDefined()
+  await band.unmount()
+})
+
+test('tight row, on pace: a 30 px track and the check', async ($, on) => {
+  const band = await paced($, on, 20, ON_PACE)
+  expect((await tracks(band))[0].props.width).toBe(30)
+  expect(await rowOf(band)).toContain('✓')
+  await band.unmount()
+})
+
+test('tight row, over pace: "1h", no "out"', async ($, on) => {
+  const band = await paced($, on, 20, OVER_PACE)
+  const row = await rowOf(band)
+  expect(row).toContain('1h')
+  expect(row).not.toContain('out')
+  await band.unmount()
+})
+
+for (const cols of [160, 70, 20]) {
+  test(`with the pace unknown the row (${cols} columns) is what it was: no track, no words`, async ($, on) => {
+    const band = await mountAt($, on, cols)
+    expect(await tracks(band)).toEqual([])
+    const row = await rowOf(band)
+    for (const w of ['at reset', '✓', 'out']) expect(row).not.toContain(w)
+    await band.unmount()
+  })
+}
+
+test('the terminal writes the words with no drawing, and keeps the reset time on the wide row', async ($, on) => {
+  const band = await paced($, on, 200, ON_PACE, 'terminal')
+  expect(await tracks(band)).toEqual([])
+  expect(await rowOf(band)).toContain('82% left · 1h 29m ~26% at reset ✓')
+  await band.unmount()
+})
+
+test('the terminal, over pace on the compact row: "out 1h"', async ($, on) => {
+  const band = await paced($, on, 70, OVER_PACE, 'terminal')
+  expect(await rowOf(band)).toContain('out 1h')
+  await band.unmount()
+})
+
+test('the track and words are counted: at 120 columns the row without pace is wide, with pace it gives way to the compact row', async ($, on) => {
+  const band = await paced($, on, 120, ON_PACE)
+  expect(await rowOf(band)).not.toContain('USAGE')
+  await band.unmount()
+})
+
+test('without pace the same 120 columns are one wide row', async ($, on) => {
+  const band = await mountAt($, on, 120)
+  expect(await rowOf(band)).toContain('USAGE')
+  await band.unmount()
+})
+
+test('compact row, over pace, squeezed: the ladder drops "out" and keeps the time', async ($, on) => {
+  const band = await paced($, on, 70, OVER_PACE)
+  expect(await rowOf(band)).toContain('5h 60% 1h')
   await band.unmount()
 })

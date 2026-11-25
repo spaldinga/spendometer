@@ -184,6 +184,9 @@ export const fmtBreakEven = (h: number): string => (h > 24 ? '>24h' : `~${Math.m
  */
 export type PaceRow = { label: string; color: string; untilResetMs: number | null; pace: Pace | null; used?: number; windowMs?: number | null }
 
+/** What the white line in the pace strip means; the strip's hover text and part of the card's alt. */
+export const PACE_TIP = "The white line is how much of the window's time has gone. A bar to the left of it is under pace, to the right is over pace."
+
 // ---------- SVG helpers ----------
 const mix = (a: string, b: string, t: number): string =>
   '#' +
@@ -367,6 +370,40 @@ export const pieShapes = (x: number, y: number, size: number, pct: number, color
 
 /** The pie beside a usage window in the band's row. */
 export const pieSvg = (pct: number, color: string): string => svgDoc(PIE_SIZE, PIE_SIZE, pieShapes(0, 0, PIE_SIZE, pct, color), false)
+
+// ---------- Pace track: the 5h window's pace beside its percent in the band's top row ----------
+/** The track's width in px a layout draws: wide, compact (stacked row) and tight. Their columns are PACE_TRACK_COLS in layout.ts. */
+export const PACE_TRACK_PX = { wide: 64, compact: 44, tight: 30 } as const
+export type PaceMode = keyof typeof PACE_TRACK_PX
+
+/**
+ * The mini track: the fill is the share of the limit used (DANGER when the pace runs out before the reset),
+ * the 2 px tick in TEXT is the share of the window's time gone: the same meaning and colours as the card's
+ * pace strip. `gone` is 0 to 1. Height is PIE_SIZE, so it sits in the pie's row.
+ */
+export const paceTrackSvg = (used: number, gone: number, color: string, ok: boolean, w: number): { source: string; w: number; h: number } => {
+  const h = PIE_SIZE
+  const u = Math.max(0, Math.min(100, used))
+  let s = `<rect x="0" y="5" width="${w}" height="6" rx="3" fill="${EMPTY}"/>`
+  if (u > 0) s += `<rect x="0" y="5" width="${Math.min(w, Math.max(3, Math.round((u / 100) * w)))}" height="6" rx="3" fill="${ok ? color : DANGER}"/>`
+  const tx = Math.min(w - 2, Math.max(0, Math.round(Math.max(0, Math.min(1, gone)) * w) - 1))
+  s += `<rect x="${tx}" y="1" width="2" height="14" fill="${TEXT}"/>`
+  return { source: svgDoc(w, h, s, false), w, h }
+}
+
+/** The shortest unit of a duration: `1h 20m` is `1h`. */
+const fmtShort = (ms: number): string => fmtIdle(ms).split(' ')[0]
+
+/**
+ * The 5h pace in words. On pace: `~48% at reset ✓` (wide), `✓` (compact, tight). Over pace: `out in ~1h 20m`
+ * (wide), `out 1h` (compact, while `full`), `1h`. `text` is what is written (muted, or DANGER when !ok), `mark`
+ * the green check; `line` is both with their leading space, for counting columns.
+ */
+export const paceWords = (p: Pace, mode: PaceMode, full = true): { text: string; mark: string; ok: boolean; line: string } => {
+  const text = p.ok ? (mode === 'wide' ? `~${p.atReset}% at reset` : '') : mode === 'wide' ? `out in ~${fmtIdle(p.lastsMs)}` : `${mode === 'compact' && full ? 'out ' : ''}${fmtShort(p.lastsMs)}`
+  const mark = p.ok ? '✓' : ''
+  return { text, mark, ok: p.ok, line: ' ' + [text, mark].filter(Boolean).join(' ') }
+}
 
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
@@ -585,7 +622,9 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
 
   // The pace strip, full width: one line a usage window. The label, a track (the bar is the share of the limit
   // used, the tick is the share of the window's time gone: a bar past the tick is faster than the window allows,
-  // behind it is fine) and the forecast in words to the right of the track. The desktop draws the card
+  // behind it is fine) and the forecast in words to the right of the track: "~48% at reset ✓" when the pace
+  // holds under 100%, "runs out in ~1h" otherwise. The whole strip is an SVG <title> (PACE_TIP), because the
+  // Box hover tips cannot target a region inside one Svg. The desktop draws the card
   // at about 70%, so the words are 18 px here to read as about 13, the band's own size.
   const paceStrip = () => {
     const g = t(13, 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
@@ -627,9 +666,9 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
         const reset = fmtIdle(r.pace.untilResetMs)
         s += r.pace.ok
           ? words(yb, [
-              { lead: `lasts ~${lasts}`, fill: TEXT, rest: ` · resets ${reset}`, mark: '✓' },
-              { lead: `lasts ~${lasts}`, fill: TEXT, rest: '', mark: '✓' },
-              { lead: '✓', fill: OK, rest: ` ${reset}` },
+              { lead: `~${r.pace.atReset}% at reset`, fill: TEXT, rest: ` · resets ${reset}`, mark: '✓' },
+              { lead: `~${r.pace.atReset}% at reset`, fill: TEXT, rest: '', mark: '✓' },
+              { lead: `~${r.pace.atReset}%`, fill: TEXT, rest: '', mark: '✓' },
             ])
           : words(yb, [
               { lead: `runs out in ~${lasts}`, fill: DANGER, rest: ` · resets ${reset}` },
@@ -644,7 +683,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
         ])
       }
     })
-    return s
+    return `<g><title>${PACE_TIP}</title>${s}</g>`
   }
 
   // The metric zones of the Context and Cost tabs: each is shaped like the other zones (a title, a 38 px figure
@@ -824,6 +863,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     resultsSentence(commits, prs, perResult !== null ? usd(perResult) : null) +
     (saved > 0 ? ` Keep-warm pings have saved about ${usd(saved)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
-    metricsAlt
+    metricsAlt +
+    (tab === 'overview' && pace.length > 0 ? ` ${PACE_TIP}` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt, cols: n }
 }

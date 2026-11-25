@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, pieSvg, roboSvg, svgDoc, wedgePath } from '../hooks/cache-art'
+import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, paceTrackSvg, paceWords, pieSvg, roboSvg, svgDoc, wedgePath } from '../hooks/cache-art'
 import type { CacheView, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 
@@ -28,8 +28,8 @@ const body = (s: string) => s.slice(s.indexOf('</style>'))
 const plainText = (s: string) => s.replace(/<[^>]*>/g, '')
 
 const H5 = 5 * 3600_000
-const PACE_OK: PaceRow = { label: '7D', color: '#ff6b1a', untilResetMs: 3 * 3600_000, windowMs: H5, used: 31, pace: { lastsMs: 5 * 3600_000, untilResetMs: 3 * 3600_000, ok: true } }
-const PACE_LOW: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: 3 * 3600_000, windowMs: H5, used: 70, pace: { lastsMs: 160 * 60_000, untilResetMs: 200 * 60_000, ok: false } }
+const PACE_OK: PaceRow = { label: '7D', color: '#ff6b1a', untilResetMs: 3 * 3600_000, windowMs: H5, used: 31, pace: { lastsMs: 5 * 3600_000, untilResetMs: 3 * 3600_000, ok: true, atReset: 78 } }
+const PACE_LOW: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: 3 * 3600_000, windowMs: H5, used: 70, pace: { lastsMs: 160 * 60_000, untilResetMs: 200 * 60_000, ok: false, atReset: 175 } }
 const PACE_NONE: PaceRow = { label: '5H', color: '#f5a623', untilResetMs: null, windowMs: H5, used: 0, pace: null }
 
 // The x of a title in the columns' row.
@@ -154,18 +154,19 @@ test('the pace strip is first at every width, and its words sit on the same base
 test('the pace words take the longest variant that fits to the right of the track', () => {
   const at = (w: number, rows: PaceRow[]) => plainText(body(cardSvg(WARM, w, SPEND, rows).source))
   // 300: only the shortest variants fit.
-  expect(at(300, [PACE_OK])).toContain('✓ 3h 0m')
+  expect(at(300, [PACE_OK])).toContain('~78%✓')
   expect(at(300, [PACE_OK])).not.toContain('lasts')
+  expect(at(300, [PACE_OK])).not.toContain('at reset')
   expect(at(300, [PACE_LOW])).toContain('~2h 40m')
   expect(at(300, [PACE_LOW])).not.toContain('runs out')
   expect(at(300, [PACE_NONE])).toContain('unknown')
   expect(at(300, [PACE_NONE])).not.toContain('pace unknown')
   // 800: the middle ones, the not-ok line without "runs".
-  expect(at(800, [PACE_OK])).toContain('lasts ~5h 0m · resets 3h 0m✓')
+  expect(at(800, [PACE_OK])).toContain('~78% at reset · resets 3h 0m✓')
   expect(at(800, [PACE_LOW])).toContain('out in ~2h 40m · resets 3h 20m')
   expect(at(800, [PACE_LOW])).not.toContain('runs out')
   // 1400: everything.
-  expect(at(1400, [PACE_OK, PACE_LOW])).toContain('lasts ~5h 0m · resets 3h 0m✓')
+  expect(at(1400, [PACE_OK, PACE_LOW])).toContain('~78% at reset · resets 3h 0m✓')
   expect(at(1400, [PACE_OK, PACE_LOW])).toContain('runs out in ~2h 40m · resets 3h 20m')
 })
 
@@ -176,7 +177,7 @@ test('the pace bar fills to the share used, in the window colour, red when the f
   expect(s).toContain(`<rect x="47" y="40" width="${Math.round(0.31 * tw)}" height="6" rx="3" fill="#ff6b1a"/>`)
   expect(s).toContain(`<rect x="47" y="68" width="${Math.round(0.7 * tw)}" height="6" rx="3" fill="${DANGER}"/>`)
   expect(s).toContain(`<tspan fill="${DANGER}">runs out in ~2h 40m</tspan> · resets 3h 20m`)
-  expect(s).toContain(`>lasts ~5h 0m</tspan> · resets 3h 0m<tspan fill="${OK}"`)
+  expect(s).toContain(`>~78% at reset</tspan> · resets 3h 0m<tspan fill="${OK}"`)
   expect(s).not.toContain('bar: time left')
 })
 
@@ -769,6 +770,37 @@ test('the pie is an EMPTY circle with a wedge in the window colour; full when 10
   expect(pieSvg(50, YELLOW)).toContain('width="16" height="16"')
 })
 
+test('the pace track: fill is the used share in the window colour, the tick (2 px, TEXT) the time gone, light style included', () => {
+  const s = paceTrackSvg(39, 0.81, YELLOW, true, 64)
+  expect([s.w, s.h]).toEqual([64, 16])
+  expect(s.source).toContain('width="64" height="16"')
+  expect(s.source).toContain(`<rect x="0" y="5" width="64" height="6" rx="3" fill="${EMPTY}"/>`)
+  expect(s.source).toContain(`<rect x="0" y="5" width="25" height="6" rx="3" fill="${YELLOW}"/>`)
+  expect(s.source).toContain(`<rect x="51" y="1" width="2" height="14" fill="${TEXT}"/>`)
+  expect(s.source).toContain('prefers-color-scheme: light')
+})
+
+test('the pace track: red fill when the pace is over, no fill at 0, the tick stays inside the track', () => {
+  expect(paceTrackSvg(70, 0.4, YELLOW, false, 44).source).toContain(`width="31" height="6" rx="3" fill="${DANGER}"`)
+  expect(paceTrackSvg(70, 0.4, YELLOW, false, 44).source).not.toContain(`fill="${YELLOW}"/>`)
+  expect(paceTrackSvg(0, 0, YELLOW, true, 30).source).not.toContain('<rect x="0" y="5" width="3"')
+  expect(paceTrackSvg(0, 0, YELLOW, true, 30).source).toContain('<rect x="0" y="1" width="2"')
+  expect(paceTrackSvg(100, 1, YELLOW, true, 30).source).toContain('<rect x="28" y="1" width="2"')
+})
+
+test('the pace words: wide forecast or run-out, compact check or short time', () => {
+  const on = { lastsMs: 6 * 3600_000, untilResetMs: 57 * 60_000, ok: true, atReset: 48 }
+  const over = { lastsMs: 80 * 60_000, untilResetMs: 3 * 3600_000, ok: false, atReset: 150 }
+  expect(paceWords(on, 'wide').line).toBe(' ~48% at reset ✓')
+  expect(paceWords(on, 'compact').line).toBe(' ✓')
+  expect(paceWords(on, 'tight').line).toBe(' ✓')
+  expect(paceWords(over, 'wide').line).toBe(' out in ~1h 20m')
+  expect(paceWords(over, 'compact').line).toBe(' out 1h')
+  expect(paceWords(over, 'compact', false).line).toBe(' 1h')
+  expect(paceWords(over, 'tight').line).toBe(' 1h')
+  expect(paceWords(over, 'wide').ok).toBe(false)
+})
+
 // ---------- TOOL OUTPUT (the Context tab) ----------
 test('tool output: the figure in tokens, the top tools and the re-reads in orange as the caption', () => {
   const s = after(body(ctx(1400, METRICS).source), 'TOOL OUTPUT')
@@ -812,4 +844,16 @@ test('the alt text has the tool output sentence at every tab and width, the re-r
   expect(none).toContain(' Tool output into the context: about 41k tokens (Bash 18k, Read 12k, Grep 6k).')
   expect(none).not.toContain('re-read')
   expect(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...METRICS, toolTok: 0, tools: [], rereads: 0 }).alt).not.toContain('Tool output')
+})
+
+test('the pace strip explains the white line in its hover text and the alt, and the ok words are the forecast at the reset', () => {
+  const c = cardSvg(WARM, 1400, SPEND, [PACE_OK, PACE_LOW])
+  expect(c.source).toContain('<title>The white line is how much of the window')
+  expect(c.source).toContain('under pace')
+  expect(c.source).toContain('over pace')
+  expect(c.alt).toContain('A bar to the left of it is under pace')
+  expect(plainText(body(c.source))).not.toContain('lasts')
+  // Without windows, or off the Overview tab, there is nothing to explain.
+  expect(cardSvg(WARM, 1400, SPEND, []).source).not.toContain('<title>')
+  expect(cardSvg(WARM, 1400, SPEND, [PACE_OK], null, 'cost').alt).not.toContain('under pace')
 })

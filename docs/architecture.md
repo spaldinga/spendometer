@@ -36,7 +36,7 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | `keepwarm.ts` | The keep-warm pinger: window, deadline, retries ([ADR 0004](adr/0004-keep-warm-built-in.md)) | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cache-store.ts` | Reads and writes the cache facts and the session's `Spent` record in atoms and the store | no |
-| `cache-art.ts` | Prices and models; the chip, Robo, pie and card SVGs; the chip's hover text | yes |
+| `cache-art.ts` | Prices and models; the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
 | `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
 | `toolout.ts` | Tool output tokens and the re-read keys | yes |
@@ -62,7 +62,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 1. Read the cache view, usage windows, spend and keep-warm state.
 2. Estimate each layout's width in columns from the text it will show (`textCols`; about half a column a character
    on the desktop) and let `layoutOf` pick wide, compact (5 steps) or tight. Buttons that do not fit go to their own row.
-3. Build the row: label, usage pies, cost, Robo and the WARM/COLD chip with its hover, the keep-warm button, then the
+3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm button, then the
    tab buttons (card open), fold and wrap-up.
 4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` draws the chosen tab at the
    band's width; `fitOpen` drops the progress row if the band would pass `maxRows`.

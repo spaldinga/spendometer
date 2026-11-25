@@ -11,10 +11,10 @@ import { isCommit, isPr, resultsSentence } from './results'
 import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import {
-  EMPTY, HUE, INK, ORANGE, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
-  MODELS, TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
+  DANGER, EMPTY, HUE, INK, OK, ORANGE, PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
+  MODELS, TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, paceTrackSvg, paceWords, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
-import type { CacheView, PaceRow, Tab, TurnUsage } from './cache-art'
+import type { CacheView, PaceMode, PaceRow, Tab, TurnUsage } from './cache-art'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
 import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepwarmCommand, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
 export { pingKeptCacheWarm }
@@ -24,7 +24,7 @@ import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, PIE_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
+  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -376,6 +376,9 @@ const trackPace = (list: readonly Window[], now: number): PaceRow[] => {
   }
   return rows
 }
+/** The pace of the 5-hour window only: the top row shows no pace for 7D. Null while it is unknown. */
+const paceFor = (w: Window, now: number) => (w.kind === 'five_hour' ? paceOf(w, WINDOW_MS.five_hour, now) : null)
+
 const dots = (left: number, cells: number): { on: string; off: string } => {
   const n = Math.max(0, Math.min(cells, Math.round((left / 100) * cells)))
   return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
@@ -1000,6 +1003,16 @@ export const register: Register = on => {
     const resets = list.map(w => fmtReset(w.resetsAt, now))
     const lowText = (i: number) => (lefts[i] < LOW_AT ? ' LOW' : '')
     const nameOf = (w: Window) => NAMES[w.kind] ?? w.kind.toUpperCase()
+    // The 5h pace beside its percent: a mini track on the desktop, then words (see paceWords).
+    const paces = list.map(w => paceFor(w, now))
+    const paceLine = (i: number, mode: PaceMode, full = true) => {
+      const p = paces[i]
+      return p ? paceWords(p, mode, full).line : ''
+    }
+    // The track's columns, when the desktop draws one for window i.
+    const trackCols = (i: number, mode: PaceMode) => (Svg && paces[i] ? PACE_TRACK_COLS[mode] : 0)
+    // The wide row drops the reset time beside the track: the hover tip has it.
+    const resetText = (i: number) => (resets[i] && !(Svg && paces[i]) ? ` · ${resets[i]}` : '')
     const windowCols = (isWideRow: boolean, cells: number) =>
       list.length === 0
         ? Math.ceil(WAITING_COLS * k) + BLOCK_MARGIN
@@ -1009,11 +1022,11 @@ export const register: Register = on => {
               (Svg
                 ? // The pie replaces the dots, and the words say what is used.
                   isWideRow
-                  ? t(`${nameOf(w)}  ${useds[i]}% used${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + PIE_COLS + BLOCK_MARGIN
-                  : Math.max(t(`${nameOf(w)} `) + PIE_COLS, blockCols([`${useds[i]}% used${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], 0, k)) + BLOCK_MARGIN
+                  ? t(`${nameOf(w)}  ${useds[i]}% used${lowText(i)}${resetText(i)}${paceLine(i, 'wide')}`) + PIE_COLS + trackCols(i, 'wide') + BLOCK_MARGIN
+                  : Math.max(t(`${nameOf(w)} `) + PIE_COLS + trackCols(i, 'tight') + t(paceLine(i, 'tight')), blockCols([`${useds[i]}% used${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], 0, k)) + BLOCK_MARGIN
                 : isWideRow
-                  ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}`) + BLOCK_MARGIN
-                  : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
+                  ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}${paceLine(i, 'wide')}`) + BLOCK_MARGIN
+                  : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}${paceLine(i, 'tight')}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
             0,
           )
     const spendCols = (isWideRow: boolean) =>
@@ -1065,8 +1078,8 @@ export const register: Register = on => {
         (n, w, i) =>
           n +
           (Svg
-            ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`) + PIE_COLS
-            : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}`)) +
+            ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`) + PIE_COLS + trackCols(i, 'compact')
+            : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`)) +
           COMPACT_MARGIN,
         0,
       ) +
@@ -1227,7 +1240,9 @@ export const register: Register = on => {
         reset: fmtReset(w.resetsAt, now),
         tip: (() => {
           const r = fmtReset(w.resetsAt, now)
-          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${Math.round((100 - left) * 10) / 10}% used, ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}`
+          const pace = paceFor(w, now)
+          const paceTip = pace ? ` · pace ${pace.ok ? `~${pace.atReset}% at reset` : `runs out in ~${fmtIdle(pace.lastsMs)}`}.${Svg ? ` ${PACE_TIP}` : ''}` : ''
+          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${Math.round((100 - left) * 10) / 10}% used, ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}${paceTip}`
         })(),
       }
     }
@@ -1235,6 +1250,25 @@ export const register: Register = on => {
     // The pie beside a window on the desktop: what is used, in the window's colour. The terminal has none.
     const pie = (w: Window, p: ReturnType<typeof parts>, i: number) =>
       Svg ? <Svg key={`pie-${i}`} source={pieSvg(p.used, COLORS[w.kind] ?? TEXT)} alt={`${p.name} ${p.used}% used`} width={PIE_SIZE} height={PIE_SIZE} /> : null
+
+    // The 5h pace after the percent: the mini track on the desktop (fill = used, tick = time gone), then words.
+    const paceEls = (w: Window, p: ReturnType<typeof parts>, mode: PaceMode, full = true) => {
+      const pc = paceFor(w, now)
+      if (!pc) return []
+      const pw = paceWords(pc, mode, full)
+      const els = []
+      if (Svg) {
+        const tr = paceTrackSvg(p.used, 1 - pc.untilResetMs / WINDOW_MS[w.kind], p.col, pc.ok, PACE_TRACK_PX[mode])
+        els.push(
+          <Box key="pace-track" marginLeft={1}>
+            <Svg source={tr.source} alt={`${p.name} pace: ${p.used}% of the limit used`} width={tr.w} height={tr.h} />
+          </Box>,
+        )
+      }
+      if (pw.text) els.push(<Text key="pace-text" color={pw.ok ? 'subtle' : DANGER} bold={!pw.ok}>{` ${pw.text}`}</Text>)
+      if (pw.mark) els.push(<Text key="pace-mark" color={OK} bold>{` ${pw.mark}`}</Text>)
+      return els
+    }
 
     // Wide: every window on one row. Narrow: each window is a block of three
     // lines (name and pie, percent used, reset time) so nothing wraps or clips. The terminal keeps dots and percent left.
@@ -1253,7 +1287,8 @@ export const register: Register = on => {
           )}
           <Text color={p.col} bold> {Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
-          {p.reset ? <Text color="subtle"> · {p.reset}</Text> : null}
+          {p.reset && !(Svg && paceFor(w, now)) ? <Text color="subtle"> · {p.reset}</Text> : null}
+          {paceEls(w, p, 'wide')}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
@@ -1273,6 +1308,7 @@ export const register: Register = on => {
                 <Text color={EMPTY}>{p.d.off}</Text>
               </>
             )}
+            {paceEls(w, p, 'tight')}
           </Box>
           <Box flexDirection="row">
             <Text color={p.col} bold>{Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
@@ -1293,6 +1329,7 @@ export const register: Register = on => {
           {Svg ? <Box key="pie-gap" marginRight={1}>{pie(w, p, i)}</Box> : null}
           <Text color={p.col} bold>{`${p.used}%`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
+          {paceEls(w, p, 'compact', compactStep < 2)}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )

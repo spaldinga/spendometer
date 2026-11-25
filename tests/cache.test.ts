@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const WINDOWS = [
-  { kind: 'five_hour', percentUsed: 18, resetsAt: '2099-01-01T01:29:00Z' },
+  { kind: 'five_hour', percentUsed: 18, resetsAt: '2099-01-01T03:30:00Z' },
   { kind: 'seven_day', percentUsed: 1 },
 ]
 const PROPS = {

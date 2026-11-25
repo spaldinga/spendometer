@@ -4,7 +4,7 @@ project: spendometer
 order: 70
 kind: design
 size: M
-status: todo
+status: done
 source: user feedback 2026-11-25
 ---
 
