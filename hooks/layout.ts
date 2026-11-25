@@ -134,6 +134,13 @@ export const cardColsOf = (drawnPx: number): number => Math.min(4, Math.max(1, M
 export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
 
 /**
+ * How many rows a hover tip sits above the bottom of what it explains, so its frame clears the row's text.
+ * The engine takes whole cells only (no "100%"). The tallest things with a tip are Robo (26 px) and the
+ * chip (21 px): 2 rows at ROW_PX. At 1 the tip's bottom frame ran through "$0.03 next" (seen 2026-11-25).
+ */
+export const TIP_LIFT = 2
+
+/**
  * What the open band keeps so it stays within `maxRows` and never scrolls: the progress row stays only
  * if it fits with the card. The card itself always stays: the person opened it.
  */

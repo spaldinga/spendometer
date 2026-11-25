@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { dayKey } from '../hooks/days'
-import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fitOpen, layoutOf } from '../hooks/layout'
+import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fitOpen, layoutOf, rowsOf, TIP_LIFT } from '../hooks/layout'
 
 import { shown } from './visible'
 
@@ -154,6 +154,17 @@ const gapsAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramete
 test('wide, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 160))
 
 test('compact, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 70))
+
+test('compact, card open: every hover tip sits wholly above its button, so its frame never crosses the row text', async ($, on) => {
+  const band = await mountAt($, on, 70)
+  expect(shown(await band.find({ key: 'row' })).split(' next').length - 1).toBe(1)
+  await band.press({ key: 'cache-fold' })
+  const tips = (await band.findAll({ type: 'Box' })).filter(b => b.props.position === 'absolute')
+  expect(tips.length > 0).toBe(true)
+  for (const t of tips) expect(t.props.bottom).toBe(TIP_LIFT)
+  expect(TIP_LIFT >= rowsOf(26)).toBe(true)
+  await band.unmount()
+})
 
 /** The keys of a box's children, in order. */
 const keysOf = (b: { children?: { props?: { key?: string } }[] } | undefined) => (b?.children ?? []).map(c => c.props?.key)
