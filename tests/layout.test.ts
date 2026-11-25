@@ -111,7 +111,9 @@ test('where even step 4 does not fit inline (37 columns with buttons), the butto
   const row = await band.find({ key: 'buttons-row' })
   expect(row).toBeDefined()
   const inside = JSON.stringify(row)
-  expect(inside).toContain('keep-warm')
+  // The keep button sits beside the chip on the cache row, not among the buttons.
+  expect(inside).not.toContain('keep-warm')
+  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
   expect(inside).toContain('wrap-up')
   expect(inside).toContain('cache-fold')
   expect(await band.find({ text: '99%' })).toBeDefined()
@@ -121,15 +123,47 @@ test('where even step 4 does not fit inline (37 columns with buttons), the butto
 test('at 160 columns the same content is one wide row, buttons inline with their words', async ($, on) => {
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
   expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
 
-test('with keep-warm off the wide label reads 🧊 Keep warm', async ($, on) => {
+test('with keep-warm off the label is the bare 🧊, at the wide width too', async ($, on) => {
   const band = await mountAt($, on, 160, false)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊 Keep warm')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊')
+  await band.unmount()
+})
+
+/** The keys of a box's children, in order. */
+const keysOf = (b: { children?: { props?: { key?: string } }[] } | undefined) => (b?.children ?? []).map(c => c.props?.key)
+
+test('wide: the keep button is the flame right after the chip, not among the right-hand buttons', async ($, on) => {
+  const wide = await mountAt($, on, 160)
+  expect(keysOf(await wide.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
+  expect((await wide.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
+  expect(keysOf(await wide.find({ key: 'row' })).includes('keep')).toBe(false)
+  await wide.unmount()
+})
+
+test('compact: the keep button sits in the chip block after the next cost', async ($, on) => {
+  const compact = await mountAt($, on, 70)
+  expect(keysOf(await compact.find({ key: 'block' }))).toEqual(['chip-group', 'keep'])
+  await compact.unmount()
+})
+
+test('narrow: the keep button is on the cache row after the chip, before the spacer', async ($, on) => {
+  const narrow = await mountAt($, on, 20)
+  const cache = keysOf(await narrow.find({ key: 'cache' }))
+  expect(cache.slice(0, 2)).toEqual(['chip-group', 'keep'])
+  expect(cache.indexOf('grow')).toBeGreaterThan(cache.indexOf('keep'))
+  await narrow.unmount()
+})
+
+test('the keep button is there in the terminal too, right after the chip', async ($, on) => {
+  const band = await mountAt($, on, 160, true, 22, 'terminal')
+  expect(keysOf(await band.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
   await band.unmount()
 })
 
@@ -216,12 +250,12 @@ test('with the card open, nothing sits between the compact row and the card, and
 
 test('each button carries hover text on the desktop, and none in the terminal', async ($, on) => {
   const band = await mountAt($, on, 160)
-  for (const text of [/^Show the cache card/, /^Keep warm is on/, /^Wrap up: runs \/debrief/]) {
+  for (const text of [/^Show the cache card/, /^Keep warm is on/, /^Wrap up: runs \/debrief/, /^Warm for 38 more minutes · keep warm on/]) {
     expect(await band.find({ type: 'Text', text })).toBeDefined()
   }
   // Hidden until hovered: the box around each text. (The kit does not expose the hover style itself.)
   const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
-  expect(hidden.length).toBe(5)
+  expect(hidden.length).toBe(6)
   await band.unmount()
 })
 
@@ -298,13 +332,13 @@ test('hovering a usage window on a row of three lines shows the same text', asyn
 
 test('hovering the compact chip shows the minutes left while warm', async ($, on) => {
   const band = await mountAt($, on, 68)
-  expect(await band.find({ type: 'Text', text: 'Warm, cold in 38m' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Warm for 38 more minutes · keep warm on, $0.05 an hour. Going cold would cost $1.60 to re-cache.' })).toBeDefined()
   await band.unmount()
 })
 
 test('hovering the compact chip shows the idle time once cold', async ($, on) => {
   const band = await mountAt($, on, 68, true, 125)
-  expect(await band.find({ type: 'Text', text: 'Cold, idle 2h 5m' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Cold, idle 2h 5m. The next message re-caches for $1.60 on Opus (cheaper: Sonnet $0.80, Haiku $0.20). Keep warm costs $0.05 an hour.' })).toBeDefined()
   await band.unmount()
 })
 
@@ -375,7 +409,7 @@ test('at 104 columns, with a cold cache idle 18 hours, the wide row and its word
 
 test('at 150 columns the same row stays wide, the buttons with their words', async ($, on) => {
   const band = await mountAt($, on, 150, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥 Keep warm')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🔥')
   await band.unmount()
 })
 
@@ -395,11 +429,12 @@ test('a render keeps no pace samples in the store: the pace comes from the windo
   await band.unmount()
 })
 
-test('the open wide card shows keep warm and the pace from the first reading, with the forecast under each bar', async ($, on) => {
+test('the open wide card shows the pace from the first reading, with the forecast under each bar, and no keep warm column', async ($, on) => {
   const band = await mountAt($, on, 160)
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['KEEP WARM', 'PACE VS RESET', ' · resets 1h 29m', 'going cold costs']) expect(w).toContain(z)
+  for (const z of ['PACE VS RESET', ' · resets 1h 29m']) expect(w).toContain(z)
+  expect(w).not.toContain('KEEP WARM')
   expect(w).not.toContain('pace unknown')
   await band.unmount()
 })
@@ -414,11 +449,11 @@ test('the open wide card draws the last seven days of spend from the store, toda
   await band.unmount()
 })
 
-test('the open card at 68 columns ends in the keep warm status line and has the pace strip', async ($, on) => {
+test('the open card at 68 columns has no keep warm status line and has the pace strip', async ($, on) => {
   const band = await mountAt($, on, 68)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  expect(c).toContain('keep warm $')
+  expect(c).not.toContain('keep warm $')
   expect(c).toContain('PACE VS RESET')
   expect(c).toContain('resets 1h 29m')
   await band.unmount()
@@ -433,12 +468,12 @@ test('cardColsOf: as many columns as fit at CARD_COL_PX each plus the 26 px gap,
   expect([1364, 1400, 1800, 5000].map(cardColsOf)).toEqual([4, 4, 4, 4])
 })
 
-test('at 120 columns the row is compact but the open card has its four columns and the metric row', async ($, on) => {
+test('at 120 columns the open card has its three wide columns and the metric row', async ($, on) => {
   const band = await mountAt($, on, 120)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['KEEP WARM', 'PACE VS RESET']) expect(c).toContain(z)
-  expect(await row(band)).not.toContain('USAGE')
+  for (const z of ['PACE VS RESET', 'CACHE HIT']) expect(c).toContain(z)
+  expect(c).not.toContain('KEEP WARM')
   await band.unmount()
 })
 
@@ -448,7 +483,7 @@ test('at 68 columns the open card has two columns, the pace strip and the status
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).toContain('PACE VS RESET')
   expect(c).not.toContain('>SPEND<')
-  expect(c).toContain('keep warm $')
+  expect(c).not.toContain('keep warm $')
   await band.unmount()
 })
 

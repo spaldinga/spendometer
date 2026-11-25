@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, fmtBreakEven, keepWarmCost, pieSvg, roboSvg, svgDoc, wedgePath } from '../hooks/cache-art'
+import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MODELS, MUTED, OK, ORANGE, TEXT, YELLOW, cardSvg, chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, pieSvg, roboSvg, svgDoc, wedgePath } from '../hooks/cache-art'
 import type { CacheView, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 
@@ -71,14 +71,14 @@ test('the card is as tall cold as warm, with or without pace figures, at every w
 })
 
 test('the card heights: the pace strip, the 124 px row, the status lines and the metric row', () => {
-  // 6 px gap + 88 strip + 124 row, then 27 k + 4 for k status lines (3, 2, 1, 0), then 92 for the metric row from three columns.
+  // 6 px gap + 88 strip + 124 row, then 27 k + 4 for k status lines (2, 1, 0, 0), then 92 for the metric row from three columns.
   const at = (w: number, v = WARM, m: Metrics | null = null) => cardSvg(v, w, SPEND, [PACE_OK, PACE_LOW], m).h
-  expect(WIDTHS.map(w => at(w))).toEqual([303, 276, 249, 218])
-  expect(WIDTHS.map(w => at(w, COLD))).toEqual([303, 276, 249, 218])
-  expect(WIDTHS.map(w => at(w, WARM, METRICS))).toEqual([303, 276, 341, 310])
-  expect(6 + YC + ROW + 3 * 27 + 4).toBe(303)
+  expect(WIDTHS.map(w => at(w))).toEqual([276, 249, 218, 218])
+  expect(WIDTHS.map(w => at(w, COLD))).toEqual([276, 249, 218, 218])
+  expect(WIDTHS.map(w => at(w, WARM, METRICS))).toEqual([276, 249, 310, 310])
   expect(6 + YC + ROW + 2 * 27 + 4).toBe(276)
-  expect(6 + YC + ROW + 27 + 4 + 92).toBe(341)
+  expect(6 + YC + ROW + 27 + 4).toBe(249)
+  expect(6 + YC + ROW).toBe(218)
   expect(6 + YC + ROW + 92).toBe(310)
 })
 
@@ -217,107 +217,110 @@ test('pace is never a status line', () => {
 })
 
 // ---------- the columns ----------
-test('the columns come in the order DELEGATION, IN CACHE, SPEND, KEEP WARM: as many as fit, evenly spaced', () => {
-  const titles = ['DELEGATION', 'IN CACHE', 'SPEND', 'KEEP WARM']
+test('the columns come in the order DELEGATION, IN CACHE, SPEND: as many as fit, three at most, evenly spaced', () => {
+  const titles = ['DELEGATION', 'IN CACHE', 'SPEND']
   for (const [k, w] of WIDTHS.entries()) {
-    const n = k + 1
+    const n = Math.min(3, k + 1)
     const s = body(cardSvg(WARM, w, SPEND, [PACE_OK], METRICS).source)
     titles.forEach((title, i) => {
       if (i < n) expect(titleX(s, title)).toBe(colXOf(w, n, i))
       else expect(hasTitle(s, title)).toBe(false)
     })
+    expect(cardSvg(WARM, w, SPEND, [PACE_OK], METRICS).cols).toBe(n)
     // The vlines between the columns, one fewer than the columns.
     expect(s.split(`y="${YC + 18}" width="1" height="88"`).length - 1).toBe(n - 1)
   }
+  // At four columns of room the three are wider, not four.
   for (const w of [1400, 1500, 1981]) {
     const s = body(cardSvg(WARM, w, SPEND, [PACE_OK]).source)
-    expect(titles.map(z => titleX(s, z))).toEqual([0, 1, 2, 3].map(i => colXOf(w, 4, i)))
+    expect(titles.map(z => titleX(s, z))).toEqual([0, 1, 2].map(i => colXOf(w, 3, i)))
   }
 })
 
-test('the cold card turns IN CACHE and KEEP WARM into RE-CACHE and RE-CACHE NOW', () => {
+test('keep warm is not a zone: no KEEP WARM or RE-CACHE NOW title, warm or cold, at any width', () => {
+  for (const w of WIDTHS)
+    for (const v of [WARM, COLD]) {
+      const s = body(cardSvg(v, w, SPEND, [PACE_OK, PACE_LOW], METRICS).source)
+      for (const gone of ['KEEP WARM', 'RE-CACHE NOW', 'going cold', 'warm costs', 'model not priced']) expect(s).not.toContain(gone)
+    }
+  expect(body(cardSvg({ ...WARM, mine: null }, 1400, SPEND).source)).not.toContain('not priced')
+})
+
+test('the cold card turns IN CACHE into RE-CACHE and keeps the zones DELEGATION and SPEND', () => {
   const warm = body(cardSvg(WARM, 1400, SPEND, [PACE_OK, PACE_LOW]).source)
-  for (const z of ['>IN CACHE<', '>SPEND<', '>KEEP WARM<', '>PACE VS RESET<', '>DELEGATION<']) expect(warm).toContain(z)
-  expect(warm).toContain('$0.06')
-  expect(warm).toContain('going cold costs <tspan fill="#6aaabd" font-weight="700">$1.92</tspan>')
-  // At today's prices the break-even is over a day, so the card leaves the line out.
-  expect(warm).not.toContain('warm is cheaper')
+  for (const z of ['>IN CACHE<', '>SPEND<', '>PACE VS RESET<', '>DELEGATION<']) expect(warm).toContain(z)
   expect(warm).not.toContain('NEXT MESSAGE')
   // IN CACHE keeps its dot grid: 25 dots a row, two rows.
   const inCache = warm.slice(warm.indexOf('>IN CACHE<'), warm.indexOf('>SPEND<'))
   expect(inCache.split('<circle').length - 1).toBe(50)
   const cold = body(cardSvg(COLD, 1400, SPEND, [PACE_OK]).source)
-  for (const name of ['>RE-CACHE<', '>RE-CACHE NOW<', 'PACE VS RESET']) expect(cold).toContain(name)
-  expect(cold).not.toContain('KEEP WARM')
-})
-
-test('the cold card: the re-cache cost on this model in the cold hue, the cheaper models, and what warm costs', () => {
-  const s = body(cardSvg(COLD, 1400, SPEND).source)
-  const zone = s.slice(s.indexOf('>RE-CACHE NOW<'))
-  // Opus on 240k tokens: $4 x 2 a million to write; warm is 1.2 pings of cache reads an hour.
-  expect(zone).toContain('<tspan font-size="38">$1.92</tspan>')
-  expect(zone).toContain('>on Opus</tspan>')
-  expect(zone).toContain(`font-weight="600" fill="${HUE.cold}"`)
-  expect(zone).toContain('>Sonnet $0.96 · Haiku $0.24<')
-  expect(zone).toContain('>warm costs $0.06/h<')
-  expect(zone).not.toContain('Fable')
+  for (const name of ['>RE-CACHE<', 'PACE VS RESET']) expect(cold).toContain(name)
+  expect(cold).not.toContain('>IN CACHE<')
 })
 
 test('the cheaper models are the priced ones below this session, in MODELS order; none for the cheapest', () => {
   expect(MODELS.map(m => m.id)).toEqual(['fable', 'opus', 'sonnet', 'haiku'])
-  const fable = body(cardSvg({ ...COLD, mine: 'fable' }, 1400, SPEND).source)
-  expect(fable).toContain('>on Fable</tspan>')
-  // The column has room for the two cheapest of the three cheaper models, not for all three.
-  expect(fable).toContain('Sonnet $0.96 · Haiku $0.24')
-  const haiku = body(cardSvg({ ...COLD, mine: 'haiku' }, 1400, SPEND).source)
-  expect(haiku).toContain('>on Haiku</tspan>')
-  expect(haiku).toContain('>warm costs $0.01/h<')
-  // No cheaper model: no line for them, and the warm line takes its place one step up.
-  expect(haiku).not.toContain('Sonnet')
-  expect(haiku).toContain(`y="${YC + 88}" font-size="18" font-weight="500" fill="#8d8775" letter-spacing="0" text-anchor="start">warm costs`)
+  expect(cheaperModels({ ...COLD, mine: 'fable' })).toEqual(['Opus $1.92', 'Sonnet $0.96', 'Haiku $0.24'])
+  expect(cheaperModels(COLD)).toEqual(['Sonnet $0.96', 'Haiku $0.24'])
+  expect(cheaperModels({ ...COLD, mine: 'haiku' })).toEqual([])
+  expect(cheaperModels({ ...COLD, mine: null })).toEqual([])
 })
 
-test('a card on an unpriced model still says so, in the column and in the status line', () => {
-  for (const v of [{ ...WARM, mine: null }, { ...COLD, mine: null }]) {
-    expect(body(cardSvg(v, 1400, SPEND).source)).toContain('model not priced')
-    expect(body(cardSvg(v, 800, SPEND).source)).toContain('keep warm: model not priced')
-  }
-})
-
-test('the cold alt text gives the re-cache cost and the cheaper models', () => {
+test('the cold alt text gives the re-cache cost and the cheaper models, the warm one what going cold costs', () => {
   expect(cardSvg(COLD, 1400, SPEND).alt).toContain('re-caching now costs $1.92 on Opus (cheaper: Sonnet $0.96, Haiku $0.24)')
   expect(cardSvg({ ...COLD, mine: 'haiku' }, 1400, SPEND).alt).toContain('re-caching now costs $0.24 on Haiku.')
-  expect(cardSvg(WARM, 1400, SPEND).alt).toContain('going cold costs $1.92.')
+  expect(cardSvg(WARM, 1400, SPEND).alt).toContain('Keeping the cache warm costs about $0.06 an hour; going cold costs $1.92.')
+  expect(cardSvg({ ...WARM, mine: null }, 1400, SPEND).alt).not.toContain('Keeping the cache warm')
 })
 
 test('while cold, nothing on the card says going cold', () => {
   for (const w of WIDTHS) expect(body(cardSvg(COLD, w, SPEND, [PACE_OK]).source)).not.toContain('going cold')
 })
 
+// ---------- the chip's hover ----------
+test('chipTip warm: the minutes left, the switch, the hourly cost and what going cold costs', () => {
+  expect(chipTip(WARM, 0, true)).toBe('Warm for 42 more minutes · keep warm on, $0.06 an hour. Going cold would cost $1.92 to re-cache.')
+  expect(chipTip(WARM, 0, false)).toBe('Warm for 42 more minutes · keep warm off, $0.06 an hour. Going cold would cost $1.92 to re-cache.')
+  expect(chipTip({ ...WARM, idleMin: 59 }, 0, true)).toContain('Warm for 1 more minute ·')
+})
+
+test('chipTip warm: what pings saved only when above zero; no switch (cache-tax) leaves the switch out', () => {
+  expect(chipTip(WARM, 1.5, true)).toBe('Warm for 42 more minutes · keep warm on, $0.06 an hour. Going cold would cost $1.92 to re-cache · saved $1.50 so far.')
+  expect(chipTip(WARM, 0, true)).not.toContain('saved')
+  expect(chipTip(WARM, 0, null)).toBe('Warm for 42 more minutes. Going cold would cost $1.92 to re-cache.')
+})
+
+test('chipTip cold: the re-cache cost on this model, the cheaper ones, and what keeping warm costs', () => {
+  expect(chipTip(COLD, 0, true)).toBe('Cold, idle 2h 5m. The next message re-caches for $1.92 on Opus (cheaper: Sonnet $0.96, Haiku $0.24). Keep warm costs $0.06 an hour.')
+  expect(chipTip({ ...COLD, mine: 'fable' }, 0, false)).toContain('re-caches for $4.80 on Fable (cheaper: Opus $1.92, Sonnet $0.96, Haiku $0.24).')
+  // The cheapest model has none cheaper: no parenthesis.
+  expect(chipTip({ ...COLD, mine: 'haiku' }, 0, true)).toBe('Cold, idle 2h 5m. The next message re-caches for $0.24 on Haiku. Keep warm costs $0.01 an hour.')
+})
+
+test('chipTip on a model with no price falls back to the short text', () => {
+  expect(chipTip({ ...WARM, mine: null }, 1, true)).toBe('Warm, cold in 42m')
+  expect(chipTip({ ...COLD, mine: null }, 1, true)).toBe('Cold, idle 2h 5m')
+})
+
 // ---------- the status lines ----------
-test('a status line for each of IN CACHE, SPEND and KEEP WARM that has no column: 300 all three, 800 spend and keep, 1100 keep, 1400 none', () => {
+test('a status line for each of IN CACHE and SPEND that has no column: 300 both, 800 spend, 1100 and 1400 none', () => {
   const lines = (w: number) => plainText(body(cardSvg(WARM, w, SPEND, [PACE_OK]).source))
   // 300: the shortest variants fit the 260 px line.
-  expect(dotsOf(cardSvg(WARM, 300, SPEND, [PACE_OK]).source)).toEqual([HUE.warm, MUTED, OK])
+  expect(dotsOf(cardSvg(WARM, 300, SPEND, [PACE_OK]).source)).toEqual([HUE.warm, MUTED])
   expect(lines(300)).toContain('240k in cache · 760k free')
   expect(lines(300)).toContain('≈$7.77 this thread')
-  expect(lines(300)).toContain('keep warm $0.06/h')
-  expect(lines(300)).not.toContain('going cold')
-  // 800: no cache line (IN CACHE has its column), the others in full.
-  expect(dotsOf(cardSvg(WARM, 800, SPEND, [PACE_OK]).source)).toEqual([MUTED, OK])
+  // 800: no cache line (IN CACHE has its column), the spend line in full.
+  expect(dotsOf(cardSvg(WARM, 800, SPEND, [PACE_OK]).source)).toEqual([MUTED])
   expect(lines(800)).toContain('≈$7.77 this thread · main $7.40 · subagents $0.37')
-  expect(lines(800)).toContain('keep warm $0.06/h · going cold $1.92')
   expect(lines(800)).not.toContain('in cache')
-  // 1100: only keep warm.
-  expect(dotsOf(cardSvg(WARM, 1100, SPEND, [PACE_OK]).source)).toEqual([OK])
-  expect(lines(1100)).toContain('keep warm $0.06/h · going cold $1.92')
-  expect(lines(1100)).not.toContain('this thread · ')
-  // 1400: none.
-  expect(dotsOf(cardSvg(WARM, 1400, SPEND, [PACE_OK]).source)).toEqual([])
-  expect(lines(1400)).not.toContain('keep warm $')
+  // 1100 and 1400: three columns, nothing below.
+  for (const w of [1100, 1400]) {
+    expect(dotsOf(cardSvg(WARM, w, SPEND, [PACE_OK]).source)).toEqual([])
+    expect(lines(w)).not.toContain('this thread · ')
+  }
+  // No status line says anything of keep warm.
+  for (const w of WIDTHS) expect(lines(w)).not.toContain('keep warm')
   // Wide enough for the whole cache sentence, in the order the lines are drawn.
-  const cache = lines(800)
-  expect(cache).not.toContain('240k in cache')
   const narrow = body(cardSvg(WARM, 600, SPEND).source)
   expect(plainText(narrow)).toContain('240k in cache · 24% of the 1M context · 760k free')
 })
@@ -326,32 +329,28 @@ test('the status lines are one rule below the columns, a dot and the text, 27 px
   const s = body(cardSvg(WARM, 300, SPEND).source)
   expect(s).toContain(`<rect x="13" y="${YC + ROW}" width="274" height="1"`)
   const ys = [...s.matchAll(/<circle cx="17" cy="(\d+)" r="4"/g)].map(m => Number(m[1]))
-  expect(ys.length).toBe(3)
+  expect(ys.length).toBe(2)
   expect(ys[1] - ys[0]).toBe(27)
-  expect(ys[2] - ys[1]).toBe(27)
   // Each text is at x 27, the dot a little above its baseline.
   const texts = [...s.matchAll(/<text x="27" y="(\d+)" font-size="16"/g)].map(m => Number(m[1]))
-  expect(texts).toEqual([YC + ROW + 24, YC + ROW + 24 + 27, YC + ROW + 24 + 54])
+  expect(texts).toEqual([YC + ROW + 24, YC + ROW + 24 + 27])
 })
 
-test('the cold status lines write the re-cache cost and the cheaper models as one line, its dot in the cold hue', () => {
+test('the cold status lines have no keep warm or re-cache line, only the cache and the spend', () => {
   const s = body(cardSvg(COLD, 800, SPEND, [PACE_OK]).source)
-  expect(plainText(s)).toContain('re-cache $1.92 on Opus · Sonnet $0.96 · Haiku $0.24')
+  expect(plainText(s)).not.toContain('re-cache $')
   expect(s).not.toContain('keep warm')
-  expect(dotsOf(s)).toEqual([MUTED, HUE.cold])
-  expect(dotsOf(cardSvg(COLD, 1100, SPEND).source)).toEqual([HUE.cold])
-  expect(dotsOf(cardSvg(COLD, 300, SPEND).source)).toEqual([HUE.cold, MUTED, HUE.cold])
-  // A narrow card drops the cheaper models rather than run past its edge.
-  expect(plainText(body(cardSvg({ ...COLD, mine: 'fable' }, 300, SPEND).source))).toContain('re-cache $4.80 on Fable')
-  expect(plainText(body(cardSvg({ ...COLD, mine: 'fable' }, 1100, SPEND).source))).toContain('re-cache $4.80 on Fable · Opus $1.92 · Sonnet $0.96 · Haiku $0.24')
+  expect(dotsOf(s)).toEqual([MUTED])
+  expect(dotsOf(cardSvg(COLD, 1100, SPEND).source)).toEqual([])
+  expect(dotsOf(cardSvg(COLD, 300, SPEND).source)).toEqual([HUE.cold, MUTED])
 })
 
-test('the warm keep line adds what the pings saved', () => {
-  for (const w of [800, 1100]) {
-    expect(body(cardSvg(WARM, w, { ...SPEND, saved: 1.5 }).source)).toContain('keep warm $0.06/h · going cold $1.92 · saved $1.50')
-    expect(body(cardSvg(WARM, w, SPEND).source)).not.toContain('saved')
-    expect(body(cardSvg(WARM, w, { ...SPEND, saved: 0, pings: 0.1 }).source)).not.toContain('saved')
+test('the alt text keeps what the pings saved, and the card has no saved or pings line', () => {
+  for (const w of WIDTHS) {
+    expect(body(cardSvg(WARM, w, { ...SPEND, saved: 1.5, pings: 0.1 }).source)).not.toContain('saved $')
+    expect(body(cardSvg(WARM, w, { ...SPEND, saved: 1.5, pings: 0.1 }).source)).not.toContain('pings $')
   }
+  expect(cardSvg(WARM, 1400, { ...SPEND, saved: 1.5 }).alt).toContain('Keep-warm pings have saved about $1.50.')
 })
 
 const WITH_DAYS = { ...SPEND, days: [0, 1, 2, 0, 4, 1, 3] }
@@ -359,7 +358,7 @@ const WITH_DAYS = { ...SPEND, days: [0, 1, 2, 0, 4, 1, 3] }
 test('the spend zone draws seven day bars, today in orange and a day with no spend as a 2 px stub', () => {
   for (const v of [WARM, COLD]) {
     const s = body(cardSvg(v, 1400, WITH_DAYS).source)
-    const zone = s.slice(s.indexOf('>SPEND<'), s.indexOf(v.mode === 'warm' ? '>KEEP WARM<' : '>RE-CACHE NOW<'))
+    const zone = s.slice(s.indexOf('>SPEND<'), s.length)
     const bars = zone.match(/<rect [^>]*rx="1"[^>]*\/>/g)!
     expect(bars.length).toBe(7)
     expect(bars[6]).toContain('fill="#ff6b1a"')
@@ -376,7 +375,7 @@ test('the spend zone draws seven day bars, today in orange and a day with no spe
 
 test('a day with no spend today leaves today as a stub, not a bar in the hue', () => {
   const s = body(cardSvg(WARM, 1400, { ...SPEND, days: [1, 0, 0, 0, 0, 0, 0] }).source)
-  const bars = s.slice(s.indexOf('>SPEND<'), s.indexOf('>KEEP WARM<')).match(/<rect [^>]*rx="1"[^>]*\/>/g)!
+  const bars = s.slice(s.indexOf('>SPEND<')).match(/<rect [^>]*rx="1"[^>]*\/>/g)!
   expect(bars[6]).toContain('fill="#4a463b"')
   expect(bars[6]).toContain('height="2"')
 })
@@ -384,7 +383,7 @@ test('a day with no spend today leaves today as a stub, not a bar in the hue', (
 test('without daily figures the spend zone falls back to the dot split and main and subagents', () => {
   for (const days of [undefined, [0, 0, 0, 0, 0, 0, 0]]) {
     const s = body(cardSvg(WARM, 1400, { ...SPEND, days }).source)
-    const zone = s.slice(s.indexOf('>SPEND<'), s.indexOf('>KEEP WARM<'))
+    const zone = s.slice(s.indexOf('>SPEND<'))
     expect(zone).toContain('main $7.40 · subagents $0.37')
     expect(zone).not.toContain('today $')
     expect(zone).not.toContain('rx="1"')
@@ -402,19 +401,8 @@ test('the spend status line uses the today and week caption when days are known'
 
 test('the heights do not change with daily figures or savings', () => {
   const more = { ...WITH_DAYS, saved: 1.5, pings: 0.12 }
-  expect(WIDTHS.map(w => cardSvg(WARM, w, more, [PACE_OK, PACE_LOW]).h)).toEqual([303, 276, 249, 218])
-  expect(WIDTHS.map(w => cardSvg(COLD, w, more, [PACE_OK, PACE_LOW]).h)).toEqual([303, 276, 249, 218])
-})
-
-test("keep warm adds a saved and pings line, which takes the break-even line's place", () => {
-  const s = body(cardSvg(WARM, 1400, { ...SPEND, saved: 1.5, pings: 0.123 }).source)
-  expect(s).toContain('saved $1.50 · pings $0.12')
-  expect(s).not.toContain('warm is cheaper')
-  expect(body(cardSvg(WARM, 1400, { ...SPEND, pings: 0.05 }).source)).toContain('saved $0.00 · pings $0.05')
-  const none = body(cardSvg(WARM, 1400, SPEND).source)
-  expect(none).not.toContain('saved $')
-  expect(none).not.toContain('pings $')
-  expect(body(cardSvg({ ...WARM, mine: null }, 1400, { ...SPEND, saved: 1 }).source)).not.toContain('saved $')
+  expect(WIDTHS.map(w => cardSvg(WARM, w, more, [PACE_OK, PACE_LOW]).h)).toEqual([276, 249, 218, 218])
+  expect(WIDTHS.map(w => cardSvg(COLD, w, more, [PACE_OK, PACE_LOW]).h)).toEqual([276, 249, 218, 218])
 })
 
 test('the alt text names today and the week, and the savings when above zero', () => {
@@ -435,7 +423,7 @@ const METRIC_TITLES = ['CACHE HIT', 'PER TURN', 'BY MODEL', 'TOOL OUTPUT']
 const mcolW = (w: number) => Math.floor((w - 26 - 3 * 26) / 4)
 
 test('the metric row is under the columns from three columns, warm and cold, 92 px taller, with four equal cells and no DELEGATION', () => {
-  for (const [w, top] of [[1100, YC + ROW + 31], [1400, YC + ROW]] as const)
+  for (const [w, top] of [[1100, YC + ROW], [1400, YC + ROW]] as const)
     for (const v of [WARM, COLD]) {
       const plain = cardSvg(v, w, SPEND, [PACE_OK])
       const c = cardSvg(v, w, SPEND, [PACE_OK], METRICS)
@@ -539,7 +527,7 @@ const delegZone = (m: Metrics | null, w = 1400) => {
 }
 
 test('delegation: the saving in the OK colour, a cost row and a time row on EMPTY tracks, and the work against the time', () => {
-  const colW = colWOf(1400, 4)
+  const colW = colWOf(1400, 3)
   const s = delegZone(METRICS)
   expect(s).toContain('<tspan font-size="38">≈$3.10</tspan><tspan font-size="15" font-weight="500" fill="#8d8775" dx="7">saved</tspan>')
   expect(s).toContain(`<text x="13" y="${YC + 62}" font-weight="600" fill="${OK}">`)
@@ -572,7 +560,8 @@ test('delegation is a column at every width, with its figure and caption on the 
 test('the delegation caption gives work, wall time and the speed-up, shortened to fit the column', () => {
   const at = (w: number, m: Metrics) => plainText(delegZone(m, w))
   expect(at(1700, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
-  expect(at(1400, METRICS)).toContain('12m work in 5m · 2.4× faster')
+  expect(at(1400, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
+  expect(at(1100, METRICS)).toContain('12m work in 5m · 2.4× faster')
   expect(at(300, METRICS)).toContain('12m work in 5m · 2.4× faster')
   // Never overlapped: 1.0x, said honestly; a sub-minute run is written in seconds.
   expect(at(1700, { ...METRICS, deleg: { ...DELEG, workMs: 90_000, wallMs: 90_000 } })).toContain('1m of agent work in 1m · 1.0× faster')
@@ -626,7 +615,7 @@ test('the runway is a second caption under IN CACHE at every width, with the row
   expect(s).toContain('>~40 turns left at +6k a turn<')
   expect(s).toContain('>24% of the 1M context · 760k free<')
   // Both captions, and the dots, sit inside the 124 px row, above the rule under it.
-  const x = colXOf(1400, 4, 1)
+  const x = colXOf(1400, 3, 1)
   const ys = (re: RegExp) => Number(re.exec(s)![1])
   const second = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>~40 turns left`))
   const first = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>24% of the`))

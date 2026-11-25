@@ -125,8 +125,8 @@ export const CARD_COL_PX = 315
 /**
  * How many columns the card takes at a drawn width of `drawnPx`: as many as fit at CARD_COL_PX each plus
  * the 26 px gap and 13 px margin on both sides (the margins and one gap fewer than columns cancel out:
- * (W - 26 + 26) / (CARD_COL_PX + 26)), at least one and at most four. The zones come in the order
- * DELEGATION, IN CACHE, SPEND, KEEP WARM; the ones left without a column become status lines.
+ * (W - 26 + 26) / (CARD_COL_PX + 26)), at least one and at most four. The card draws at most three
+ * (DELEGATION, IN CACHE, SPEND), wider at four; the zones left without a column become status lines.
  */
 export const cardColsOf = (drawnPx: number): number => Math.min(4, Math.max(1, Math.floor((drawnPx - 26 + 26) / (CARD_COL_PX + 26))))
 

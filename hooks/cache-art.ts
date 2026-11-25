@@ -145,6 +145,36 @@ export const keepWarmCost = (v: CacheView): { perHour: number; cold: number; bre
   return { perHour, cold, breakEvenH: perHour > 0 ? cold / perHour : Infinity }
 }
 
+/** A model as the card writes it: Opus, Sonnet. */
+export const modelName = (m: Model): string => m.id[0].toUpperCase() + m.id.slice(1)
+
+/** The models whose cold re-cache costs less than this session's own, in MODELS order, each as `Sonnet $0.96`. */
+export const cheaperModels = (v: CacheView): string[] => {
+  const own = mineModel(v)
+  return own ? MODELS.filter(m => coldCost(m, v.tokens) < coldCost(own, v.tokens)).map(m => `${modelName(m)} ${usd(coldCost(m, v.tokens))}`) : []
+}
+
+/**
+ * The hover text of the WARM/COLD chip: the keep-warm figures that used to be a card column. `keep` is the
+ * conversation's switch (null when cache-tax runs it and there is no switch); `saved` what pings have saved.
+ */
+export const chipTip = (v: CacheView, saved: number, keep: boolean | null): string => {
+  const left = Math.max(0, TTL_MIN - v.idleMin)
+  const kw = keepWarmCost(v)
+  if (!kw) return v.mode === 'cold' ? `Cold, idle ${v.idle}` : `Warm, cold in ${left}m`
+  if (v.mode === 'cold') {
+    const cheaper = cheaperModels(v)
+    return `Cold, idle ${v.idle}. The next message re-caches for ${usd(kw.cold)} on ${modelName(mineModel(v)!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}. Keep warm costs ${usd(kw.perHour)} an hour.`
+  }
+  return (
+    `Warm for ${left} more ${left === 1 ? 'minute' : 'minutes'}` +
+    (keep === null ? '' : ` · keep warm ${keep ? 'on' : 'off'}, ${usd(kw.perHour)} an hour`) +
+    `. Going cold would cost ${usd(kw.cold)} to re-cache` +
+    (saved > 0 ? ` · saved ${usd(saved)} so far` : '') +
+    '.'
+  )
+}
+
 /** The break-even as the card writes it: ~3h, or >24h when it is longer than a day. */
 export const fmtBreakEven = (h: number): string => (h > 24 ? '>24h' : `~${Math.max(1, Math.round(h))}h`)
 
@@ -378,11 +408,12 @@ const statusH = (lines: number): number => STATUS_PITCH * lines + 4
 const METRIC_H = 92
 
 // The card is one layout at every width, a pace strip across the top and under it the columns that fit
-// (cardColsOf), in the order of what matters most: DELEGATION, IN CACHE, SPEND, KEEP WARM. A zone with no
+// (cardColsOf, three at most), in the order of what matters most: DELEGATION, IN CACHE, SPEND (keep warm is the chip's
+// hover and the alt text, not a zone). A zone with no
 // column of its own is a status line below; the metric row (cache hit, cost per turn, by model) joins from
 // three columns, and only while the card stays within maxH drawn px (else the band scrolls). Its height
 // depends on the width and maxH only, never on the data.
-export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, maxH = Infinity): { source: string; w: number; h: number; alt: string } => {
+export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, maxH = Infinity): { source: string; w: number; h: number; alt: string; cols: number } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -503,59 +534,12 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     return g + big(x, y + 62, fig, 38, 'this thread', 15) + chart + (caption ? t(x, y + 108, caption, { size: capSize(w), w: 500 }) : '')
   }
 
-  // The models whose cold re-cache costs less than this session's own, in MODELS order: what to switch to
-  // while the cache is cold. A model name as the card writes it: Opus, Sonnet.
+  // The keep-warm figures: no column on the card any more (they are the chip's hover), only the alt text.
   const own = mineModel(v)
-  const name = (m: Model) => m.id[0].toUpperCase() + m.id.slice(1)
-  const cheaper = own ? MODELS.filter(m => coldCost(m, v.tokens) < coldCost(own, v.tokens)).map(m => `${name(m)} ${usd(coldCost(m, v.tokens))}`) : []
-  /**
-   * `head` and `items` joined with ` · `, items dropped until the line fits `px` (a character is estimated at
-   * 0.56 em: the mod cannot measure text), from the front by default, from the back with `keepFirst`; one item always stays.
-   */
-  const fitJoin = (head: string, items: string[], px: number, size: number, keepFirst = false) => {
-    const line = (l: string[]) => [head, ...l].filter(Boolean).join(' · ')
-    let list = items
-    while (list.length > 1 && line(list).length * size * 0.56 > px) list = keepFirst ? list.slice(0, -1) : list.slice(1)
-    return line(list)
-  }
-
-  // What keeping the cache warm costs an hour, and what letting it go cold costs.
+  const name = modelName
+  const cheaper = cheaperModels(v)
   const kw = keepWarmCost(v)
   const saved = spend?.saved ?? 0
-  const zoneKeep = (x: number, y: number, w: number) => {
-    const g = t(x, y + 24, cold && kw ? 'RE-CACHE NOW' : 'KEEP WARM', { size: 14, ls: 1.4 })
-    if (!kw) return g + t(x, y + 62, 'model not priced', { size: 18, w: 500 })
-    if (cold) {
-      // Cold: what the next message costs on this model, the cheaper ones to switch to, and what warm would cost.
-      const cap = capSize(w)
-      const cheap = cheaper.length ? fitJoin('', cheaper, w, cap) : ''
-      return (
-        g +
-        big(x, y + 62, usd(kw.cold), 38, `on ${name(own!)}`, 15, HUE.cold) +
-        (cheap ? t(x, y + 88, cheap, { size: cap, w: 500 }) : '') +
-        t(x, y + (cheap ? 108 : 88), `warm costs ${usd(kw.perHour)}/h`, { size: cap, w: 500 })
-      )
-    }
-    // The break-even line only where there is room for it, and only when it is under a day: both costs grow
-    // with the cache alike, so the ratio barely moves (about 30 hours at today's prices) and a line that
-    // always says ">24h" tells nothing.
-    const pings = spend?.pings ?? 0
-    const cheaperLine = `warm is cheaper if back within ${fmtBreakEven(kw.breakEvenH)}`
-    const last =
-      saved > 0 || pings > 0
-        ? t(x, y + 108, `saved ${usd(saved)} · pings ${usd(pings)}`, { size: capSize(w), w: 500 })
-        : kw.breakEvenH <= 24 && cheaperLine.length * capSize(w) * 0.56 <= w
-          ? t(x, y + 108, cheaperLine, { size: capSize(w), w: 500 })
-          : ''
-    return (
-      g +
-      big(x, y + 62, usd(kw.perHour), 38, '/h', 15) +
-      // The cold price in the cold hue, as the draft had it: it is what a cold cache costs.
-      `<text x="${x}" y="${y + 88}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">going cold costs ` +
-      `<tspan fill="${HUE.cold}" font-weight="700">${usd(kw.cold)}</tspan></text>` +
-      last
-    )
-  }
 
   // DELEGATION: what subagents saved, two compare rows (cost and time against doing it all on the main model, one
   // after another) beside the figure, and the work done against the time it took. While the figure is unknown it
@@ -740,7 +724,8 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   }
 
   // The columns: n equal ones with 26 px between them, 13 px at the sides.
-  const n = cardColsOf(W)
+  // Three zones: a fourth column of the band widens the three instead of drawing a fourth.
+  const n = Math.min(3, cardColsOf(W))
   const colW = Math.floor((W - 26 - (n - 1) * 26) / n)
   const colX = (i: number) => 13 + i * (colW + 26)
   const yc = PACE_H
@@ -748,7 +733,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     (x: number) => zoneDeleg(x, yc, colW),
     (x: number) => zoneSize(x, yc, colW, { runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }),
     (x: number) => zoneSpend(x, yc, colW),
-    (x: number) => zoneKeep(x, yc, colW),
   ]
   let g = paceStrip() + hline(PACE_H)
   for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i](colX(i))
@@ -758,15 +742,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   // longest variant that fits the line.
   const SS = W < 560 ? 16 : 18
   const lineRoom = W - 26 - 14
-  const keepVariants = !kw
-    ? ['keep warm: model not priced']
-    : cold
-      ? [fitJoin(`re-cache ${usd(kw.cold)} on ${name(own!)}`, cheaper, lineRoom, SS), `re-cache ${usd(kw.cold)} on ${name(own!)}`]
-      : [
-          `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}` + (saved > 0 ? ` · saved ${usd(saved)}` : ''),
-          `keep warm ${usd(kw.perHour)}/h · going cold ${usd(kw.cold)}`,
-          `keep warm ${usd(kw.perHour)}/h`,
-        ]
   const spendHead = `≈${usd(total)} this thread`
   const status: { dot: string; variants: string[] }[] = [
     {
@@ -778,8 +753,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       ],
     },
     { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] },
-    // Keep warm's dot: green while the cache is warm, the cold hue once it has gone cold.
-    { dot: cold ? HUE.cold : OK, variants: keepVariants },
   ].slice(n - 1)
   if (status.length) {
     g += hline(H)
@@ -828,5 +801,5 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     (saved > 0 ? ` Keep-warm pings have saved about ${usd(saved)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
     metricsAlt
-  return { source: svgDoc(W, h, body, true), w: W, h, alt }
+  return { source: svgDoc(W, h, body, true), w: W, h, alt, cols: n }
 }

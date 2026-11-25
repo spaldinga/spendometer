@@ -12,7 +12,7 @@ import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, ORANGE, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
-  MODELS, bandPx, cardSvg, chipSvg, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
+  MODELS, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceRow, TurnUsage } from './cache-art'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
@@ -878,11 +878,11 @@ export const register: Register = on => {
           <Text wrap="wrap">{text}</Text>
         </Box>
       ) : null
-    // The labels: an icon, and on the wide layout its word too.
-    const keepLabel = (isWide: boolean) => `${keep ? '🔥' : '🧊'}${isWide ? ' Keep warm' : ''}`
-    const keepButton = (isWide: boolean) => keep === null ? null : (
+    // The keep warm button is the flame alone at every width: its figures are the chip's hover.
+    const keepLabel = keep ? '🔥' : '🧊'
+    const keepButton = keep === null ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={1}>
-        <Button key="keep-warm" label={keepLabel(isWide)} onPress={() => pressKeep($, kw, keep)} />
+        <Button key="keep-warm" label={keepLabel} onPress={() => pressKeep($, kw, keep)} />
         {tip(
           'keep',
           keep
@@ -928,7 +928,7 @@ export const register: Register = on => {
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
         <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, keep warm, pace and the metrics.')}
+        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the metrics.')}
       </Box>
     ) : null
 
@@ -979,17 +979,22 @@ export const register: Register = on => {
     const summaryText = !view ? '' : view.mode === 'cold' ? ` ${view.idle}${nextCost ? ` · ${nextCost}` : ''}` : ` ${minsLeft}m left`
     // The cache state shows in the row whether the card is open or not.
     const hasCache = view !== null
-    const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + CACHE_MARGIN : 0
+    // The keep button sits right after the chip, so its columns belong to the cache part, not to the buttons.
+    const keepWideCols = keep !== null ? buttonCols(keepLabel, BUTTON_GAP, k) : 0
+    const keepCompactCols = keep !== null ? COMPACT_BUTTON_COLS : 0
+    const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + keepWideCols + CACHE_MARGIN : 0
     const cacheBlockCols =
       hasCache && view
         ? Math.max(badgeCols, blockCols([view.mode === 'cold' ? `${view.idle} idle` : `${minsLeft}m left`, nextCost ? `${nextCost} next` : ''], 0, k)) + CACHE_MARGIN
         : 0
+    // Before the first reply there is no chip to sit beside: the keep button stays among the buttons.
+    const keepAlone = !view && keep !== null
     const buttonsWideCols =
       (button ? FOLD_COLS : 0) +
-      (keep !== null ? buttonCols(keepLabel(true), BUTTON_GAP, k) : 0) +
+      (keepAlone ? buttonCols(keepLabel, BUTTON_GAP, k) : 0) +
       (wrapShown ? buttonCols(wrapLabel(true), BUTTON_GAP, k) : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
-    const buttonsCols = ((button ? 1 : 0) + (keep !== null ? 1 : 0) + (wrapShown ? 1 : 0)) * COMPACT_BUTTON_COLS
+    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (wrapShown ? 1 : 0)) * COMPACT_BUTTON_COLS
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
@@ -1008,11 +1013,11 @@ export const register: Register = on => {
         0,
       ) +
       (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
-      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + COMPACT_MARGIN : 0)
+      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + keepCompactCols + COMPACT_MARGIN : 0)
     const need = {
       wide: rowCols(true, CELLS, cacheInlineCols),
       compact: Array.from({ length: COMPACT_STEPS }, (_, s) => (waitingOnly ? rowCols(false, CELLS, 0) : compactAt(s))),
-      tight: view ? ROW_PAD + badgeCols + t(summaryText) : rowCols(false, TIGHT_CELLS, 0),
+      tight: view ? ROW_PAD + badgeCols + t(summaryText) + keepCompactCols : rowCols(false, TIGHT_CELLS, 0),
       buttons: buttonsCols,
       buttonsWide: buttonsWideCols,
     }
@@ -1024,7 +1029,7 @@ export const register: Register = on => {
       kind: kind === 'stacked' ? `compact step ${compactStep}` : kind,
       need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}`,
     }
-    const buttons = [keepButton(kind === 'wide'), wrapButton(kind === 'wide')]
+    const buttons = [keepAlone ? keepButton : null, wrapButton(kind === 'wide')]
     // Buttons that do not fit beside the row take a row of their own, right-aligned, under the band's main rows.
     const buttonsRowEl = buttonsRow ? (
       <Box key="buttons-row" flexDirection="row" paddingX={1}>
@@ -1299,6 +1304,9 @@ export const register: Register = on => {
       : [<Text key="left" color={hue} bold>{` ${Math.max(0, TTL_MIN - view.idleMin)}m left`}</Text>]
 
 
+    // The chip's hover: what keeping warm costs and what going cold would cost (the card no longer has a column for it).
+    const chipHover = tip('chip', chipTip(view, paid?.saved ?? 0, keep), 'left')
+
     let rows
     if (kind === 'wide') {
       rows = (
@@ -1308,8 +1316,12 @@ export const register: Register = on => {
           {/* WARM or COLD stays in the row whether the card is open or not. */}
           {(
             <Box key="inline" flexDirection="row" flexShrink={0} marginRight={2} alignItems="center">
-              {badge}
-              {summary}
+              <Box key="chip-group" flexDirection="row" alignItems="center">
+                {badge}
+                {summary}
+                {chipHover}
+              </Box>
+              {keepButton}
             </Box>
           )}
           {grow}
@@ -1323,11 +1335,14 @@ export const register: Register = on => {
           {usage}
           {(
             <Box key="block" flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
-              {compactChip}
-              {showNext ? <Text key="next-gap"> </Text> : null}
-              {showNext && mine ? <Text key="next-cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
-              {showNext ? <Text key="next" color="subtle"> next</Text> : null}
-              {tip('chip', cold ? `Cold, idle ${view.idle}` : `Warm, cold in ${Math.max(0, TTL_MIN - view.idleMin)}m`)}
+              <Box key="chip-group" flexDirection="row" alignItems="center">
+                {compactChip}
+                {showNext ? <Text key="next-gap"> </Text> : null}
+                {showNext && mine ? <Text key="next-cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
+                {showNext ? <Text key="next" color="subtle"> next</Text> : null}
+                {chipHover}
+              </Box>
+              {keepButton}
             </Box>
           )}
           {grow}
@@ -1342,8 +1357,12 @@ export const register: Register = on => {
           {usage}
         </Box>,
         <Box key="cache" flexDirection="row" paddingX={1} alignItems="center">
-          {badge}
-          {summary}
+          <Box key="chip-group" flexDirection="row" alignItems="center">
+            {badge}
+            {summary}
+            {chipHover}
+          </Box>
+          {keepButton}
           {grow}
           {inlineButtons}
         </Box>,
@@ -1370,7 +1389,7 @@ export const register: Register = on => {
       const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings, commits: paid?.commits, prs: paid?.prs }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), cardMaxH)
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
       showProgress = fit.progress
-      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${cardColsOf(W)} cols`
+      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${c.cols} cols`
       card = (
         <Box key="card" flexDirection="row">
           <Svg source={c.source} alt={c.alt} width={Math.round(c.w * scale)} height={shownH(c.h)} isInteractive={kind !== 'tight'} />

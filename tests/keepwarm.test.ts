@@ -418,17 +418,17 @@ test('the button follows an open window a typed duration opened, and follows off
   engine(on)
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   await keepwarm($, '90m')
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
   await clock.advance(2 * HOUR)
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   await keepwarm($, '3h')
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
   await keepwarm($, 'off')
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   await keepwarm($, '')
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
   await band.unmount()
 })
 
@@ -437,26 +437,26 @@ test('pressing the button while it is on turns the switch off and stops the wind
   const { store, forks } = engine(on, { keep: true })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
 
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   expect(recOf(store)?.on).toBe(false)
   expect(recOf(store)?.deadline).toBeUndefined()
   // The default for new conversations is not touched by the button.
   expect(store.get('keep')).toBe(true)
 
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
   expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 6 * HOUR })
   expect(forks.length).toBe(0)
 
   // A window opened by a typed duration, switch off: the button is 🔥, and pressing it stops the window.
   await keepwarm($, 'off')
   await keepwarm($, '90m')
-  expect(await label(band)).toBe('🔥 Keep warm')
+  expect(await label(band)).toBe('🔥')
   await band.press({ key: 'keep-warm' })
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   expect(await keepwarm($, 'status')).toBe('keepwarm is off')
   await band.unmount()
 })
@@ -476,13 +476,13 @@ test('two conversations in one store: a press in A leaves B as it was', async ($
   await seed($, 18)
   const a = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await a.press({ key: 'keep-warm' })
-  expect(await label(a)).toBe('🧊 Keep warm')
+  expect(await label(a)).toBe('🧊')
   await a.unmount()
 
   // Conversation B has no choice of its own: it reads the default.
   session.id = 'S2'
   const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await label(b)).toBe('🔥 Keep warm')
+  expect(await label(b)).toBe('🔥')
   expect(store.has('keep:S2')).toBe(false)
   await b.unmount()
 })
@@ -497,9 +497,9 @@ test('a conversation with no choice of its own follows the default; its own choi
     await b.unmount()
     return l
   }
-  expect(await shown()).toBe('🔥 Keep warm')
+  expect(await shown()).toBe('🔥')
   session.id = 'S2'
-  expect(await shown()).toBe('🧊 Keep warm')
+  expect(await shown()).toBe('🧊')
 })
 
 test('the switch shows in the terminal too, and before the first reply', async ($, on) => {
@@ -508,7 +508,7 @@ test('the switch shows in the terminal too, and before the first reply', async (
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await label(band)).toBe('🧊 Keep warm')
+  expect(await label(band)).toBe('🧊')
   await band.unmount()
 })
 

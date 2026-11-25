@@ -52,8 +52,7 @@ Press `+` on the band (or type `/spendometer fold`) to open the card. It has one
 width. Across the top, always, is the pace of each usage window against its reset, one line a
 window: the bar is how much of the limit is used (red when it runs out before the reset), the tick is how much of the window's time has gone, so a bar past the tick is faster than the window allows and one behind it is fine, and the words say whether it
 lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
-the cache, the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost) and what keeping the
-cache warm costs. A zone with no column of its own becomes one status line below. From three
+the cache and the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost). What keeping the cache warm costs is not a column: it is the hover of the WARM/COLD chip, beside the 🔥 button. A zone with no column of its own becomes one status line below. From three
 columns the card adds a row with the cache hit rate, the cost per turn (red when the last turn cost
 three times the average or more), the cost by model and the tool output (the tokens of tool output that entered the conversation, by tool, with how many files were read again unchanged).
 
@@ -64,9 +63,7 @@ three times the average or more), the cost by model and the tool output (the tok
   <img alt="The open card, wide and warm: the pace of the 5-hour window running out in about 2h 40m and the 7-day window lasting past its reset, then columns for delegation (about $3.40 saved), 190k tokens in cache with about 40 turns of context left, and $16.61 spent in this thread with seven day bars, a status line for keep warm at $0.05 an hour with $4.20 saved, and a row with a 96% cache hit, $0.38 a turn and Opus at 78% of the cost" src="assets/card-b-1200-warm-light.svg">
 </picture>
 
-**Narrow.** One column and a status line each for the cache, the spend and keep warm (or
-re-cache, once the cache has gone cold and the line says what it costs on this model and on the
-cheaper ones).
+**Narrow.** One column and a status line each for the cache and the spend (the cache line reads re-cache, once the cache has gone cold). Keep warm is in the chip's hover.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-600-warm-dark.svg">
@@ -141,7 +138,7 @@ press **Proceed**.
 
 - **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): one button, per conversation, keeps the
   prompt cache alive between your messages, so coming back after a break doesn't re-pay for the
-  whole context. The card shows what it costs an hour and what it has saved.
+  whole context. The button is the flame right after the WARM/COLD chip; hover the chip to see what keeping warm costs an hour and what it has saved.
 - **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
   conversation's cache go cold.
 

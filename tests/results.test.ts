@@ -42,8 +42,8 @@ test('the results text leaves out a zero part and counts one in the singular', (
 })
 
 test('the SPEND column has the results line at 1100 and 1400, and the card is no taller for it', () => {
-  // Four columns are narrower than three: the shorter wording is the one that fits.
-  for (const [w, line] of [[1400, '4 commits · 1 PR · $12.65 each'], [1100, '4 commits · 1 PR · ≈$12.65 a result']] as const) {
+  // Both widths draw three columns now, and the longest wording fits.
+  for (const [w, line] of [[1400, '4 commits · 1 PR · ≈$12.65 a result'], [1100, '4 commits · 1 PR · ≈$12.65 a result']] as const) {
     const s = cardSvg(WARM, w, WITH)
     expect(plainText(body(s.source))).toContain(line)
   }
