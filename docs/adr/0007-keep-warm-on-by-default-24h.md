@@ -17,7 +17,7 @@ of 6 hours after each turn, and was shown as a flame or an ice cube. User feedba
   time the default was off does not turn it off.
 - Every message that reached the cache holds a window of 24 hours from then; the next message starts the 24 hours again.
 - Unticking is sticky per conversation: the switch stays off, and a message neither ticks it back nor opens a window.
-- The button is a checkbox, `☑` or `☐`. Its hover says what the state means, including "ticked, but the cache went
+- The button is a checkbox, `✓` or `✗`. Its hover says what the state means, including "ticked, but the cache went
   cold" (the computer slept or was off, so nothing could ping) and a window that stopped with its reason. The next
   message re-writes the cache and starts the pings again.
 - `/keepwarm on` is the bare form, and `/spendometer keepwarm [args]` does what `/keepwarm` does. `/spendometer status`
@@ -28,6 +28,6 @@ of 6 hours after each turn, and was shown as a flame or an ice cube. User feedba
   is the way to stop it, and it is remembered for that conversation.
 - A computer that is off or asleep cannot ping: the cache can still go cold overnight. The box stays ticked and the
   hover says why, so it can be trusted.
-- The label `☑`/`☐` is one character, but a font may draw it as two columns; the layout measures it as two.
+- The label `✓`/`✗` is one character, but a font may draw it two columns wide; the layout measures it as two. The desktop app draws a button's text in its own colour, so the `✓` is white, not the pace's green; a `✅` emoji was tried and the plain `✓` preferred.
 - ADR 0004 still holds for the pinger and for staying passive beside cache-tax; its switch defaults and the 6-hour
   window are replaced by this decision.

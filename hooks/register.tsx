@@ -915,12 +915,14 @@ export const register: Register = on => {
           <Text wrap="wrap">{text}</Text>
         </Box>
       ) : null
-    // The keep warm button is a checkbox at every width: ☑ ticked, ☐ unticked. Its hover says what the state means,
-    // the cold cache included; the figures are the chip's hover.
-    const keepLabel = keep ? '☑' : '☐'
+    // The keep warm button is a checkbox at every width: ✓ ticked, a dim ✗ unticked. The desktop app draws a button's
+    // text in its own colour, so the ✓ is white there, not the pace's green.
+    // Its hover says what the state means, the cold cache included; the figures are the chip's hover.
+    const keepLabel = keep ? '✓' : '✗'
     const keepButton = keepView === null ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        <Button key="keep-warm" label={keepLabel} onPress={() => pressKeep($, kw)} />
+        {/* plain: no brackets in the terminal and no button background on the desktop. */}
+        <Button key="keep-warm" label={keepLabel} plain dimColor={!keep} onPress={() => pressKeep($, kw)} />
         {tip('keep', keepTip(keepView))}
       </Box>
     )
@@ -1053,7 +1055,7 @@ export const register: Register = on => {
     // The cache state shows in the row whether the card is open or not.
     const hasCache = view !== null
     // The keep button sits right after the chip, so its columns belong to the cache part, not to the buttons.
-    // ☑ and ☐ are one character, but a font may draw them as two-column emoji: measured as the two columns the flame took, so no layout is chosen that is too wide.
+    // ✓ and ✗ are one character, but a font may draw them two columns wide: measured as two, as the flame was.
     const keepButtonCols = buttonCols('  ', BUTTON_GAP, k)
     const keepWideCols = keep !== null ? keepButtonCols : 0
     const keepCompactCols = keep !== null ? COMPACT_BUTTON_COLS : 0
