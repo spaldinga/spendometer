@@ -48,15 +48,9 @@ details.
 
 ### A card with the numbers behind it
 
-Press `+` on the band (or type `/spendometer fold`) to open the card. It has one layout at every
-width. Across the top, always, is the pace of each usage window against its reset, one line a
-window: the bar is how much of the limit is used (red when it runs out before the reset), the tick is how much of the window's time has gone, so a bar past the tick is faster than the window allows and one behind it is fine, and the words say whether it
-lasts. Under it come the columns that fit, most important first: delegation (what subagents saved),
-the cache and the spend (this thread and the last seven days, today in orange, with a line under it for the commits and pull requests the thread made and what a result cost). What keeping the cache warm costs is not a column: it is the hover of the WARM/COLD chip, beside the 🔥 button. A zone with no column of its own becomes one status line below. From three
-columns the card adds a row with the cache hit rate, the cost per turn (red when the last turn cost
-three times the average or more), the cost by model and the tool output (the tokens of tool output that entered the conversation, by tool, with how many files were read again unchanged).
+Press `+` on the band (or type `/spendometer fold`) to open the card. It shows one tab at a time, picked with the buttons before `−` (words on a wide band, a glyph each on a narrow one; the one in use is in brackets) or with `/spendometer tab overview|context|cost`; the choice is kept. **Overview** is the pace of each usage window against its reset (the bar is how much of the limit is used, red when it runs out before the reset; the tick is how much of the window's time has gone), then delegation (what subagents saved) and the spend (this thread and the last seven days, with the commits and pull requests it made and what a result cost). **Context** is the conversation size with the turns left, and the tool output (tokens by tool, with how many files were read again unchanged). **Cost** is the cache discount, the cost per message (red when the last one cost three times the average or more) and the cost by model. What keeping the cache warm costs is the hover of the WARM/COLD chip, beside the 🔥 button. A zone with no column of its own becomes one status line below.
 
-**Wide.** Three columns and the metric row.
+**Wide.** Overview in two columns.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">

@@ -394,6 +394,11 @@ export const fmtReset = (iso: string | undefined, now: number): string => {
  */
 export type CardSpend = { main: number; subs: number; days?: number[]; saved?: number; pings?: number; commits?: number; prs?: number }
 
+/** The card's tabs, and how they are named. */
+export type Tab = 'overview' | 'context' | 'cost'
+export const TABS: readonly Tab[] = ['overview', 'context', 'cost']
+export const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', context: 'Context', cost: 'Cost' }
+
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
 
@@ -404,16 +409,13 @@ const ROW = 124
 /** A status line's pitch, and what a block of them takes under its rule: the first baseline 24 px down, 7 px under the last. */
 const STATUS_PITCH = 27
 const statusH = (lines: number): number => STATUS_PITCH * lines + 4
-/** The metric row: its own 90 px and the 2 px under the rule. */
-const METRIC_H = 92
 
-// The card is one layout at every width, a pace strip across the top and under it the columns that fit
-// (cardColsOf, three at most), in the order of what matters most: DELEGATION, IN CACHE, SPEND (keep warm is the chip's
-// hover and the alt text, not a zone). A zone with no
-// column of its own is a status line below; the metric row (cache hit, cost per turn, by model) joins from
-// three columns, and only while the card stays within maxH drawn px (else the band scrolls). Its height
-// depends on the width and maxH only, never on the data.
-export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, maxH = Infinity): { source: string; w: number; h: number; alt: string; cols: number } => {
+// The card shows one tab at a time (Overview, Context or Cost). Overview is the pace strip across the top and
+// under it DELEGATION and SPEND; Context is CONVERSATION SIZE (RE-CACHE once cold) and TOOL OUTPUT; Cost is
+// CACHE DISCOUNT, PER MESSAGE and BY MODEL. Each takes as many columns as it has zones and fit (cardColsOf);
+// a zone with no column of its own is a status line below. Keep warm is the chip's hover and the alt text,
+// not a zone. The height depends on the width and the tab only, never on the data.
+export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, tab: Tab = 'overview'): { source: string; w: number; h: number; alt: string; cols: number } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const HUEM = HUE[mode]
@@ -457,7 +459,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   const pct = Math.round(share * 100)
   const zoneSize = (x: number, y: number, w: number, o: { runway?: string[] } = {}) => {
     const caption = capPick([`${pct}% of the ${tok(v.window)} context · ${tok(free)} free`, `${pct}% of ${tok(v.window)} · ${tok(free)} free`], w, capSize(w))
-    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'IN CACHE', { size: 14, ls: 1.4 })
+    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'CONVERSATION SIZE', { size: 14, ls: 1.4 })
     // 25 dots a row on the page; fewer only where the band is too narrow for them.
     const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
     const lit = Math.round(share * cols * 2)
@@ -645,115 +647,144 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     return s
   }
 
-  // The metric row: three cells across the card. A cell is its title, its figure (26 px, the unit after
-  // it) and its caption; while its figure is unknown it shows a dash and says when it will not be.
-  const metricsRow = (colW: number, colX: (i: number) => number, y: number) => {
-    const m = metrics!
-    const size = capSize(colW)
-    const words = (i: number, str: string) => t(colX(i), y + 80, esc(str), { size, w: 500 })
-    const head = (i: number, title: string) => t(colX(i), y + 22, title, { size: 14, ls: 1.4 })
-    const cell = (i: number, title: string, known: boolean, fig: string, unit: string, caption: string) =>
-      head(i, title) + big(colX(i), y + 54, known ? esc(fig) : '—', 26, known ? unit : '', 14) + (known ? caption : words(i, 'after a few turns'))
-    const rule = (i: number) => vline(colX(i) - 13, y + 12, 66)
-    // The last turn, flagged in the danger colour when it is far above the average.
-    const last =
-      m.last === null
-        ? ''
-        : `<text x="${colX(1)}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">last ${usd(m.last)}` +
-          (m.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${m.multiple}× avg</tspan>` : '') +
-          '</text>'
+  // The metric zones of the Context and Cost tabs: each is shaped like the other zones (a title, a 38 px figure
+  // with its unit, a caption on the row's last line) and says so while its figure is unknown.
+  const mhead = (x: number, y: number, title: string) => t(x, y + 24, title, { size: 14, ls: 1.4 })
+  const mwords = (x: number, y: number, w: number, str: string) => t(x, y + 108, esc(str), { size: capSize(w), w: 500 })
+  const mdash = (x: number, y: number, w: number, title: string) => mhead(x, y, title) + big(x, y + 62, '—', 38, '', 15) + mwords(x, y, w, 'after a few turns')
+  const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
 
-    // BY MODEL: the biggest share as the figure, a split bar of all shares and each model's cost as the caption.
-    const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
-    const spentBy = m.models.reduce((a, [, c]) => a + c, 0)
-    const byModel = () => {
-      const x = colX(2)
-      if (m.models.length === 0 || spentBy <= 0) return head(2, 'BY MODEL') + big(x, y + 54, '—', 26, '', 14) + words(2, 'after a few turns')
-      const [topId, topCost] = m.models[0]
-      const fig =
-        `<text x="${x}" y="${y + 54}" font-weight="600" fill="${TEXT}"><tspan font-size="26">${famName(topId)}</tspan>` +
-        `<tspan font-size="26" fill="${MODEL_COLOR[topId] ?? TEXT}" dx="8">${Math.round((topCost / spentBy) * 100)}%</tspan></text>`
-      // The split bar: 6 px tall, 2 px between the parts, as wide as the column.
-      const gap = 2
-      const room = colW - gap * (m.models.length - 1)
-      let ws = m.models.map(([, c]) => Math.max(3, (c / spentBy) * room))
-      const sum = ws.reduce((a, b) => a + b, 0)
-      if (sum > room) ws = ws.map(w => (w * room) / sum)
-      let bx = x
-      let bar = ''
-      m.models.forEach(([id], k) => {
-        bar += `<rect x="${Math.round(bx * 100) / 100}" y="${y + 60}" width="${Math.round(ws[k] * 100) / 100}" height="6" rx="3" fill="${MODEL_COLOR[id] ?? MUTED}"/>`
-        bx += ws[k] + gap
-      })
-      // The first entry is the figure's model, so only its cost; entries are cut from the back until the line fits.
-      let list = m.models.map(([id, c], k) => ({ id, text: k === 0 ? usd(c) : `${famName(id)} ${usd(c)}` }))
-      const len = (l: typeof list) => l.map(e => `■ ${e.text}`).join(' · ').length
-      while (list.length > 1 && len(list) * size * 0.56 > colW) list = list.slice(0, -1)
-      const cap =
-        `<text x="${x}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
-        list.map((e, k) => `${k ? ' · ' : ''}<tspan fill="${MODEL_COLOR[e.id] ?? MUTED}">■</tspan> ${esc(e.text)}`).join('') +
-        '</text>'
-      return head(2, 'BY MODEL') + fig + bar + cap
-    }
-
-    // TOOL OUTPUT: tokens of tool output in the main context as the figure; the top tools as the caption, with the
-    // re-reads of unchanged files in orange after them. Tools are cut from the back until the line fits; the re-read part stays.
-    const toolOut = () => {
-      const reread = m.rereads > 0 ? `${m.rereads} re-read${m.rereads === 1 ? '' : 's'}` : ''
-      const parts = m.tools.map(([name, n]) => `${name} ${tok(n)}`)
-      let list = parts
-      const len = (l: string[]) => (l.join(' · ') + (reread ? (l.length ? ' · ' : '') + reread : '')).length
-      while (list.length > 1 && len(list) * size * 0.56 > colW) list = list.slice(0, -1)
-      const cap =
-        `<text x="${colX(3)}" y="${y + 80}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
-        esc(list.join(' · ')) +
-        (reread ? `<tspan fill="${ORANGE}" font-weight="700">${list.length ? ' · ' : ''}${reread}</tspan>` : '') +
-        '</text>'
-      return cell(3, 'TOOL OUTPUT', m.toolTok > 0, tok(m.toolTok), 'tokens', cap)
-    }
-
-    return (
-      cell(0, 'CACHE HIT', m.hit !== null, `${Math.round((m.hit ?? 0) * 100)}%`, '', words(0, m.perM !== null ? `${usd(m.perM)} per 1M tokens` : 'of input read from cache')) +
-      rule(1) +
-      cell(1, 'PER TURN', m.avg !== null, usd(m.avg ?? 0), 'avg', last) +
-      rule(2) +
-      byModel() +
-      rule(3) +
-      toolOut()
-    )
+  // CACHE DISCOUNT: the share of input read from the cache, with the effective price a million tokens as its caption.
+  const zoneDiscount = (x: number, y: number, w: number) => {
+    if (!metrics || metrics.hit === null) return mdash(x, y, w, 'CACHE DISCOUNT')
+    return mhead(x, y, 'CACHE DISCOUNT') + big(x, y + 62, `${Math.round(metrics.hit * 100)}%`, 38, '', 15) + mwords(x, y, w, metrics.perM !== null ? `${usd(metrics.perM)} per 1M tokens` : 'of input read from cache')
   }
 
-  // The columns: n equal ones with 26 px between them, 13 px at the sides.
-  // Three zones: a fourth column of the band widens the three instead of drawing a fourth.
-  const n = Math.min(3, cardColsOf(W))
+  // PER MESSAGE: the average cost of a message; the last one is the caption, flagged in the danger colour when it is far above the average.
+  const zoneAvg = (x: number, y: number, w: number) => {
+    if (!metrics || metrics.avg === null) return mdash(x, y, w, 'PER MESSAGE')
+    const last =
+      metrics.last === null
+        ? ''
+        : `<text x="${x}" y="${y + 108}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">last ${usd(metrics.last)}` +
+          (metrics.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${metrics.multiple}× avg</tspan>` : '') +
+          '</text>'
+    return mhead(x, y, 'PER MESSAGE') + big(x, y + 62, usd(metrics.avg), 38, 'avg', 15) + last
+  }
+
+  // BY MODEL: the biggest share as the figure, a split bar of all shares and each model's cost as the caption.
+  const zoneModels = (x: number, y: number, w: number) => {
+    const models = metrics?.models ?? []
+    const spentBy = models.reduce((a, [, c]) => a + c, 0)
+    if (models.length === 0 || spentBy <= 0) return mdash(x, y, w, 'BY MODEL')
+    const size = capSize(w)
+    const [topId, topCost] = models[0]
+    const fig =
+      `<text x="${x}" y="${y + 62}" font-weight="600" fill="${TEXT}"><tspan font-size="38">${famName(topId)}</tspan>` +
+      `<tspan font-size="38" fill="${MODEL_COLOR[topId] ?? TEXT}" dx="10">${Math.round((topCost / spentBy) * 100)}%</tspan></text>`
+    // The split bar: 6 px tall, 2 px between the parts, as wide as the column.
+    const gap = 2
+    const room = w - gap * (models.length - 1)
+    let ws = models.map(([, c]) => Math.max(3, (c / spentBy) * room))
+    const sum = ws.reduce((a, b) => a + b, 0)
+    if (sum > room) ws = ws.map(s => (s * room) / sum)
+    let bx = x
+    let bar = ''
+    models.forEach(([id], k) => {
+      bar += `<rect x="${Math.round(bx * 100) / 100}" y="${y + 78}" width="${Math.round(ws[k] * 100) / 100}" height="6" rx="3" fill="${MODEL_COLOR[id] ?? MUTED}"/>`
+      bx += ws[k] + gap
+    })
+    // The first entry is the figure's model, so only its cost; entries are cut from the back until the line fits.
+    let list = models.map(([id, c], k) => ({ id, text: k === 0 ? usd(c) : `${famName(id)} ${usd(c)}` }))
+    const len = (l: typeof list) => l.map(e => `■ ${e.text}`).join(' · ').length
+    while (list.length > 1 && len(list) * size * 0.56 > w) list = list.slice(0, -1)
+    const cap =
+      `<text x="${x}" y="${y + 108}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
+      list.map((e, k) => `${k ? ' · ' : ''}<tspan fill="${MODEL_COLOR[e.id] ?? MUTED}">■</tspan> ${esc(e.text)}`).join('') +
+      '</text>'
+    return mhead(x, y, 'BY MODEL') + fig + bar + cap
+  }
+
+  // TOOL OUTPUT: tokens of tool output in the main context as the figure; the top tools as the caption, with the
+  // re-reads of unchanged files in orange after them. Tools are cut from the back until the line fits; the re-read part stays.
+  const zoneTools = (x: number, y: number, w: number) => {
+    if (!metrics || metrics.toolTok <= 0) return mdash(x, y, w, 'TOOL OUTPUT')
+    const size = capSize(w)
+    const reread = metrics.rereads > 0 ? `${metrics.rereads} re-read${metrics.rereads === 1 ? '' : 's'}` : ''
+    let list = metrics.tools.map(([k, n]) => `${k} ${tok(n)}`)
+    const len = (l: string[]) => (l.join(' · ') + (reread ? (l.length ? ' · ' : '') + reread : '')).length
+    while (list.length > 1 && len(list) * size * 0.56 > w) list = list.slice(0, -1)
+    const cap =
+      `<text x="${x}" y="${y + 108}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
+      esc(list.join(' · ')) +
+      (reread ? `<tspan fill="${ORANGE}" font-weight="700">${list.length ? ' · ' : ''}${reread}</tspan>` : '') +
+      '</text>'
+    return mhead(x, y, 'TOOL OUTPUT') + big(x, y + 62, tok(metrics.toolTok), 38, 'tokens', 15) + cap
+  }
+
+  // One tab at a time. A zone is its drawing and, for a card too narrow for its column, the line it becomes below.
+  type Zone = { draw: (x: number, y: number, w: number) => string; status?: { dot: string; variants: string[] } }
+  const spendHead = `≈${usd(total)} this thread`
+  const mm = metrics
+  const modelsLine = mm && mm.models.length ? mm.models.map(([id, c]) => `${famName(id)} ${usd(c)}`) : []
+  const zonesOf = (which: Tab): Zone[] =>
+    which === 'overview'
+      ? [
+          { draw: zoneDeleg },
+          { draw: zoneSpend, status: { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] } },
+        ]
+      : which === 'context'
+        ? [
+            { draw: (x, y, w) => zoneSize(x, y, w, { runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] })},
+            {
+              draw: zoneTools,
+              status: {
+                dot: MUTED,
+                variants:
+                  mm && mm.toolTok > 0
+                    ? [
+                        `tool output ${tok(mm.toolTok)} tokens` + (mm.tools.length ? ` · ${mm.tools.map(([k, n]) => `${k} ${tok(n)}`).join(' · ')}` : '') + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
+                        `tool output ${tok(mm.toolTok)} tokens` + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
+                        `tool output ${tok(mm.toolTok)} tokens`,
+                      ]
+                    : ['tool output: after a few turns'],
+              },
+            },
+          ]
+        : [
+            { draw: zoneDiscount, status: { dot: MUTED, variants: mm && mm.hit !== null ? [`cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : ''), `cache discount ${Math.round(mm.hit * 100)}%`] : ['cache discount: after a few turns'] } },
+            {
+              draw: zoneAvg,
+              status: {
+                dot: MUTED,
+                variants:
+                  mm && mm.avg !== null
+                    ? [
+                        `per message ${usd(mm.avg)} avg` + (mm.last !== null ? ` · last ${usd(mm.last)}` : '') + (mm.multiple !== null ? ` · ${mm.multiple}× avg` : ''),
+                        `per message ${usd(mm.avg)} avg`,
+                      ]
+                    : ['per message: after a few turns'],
+              },
+            },
+            { draw: zoneModels, status: { dot: MUTED, variants: modelsLine.length ? [`by model ${modelsLine.join(' · ')}`, `by model ${modelsLine.slice(0, 2).join(' · ')}`, `by model ${modelsLine[0]}`] : ['by model: after a few turns'] } },
+          ]
+  const zones = zonesOf(tab)
+
+  // The columns: as many as fit, at most one a zone, 26 px between them, 13 px at the sides.
+  const n = Math.min(zones.length, cardColsOf(W))
   const colW = Math.floor((W - 26 - (n - 1) * 26) / n)
   const colX = (i: number) => 13 + i * (colW + 26)
-  const yc = PACE_H
-  const zones = [
-    (x: number) => zoneDeleg(x, yc, colW),
-    (x: number) => zoneSize(x, yc, colW, { runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }),
-    (x: number) => zoneSpend(x, yc, colW),
-  ]
-  let g = paceStrip() + hline(PACE_H)
-  for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i](colX(i))
+  // Only Overview has the pace strip; the others start at the top.
+  const yc = tab === 'overview' ? PACE_H : 0
+  let g = tab === 'overview' ? paceStrip() + hline(PACE_H) : ''
+  for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i].draw(colX(i), yc, colW)
   let H = yc + ROW
 
   // The zones with no column of their own, one status line each: a small dot, then the text. The text is the
   // longest variant that fits the line.
   const SS = W < 560 ? 16 : 18
   const lineRoom = W - 26 - 14
-  const spendHead = `≈${usd(total)} this thread`
-  const status: { dot: string; variants: string[] }[] = [
-    {
-      dot: HUEM,
-      variants: [
-        `${tok(v.tokens)} in cache · ${pct}% of the ${tok(v.window)} context · ${tok(free)} free`,
-        `${tok(v.tokens)} in cache · ${pct}% of ${tok(v.window)} · ${tok(free)} free`,
-        `${tok(v.tokens)} in cache · ${tok(free)} free`,
-      ],
-    },
-    { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] },
-  ].slice(n - 1)
+  const status = zones.slice(n).flatMap(z => (z.status ? [z.status] : []))
   if (status.length) {
     g += hline(H)
     status.forEach((s, k) => {
@@ -763,24 +794,16 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     H += statusH(status.length)
   }
 
-  // The metric row under its rule, once any of its figures is known and there are columns enough to carry it.
-  const showMetrics = n >= 3 && H + METRIC_H + CARD_TOP <= maxH && !!metrics && (metrics.hit !== null || metrics.avg !== null || metrics.models.length > 0 || metrics.subs > 0 || metrics.toolTok > 0)
-  if (showMetrics) {
-    const mcolW = Math.floor((W - 26 - 3 * 26) / 4)
-    g += hline(H) + metricsRow(mcolW, i => 13 + i * (mcolW + 26), H + 2)
-    H += METRIC_H
-  }
   const h = H + CARD_TOP
   const body = `<g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
-  // What the metric row draws as shapes, in words: the per-type subagent costs live only here. The delegation
-  // sentence stays whenever the saving is known, whether or not the row is there.
-  const m = showMetrics ? metrics : null
+  // What the tabs draw as shapes, in words, whichever tab is shown: the per-type subagent costs live only here.
+  const m = metrics
   const delegAlt = metrics?.deleg
     ? ` Delegating saved about ${usd(metrics.deleg.saved)}; subagents ran ${fmtSpan(metrics.deleg.workMs)} of work in ${fmtSpan(metrics.deleg.wallMs)}.`
     : ''
   const metricsAlt = m
     ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
-      (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${id[0].toUpperCase() + id.slice(1)} ${usd(c)}`).join(', ')}.` : '') +
+      (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${famName(id)} ${usd(c)}`).join(', ')}.` : '') +
       (m.subs > 0 ? ` Subagents cost ${usd(m.subs)}${m.top.length ? ` (${m.top.map(([k, c]) => `${k} ${usd(c)}`).join(', ')})` : ''}.` : '') +
       (m.toolTok > 0
         ? ` Tool output into the context: about ${tok(m.toolTok)} tokens${m.tools.length ? ` (${m.tools.map(([k, n]) => `${k} ${tok(n)}`).join(', ')})` : ''}` +
@@ -791,6 +814,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       (runwayLine ? ` Context runway: ${runwayLine}.` : '')
     : delegAlt
   const alt =
+    `Tab: ${TAB_NAMES[tab]}. ` +
     (cold
       ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
       : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`) +

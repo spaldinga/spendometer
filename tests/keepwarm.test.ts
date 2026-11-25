@@ -1086,15 +1086,20 @@ test('a record from before the metric figures is read as it is and gains them as
   expect(m.ctxPrev).toBe(200000)
 })
 
-test('the wide open card shows the metric row once the record has figures', async ($, on) => {
+test('the open wide card shows the Cost tab figures once the record has them, and Overview its delegation', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(2, 1, 0.5), turns: 4, paidTurns: 2, readTok: 90, inTok: 100, ctxPrev: 100000, growth: 5000, byType: { Explore: 1 } } } })
   await seed($, 18)
   await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160, maxRows: 30 } }).then(async band => {
     await band.press({ key: 'cache-fold' })
+    const overview = JSON.stringify(await band.findAll({ type: 'Svg' }))
+    expect(overview).toContain('DELEGATION')
+    expect(overview).not.toContain('CACHE DISCOUNT')
+    await band.press({ key: 'tab-cost-button' })
     const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
-    for (const t of ['CACHE HIT', 'PER TURN', 'BY MODEL', 'DELEGATION']) expect(svgs).toContain(t)
+    for (const t of ['CACHE DISCOUNT', 'PER MESSAGE', 'BY MODEL']) expect(svgs).toContain(t)
     expect(svgs).toContain('90%')
+    expect(svgs).not.toContain('DELEGATION')
     await band.unmount()
   })
 })
@@ -1187,6 +1192,32 @@ test('/spendometer registers itself, reports status, and answers anything else w
   const usage = await text('nonsense')
   expect(usage).toContain('Usage')
   expect(usage.includes('\n')).toBe(false)
+})
+
+test('/spendometer tab: the card tab is overview until chosen, is set and read through the command and the store, and an unknown one reads as overview', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = engine(on, { keep: true })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
+  // Default: overview, in bold in the list and in the status; nothing stored yet.
+  expect(await text('tab')).toContain('- **overview** (in use): ')
+  expect(await text('status')).toContain('tab: overview')
+  expect(store.has('cardTab')).toBe(false)
+  expect(await text('tab cost')).toBe('tab: cost')
+  expect(store.get('cardTab')).toBe('cost')
+  const list = await text('tab')
+  expect(list).toContain('- **cost** (in use): ')
+  expect(list).toContain('- overview: ')
+  expect(list).toContain('- context: ')
+  expect(await text('status')).toContain('tab: cost')
+  expect(await text('tab context')).toBe('tab: context')
+  expect(store.get('cardTab')).toBe('context')
+  // An unknown name changes nothing and shows the list; an unknown stored value reads as overview.
+  expect(await text('tab nonsense')).toContain('- **context** (in use): ')
+  expect(store.get('cardTab')).toBe('context')
+  store.set('cardTab', 'bogus')
+  expect(await text('tab')).toContain('- **overview** (in use): ')
+  expect((await text('nonsense')).includes('tab [name]')).toBe(true)
 })
 
 test('a command that fails to register does not stop the rest of session start', async ($, on) => {

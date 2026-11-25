@@ -12,9 +12,9 @@ import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import {
   EMPTY, HUE, INK, ORANGE, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
-  MODELS, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
+  MODELS, TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
-import type { CacheView, PaceRow, TurnUsage } from './cache-art'
+import type { CacheView, PaceRow, Tab, TurnUsage } from './cache-art'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
 import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepwarmCommand, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
 export { pingKeptCacheWarm }
@@ -52,6 +52,8 @@ const WRAP_KEY = 'wrapUp'
 const HOLD_KEY = 'hold'
 /** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
 const THEME_KEY = 'progressTheme'
+/** The card's tab in the store: overview, context or cost. */
+const TAB_KEY = 'cardTab'
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
 const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 /** Pace records an older version kept per window kind; no longer used, deleted at session start. */
@@ -248,6 +250,20 @@ const themeOf = async ($: EngineInterface): Promise<ThemeId> => {
   }
 }
 
+/** The card's tab in the store: one it knows, else Overview. */
+const tabOf = async ($: EngineInterface): Promise<Tab> => {
+  try {
+    const v = await $.store.get(TAB_KEY)
+    return TABS.find(id => id === v) ?? 'overview'
+  } catch {
+    return 'overview'
+  }
+}
+
+const TAB_WHAT: Record<Tab, string> = { overview: 'pace, delegation and spend', context: 'conversation size and tool output', cost: 'cache discount, cost per message and by model' }
+const tabList = (now: Tab): string =>
+  `Card tabs, pick one with /${SETTINGS} tab <name>:\n` + TABS.map(id => `- ${id === now ? `**${id}**` : id}${id === now ? ' (in use)' : ''}: ${TAB_WHAT[id]}`).join('\n')
+
 // The answer is shown as markdown: a plain list, the theme in use in bold. A leading * marked it before, and
 // markdown read that one line as a bullet with the lines after it folded into it.
 const themeList = (now: ThemeId): string =>
@@ -260,7 +276,7 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 const settingsAnswer = async ($: EngineInterface, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | progress [id] | wrapup on|off | hold on|off. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | wrapup on|off | hold on|off. With no argument it shows the settings.`
   const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
@@ -277,6 +293,15 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
     const now = await toggleFold($)
     return now === null ? 'no cache card yet: it comes with the first reply' : `cache card: ${now ? 'open' : 'closed'}`
   }
+  if (name === 'tab' && rest.length === 0) {
+    const picked = TABS.find(id => id === value)
+    if (picked) {
+      await $.store.set(TAB_KEY, picked)
+      $.ui.invalidate('ui.render')
+      return `tab: ${picked}`
+    }
+    return tabList(await tabOf($))
+  }
   if (name === 'progress' && rest.length === 0) {
     const picked = value === undefined ? null : themeIdOf(value)
     if (picked) {
@@ -292,6 +317,7 @@ const settingsAnswer = async ($: EngineInterface, args: string): Promise<string>
   return (
     `wrapup: ${wrap ? 'on' : 'off'} - a Wrap up button that runs the debrief skill and lets this conversation go cold\n` +
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
+    `tab: ${await tabOf($)} - the card shows one tab at a time: overview, context or cost\n` +
     `progress: ${await themeOf($)}\n` +
     widthLine()
   )
@@ -928,10 +954,40 @@ export const register: Register = on => {
     const button = Svg && view ? (
       <Box key="fold" flexShrink={0} alignItems="flex-start">
         <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the metrics.')}
+        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the tabs.')}
       </Box>
     ) : null
 
+    // The card's tabs, only while it is open: words on the wide row, one glyph each elsewhere. The one in use is
+    // in brackets (a Button's own props are not known to take a dimmed look).
+    const tab = await tabOf($)
+    const TAB_GLYPH: Record<Tab, string> = { overview: '◷', context: '◧', cost: '$' }
+    const TAB_TIPS: Record<Tab, string> = {
+      overview: 'Overview: the pace of each usage window against its reset, what delegating to subagents saved, and what this thread has cost.',
+      context: 'Context: how big the conversation is, how many turns are left, and what tool output filled it.',
+      cost: 'Cost: the cache discount, the cost of a message and what each model cost.',
+    }
+    const tabLabel = (id: Tab, isWide: boolean) => {
+      const base = isWide ? TAB_NAMES[id] : TAB_GLYPH[id]
+      return id === tab ? `[${base}]` : base
+    }
+    const tabsShown = open && Svg !== null
+    const tabButtons = (isWide: boolean) =>
+      tabsShown
+        ? TABS.map(id => (
+            <Box key={`tab-${id}`} flexShrink={0} alignItems="flex-start" marginLeft={1}>
+              <Button
+                key={`tab-${id}-button`}
+                label={tabLabel(id, isWide)}
+                onPress={async () => {
+                  await $.store.set(TAB_KEY, id)
+                  $.ui.invalidate('ui.render')
+                }}
+              />
+              {tip(`tab-${id}`, TAB_TIPS[id])}
+            </Box>
+          ))
+        : []
     // The layout follows from what the row holds: each width below is counted in columns from the
     // text the row will say, and layoutOf picks the first layout whose row fits.
     // Columns a character of text takes: one in the terminal, about half on the desktop.
@@ -991,10 +1047,12 @@ export const register: Register = on => {
     const keepAlone = !view && keep !== null
     const buttonsWideCols =
       (button ? FOLD_COLS : 0) +
+      (tabsShown ? TABS.reduce((n, id) => n + buttonCols(tabLabel(id, true), BUTTON_GAP, k), 0) : 0) +
       (keepAlone ? buttonCols(keepLabel, BUTTON_GAP, k) : 0) +
       (wrapShown ? buttonCols(wrapLabel(true), BUTTON_GAP, k) : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
-    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (wrapShown ? 1 : 0)) * COMPACT_BUTTON_COLS
+    // The tabs: a glyph button each, and the one in use has its two brackets.
+    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (wrapShown ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? 2 : 0)
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
@@ -1034,11 +1092,12 @@ export const register: Register = on => {
     const buttonsRowEl = buttonsRow ? (
       <Box key="buttons-row" flexDirection="row" paddingX={1}>
         {grow}
+        {tabButtons(kind === 'wide')}
         {button}
         {buttons}
       </Box>
     ) : null
-    const inlineButtons = buttonsRow ? [] : [button, ...buttons]
+    const inlineButtons = buttonsRow ? [] : [...tabButtons(kind === 'wide'), button, ...buttons]
 
     const running = (await read($, crew)).filter(w => !w.isDone)
     const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
@@ -1384,9 +1443,7 @@ export const register: Register = on => {
       const shownH = (h: number) => Math.round(h * scale)
       const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
       const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
-      // The rows left under the band's own rows, as drawn px: the card drops its metric row to stay within them.
-      const cardMaxH = Math.floor(((maxRows - rowsAbove) * ROW_PX) / scale)
-      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings, commits: paid?.commits, prs: paid?.prs }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), cardMaxH)
+      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings, commits: paid?.commits, prs: paid?.prs }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), tab)
       const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
       showProgress = fit.progress
       if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${c.cols} cols`

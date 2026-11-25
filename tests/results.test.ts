@@ -62,8 +62,8 @@ test('no results, no line', () => {
   }
 })
 
-test('with a status line for SPEND (800), the results come first in it', () => {
-  const s = plainText(body(cardSvg(WARM, 800, WITH).source))
+test('with a status line for SPEND (600), the results come first in it', () => {
+  const s = plainText(body(cardSvg(WARM, 600, WITH).source))
   expect(s).toContain('commits')
   expect(s).toContain('≈$63.25 this thread · 4 commits · 1 PR')
 })

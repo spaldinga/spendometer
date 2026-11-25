@@ -152,6 +152,56 @@ test('compact: the keep button sits in the chip block after the next cost', asyn
   await compact.unmount()
 })
 
+const tabLabelsOf = async (band: Awaited<ReturnType<typeof mountAt>>) =>
+  Promise.all(['overview', 'context', 'cost'].map(async id => (await band.find({ key: `tab-${id}-button` }))?.props.label))
+
+test('tab buttons: none while the card is closed, words on the wide row, the chosen one in brackets, each before the fold button', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  expect(await band.find({ key: 'tab-overview-button' })).toBeUndefined()
+  await band.press({ key: 'cache-fold' })
+  expect(await tabLabelsOf(band)).toEqual(['[Overview]', 'Context', 'Cost'])
+  const keys = keysOf(await band.find({ key: 'row' }))
+  expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
+  // Each carries hover text.
+  for (const text of [/^Overview: /, /^Context: /, /^Cost: /]) expect(await band.find({ type: 'Text', text })).toBeDefined()
+  // Pressing one chooses it: the card, the brackets and the store follow.
+  await band.press({ key: 'tab-cost-button' })
+  expect(await tabLabelsOf(band)).toEqual(['Overview', 'Context', '[Cost]'])
+  expect(lastKv.get('cardTab')).toBe('cost')
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
+  // Closing the card takes the tabs away.
+  await band.press({ key: 'cache-fold' })
+  expect(await band.find({ key: 'tab-cost-button' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('tab buttons: one glyph each on the compact row, the chosen one in brackets', async ($, on) => {
+  const band = await mountAt($, on, 70, true, 70)
+  expect(await tabLabelsOf(band)).toEqual(['[◷]', '◧', '$'])
+  await band.unmount()
+})
+
+test('tab buttons: where they do not fit beside the row they join the buttons row, still before the fold button', async ($, on) => {
+  const band = await mountAt($, on, 30, true, 70)
+  const row = await band.find({ key: 'buttons-row' })
+  expect(row).toBeDefined()
+  const keys = keysOf(row)
+  expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
+  expect(await tabLabelsOf(band)).toEqual(['[◷]', '◧', '$'])
+  await band.unmount()
+})
+
+test('a stored tab is the one shown, and an unknown stored value reads as Overview', async ($, on) => {
+  const band = await mountAt($, on, 160, true, 70)
+  lastKv.set('cardTab', 'context')
+  await band.press({ key: 'tab-context-button' })
+  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  lastKv.set('cardTab', 'bogus')
+  await band.press({ key: 'tab-overview-button' })
+  expect(await tabLabelsOf(band)).toEqual(['[Overview]', 'Context', 'Cost'])
+  await band.unmount()
+})
+
 test('narrow: the keep button is on the cache row after the chip, before the spacer', async ($, on) => {
   const narrow = await mountAt($, on, 20)
   const cache = keysOf(await narrow.find({ key: 'cache' }))
@@ -366,16 +416,29 @@ test('the open wide card has no limits strip and no IDLE zone', async ($, on) =>
   await band.press({ key: 'cache-fold' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
   expect(w).toContain('SPEND')
-  expect(w).toContain('800k free')
+  expect(w).not.toContain('800k free')
   for (const gone of ['LIMIT', 'IDLE']) expect(w.slice(w.lastIndexOf('</style>'))).not.toContain(gone)
+  // The size is on the Context tab.
+  await band.press({ key: 'tab-context-button' })
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('800k free')
   await band.unmount()
 })
 
-test('the open card at 68 columns shows the conversation cost as a status line, split into main and subagents', async ($, on) => {
+test('the open card at 68 columns shows the conversation cost in the SPEND column, split into main and subagents', async ($, on) => {
   const band = await mountAt($, on, 68)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  expect(c).toContain('≈$0.49 this thread · main $0.46 · subagents $0.03')
+  expect(c).toContain('>SPEND<')
+  expect(c).toContain('main $0.46 · subagents $0.03')
+  await band.unmount()
+})
+
+test('the open card on one column shows the conversation cost as a status line', async ($, on) => {
+  const band = await mountAt($, on, 45)
+  await band.press({ key: 'cache-fold' })
+  const c = JSON.stringify(await band.find({ key: 'card' }))
+  expect(c).not.toContain('>SPEND<')
+  expect(c).toContain('≈$0.49 this thread')
   await band.unmount()
 })
 
@@ -468,21 +531,25 @@ test('cardColsOf: as many columns as fit at CARD_COL_PX each plus the 26 px gap,
   expect([1364, 1400, 1800, 5000].map(cardColsOf)).toEqual([4, 4, 4, 4])
 })
 
-test('at 120 columns the open card has its three wide columns and the metric row', async ($, on) => {
+test('at 120 columns the open card is the Overview with its two wide columns, and the metric cells are on the other tabs', async ($, on) => {
   const band = await mountAt($, on, 120)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['PACE VS RESET', 'CACHE HIT']) expect(c).toContain(z)
-  expect(c).not.toContain('KEEP WARM')
+  for (const z of ['PACE VS RESET', '>DELEGATION<', '>SPEND<']) expect(c).toContain(z)
+  for (const gone of ['KEEP WARM', 'CACHE HIT', 'TOOL OUTPUT']) expect(c).not.toContain(gone)
+  await band.press({ key: 'tab-context-button' })
+  const ctx = JSON.stringify(await band.find({ key: 'card' }))
+  for (const z of ['CONVERSATION SIZE', 'TOOL OUTPUT']) expect(ctx).toContain(z)
+  expect(ctx).not.toContain('PACE VS RESET')
   await band.unmount()
 })
 
-test('at 68 columns the open card has two columns, the pace strip and the status lines', async ($, on) => {
+test('at 68 columns the open card has the pace strip and two columns, and no keep warm line', async ($, on) => {
   const band = await mountAt($, on, 68)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).toContain('PACE VS RESET')
-  expect(c).not.toContain('>SPEND<')
+  expect(c).toContain('>SPEND<')
   expect(c).not.toContain('keep warm $')
   await band.unmount()
 })
