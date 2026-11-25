@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { dayKey } from '../hooks/days'
-import { CARD_COL_PX, ROW_PX, cardColsOf, fitOpen, layoutOf } from '../hooks/layout'
+import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fitOpen, layoutOf } from '../hooks/layout'
 
 import { shown } from './visible'
 
@@ -134,6 +134,26 @@ test('with keep-warm off the label is the bare 🧊, at the wide width too', asy
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('🧊')
   await band.unmount()
 })
+
+test('FOLD_COLS counts the fold button the way buttonCols counts every other button', () => {
+  expect(FOLD_COLS).toBe(buttonCols('−'))
+})
+
+/** Every right-hand button wrapper has the same gap before it. */
+const gapsAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number) => {
+  const band = await mountAt($, on, columns)
+  await band.press({ key: 'cache-fold' })
+  for (const key of ['tab-overview', 'tab-context', 'tab-cost', 'fold', 'wrap']) {
+    const box = await band.find({ key })
+    expect(box).toBeDefined()
+    expect([key, box?.props.marginLeft]).toEqual([key, BUTTON_GAP])
+  }
+  await band.unmount()
+}
+
+test('wide, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 160))
+
+test('compact, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 70))
 
 /** The keys of a box's children, in order. */
 const keysOf = (b: { children?: { props?: { key?: string } }[] } | undefined) => (b?.children ?? []).map(c => c.props?.key)

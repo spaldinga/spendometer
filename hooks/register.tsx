@@ -907,7 +907,7 @@ export const register: Register = on => {
     // The keep warm button is the flame alone at every width: its figures are the chip's hover.
     const keepLabel = keep ? '🔥' : '🧊'
     const keepButton = keep === null ? null : (
-      <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={1}>
+      <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
         <Button key="keep-warm" label={keepLabel} onPress={() => pressKeep($, kw, keep)} />
         {tip(
           'keep',
@@ -922,7 +922,7 @@ export const register: Register = on => {
     const wrapLabel = (isWide: boolean) => (isWide ? (wrapping ? '🎌 Wrapping up…' : '🎌 Wrap up') : wrapping ? '🎌…' : '🎌')
     const wrapShown = (await switchOf($, WRAP_KEY, false)) && (await hasCommand($, DEBRIEF))
     const wrapButton = (isWide: boolean) => wrapShown ? (
-      <Box key="wrap" flexShrink={0} alignItems="flex-start" marginLeft={1}>
+      <Box key="wrap" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
         <Button
           key="wrap-up"
           label={wrapLabel(isWide)}
@@ -952,7 +952,7 @@ export const register: Register = on => {
     const open = view !== null && Svg !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
     const toggle = () => toggleFold($)
     const button = Svg && view ? (
-      <Box key="fold" flexShrink={0} alignItems="flex-start">
+      <Box key="fold" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
         <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
         {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the tabs.')}
       </Box>
@@ -975,7 +975,7 @@ export const register: Register = on => {
     const tabButtons = (isWide: boolean) =>
       tabsShown
         ? TABS.map(id => (
-            <Box key={`tab-${id}`} flexShrink={0} alignItems="flex-start" marginLeft={1}>
+            <Box key={`tab-${id}`} flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
               <Button
                 key={`tab-${id}-button`}
                 label={tabLabel(id, isWide)}

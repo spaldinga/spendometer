@@ -23,7 +23,7 @@ export const BUTTON_CHROME = 4
 /** The Button groups on the band sit one column apart. */
 export const BUTTON_GAP = 1
 /** The fold button's `+` or `−`: its frame and the one character. */
-export const FOLD_COLS = 1 + BUTTON_CHROME
+export const FOLD_COLS = 1 + BUTTON_CHROME + BUTTON_GAP
 /** Robo, a space and the chip, as drawings: measured 10 columns on 2026-11-18. */
 export const ROBO_CHIP_COLS = 10
 /** The terminal's chip: ` WARM ` as text. */

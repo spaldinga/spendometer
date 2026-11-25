@@ -4,7 +4,7 @@ project: spendometer
 order: 40
 kind: bug
 size: S
-status: todo
+status: done
 source: user feedback 2026-11-25
 ---
 
