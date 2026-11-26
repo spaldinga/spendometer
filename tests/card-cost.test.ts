@@ -152,13 +152,15 @@ test('keep warm is not a zone: no KEEP WARM or RE-CACHE NOW title, warm or cold,
   expect(body(cardSvg({ ...WARM, mine: null }, 1400, SPEND).source)).not.toContain('not priced')
 })
 
-test('the cold Capacity tab turns CONVERSATION SIZE into RE-CACHE and keeps its dot grid', () => {
+test('the cold Capacity tab turns CONVERSATION SIZE into RE-CACHE and keeps its bar, in the cold hue', () => {
   const warm = body(cap(1400).source)
-  // 25 dots a row, two rows.
+  // One stacked bar in place of the dots.
   const size = warm.slice(warm.indexOf('>CONVERSATION SIZE<'), warm.indexOf('>TOOL OUTPUT<'))
-  expect(size.split('<circle').length - 1).toBe(50)
+  expect(size).not.toContain('<circle')
+  expect(size).toContain('height="16" fill="#cc6363"')
   const cold = body(cap(1400, METRICS, COLD).source)
   expect(cold).toContain('>RE-CACHE<')
+  expect(cold).toContain('height="16" fill="#6aaabd"')
   expect(cold).not.toContain('>CONVERSATION SIZE<')
   expect(cold).not.toContain('NEXT MESSAGE')
 })

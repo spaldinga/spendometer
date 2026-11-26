@@ -25,8 +25,8 @@ export async function readSpend($: EngineInterface): Promise<Spent | null> {
     if (typeof s.pings === 'number') out.pings = s.pings
     if (typeof s.saved === 'number') out.saved = s.saved
     // The metric figures arrived later still; each is kept only when it is a number.
-    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs', 'rereads', 'rereadTok'] as const) if (typeof s[k] === 'number') out[k] = s[k]
-    for (const k of ['byType', 'byModel', 'byTool'] as const) {
+    for (const k of ['turns', 'paidTurns', 'readTok', 'inTok', 'ctxPrev', 'growth', 'totTok', 'subsAtMain', 'subsPaid', 'commits', 'prs', 'rereads', 'rereadTok', 'ctxFirst'] as const) if (typeof s[k] === 'number') out[k] = s[k]
+    for (const k of ['byType', 'byModel', 'byTool', 'rereadFiles'] as const) {
       const src = s[k]
       if (src && typeof src === 'object') {
         const by: Record<string, number> = {}
@@ -51,6 +51,7 @@ export function recordOf(was: Spent | null, at: number): Spent {
   if (was?.byType) next.byType = { ...was.byType }
   if (was?.byModel) next.byModel = { ...was.byModel }
   if (was?.byTool) next.byTool = { ...was.byTool }
+  if (was?.rereadFiles) next.rereadFiles = { ...was.rereadFiles }
   if (was?.spans) next.spans = was.spans.map(s => [s[0], s[1]] as [number, number])
   return next
 }
@@ -184,8 +185,22 @@ export const putSpan = (spans: readonly [number, number][] | undefined, start: n
   return list.slice(-SPAN_KEEP)
 }
 
+/** How many re-read files the record keeps (the most recently re-read). */
+export const REREAD_FILES_KEEP = 5
+
+/** `files` with one more re-read of `file`: it moves to the newest place, and the oldest go while there are more than REREAD_FILES_KEEP. */
+export const putReread = (files: Record<string, number> | undefined, file: string): Record<string, number> => {
+  const next = { ...files }
+  const n = (next[file] ?? 0) + 1
+  delete next[file]
+  next[file] = n
+  const keys = Object.keys(next)
+  for (const k of keys.slice(0, Math.max(0, keys.length - REREAD_FILES_KEEP))) delete next[k]
+  return next
+}
+
 /** Adds a tool call's output tokens (and a re-read of an unchanged file) to this session's record. Nothing to add writes nothing. */
-export async function addToolOut($: EngineInterface, tool: string, tokens: number, reread: boolean): Promise<void> {
+export async function addToolOut($: EngineInterface, tool: string, tokens: number, reread: boolean, file?: string): Promise<void> {
   if (tokens <= 0 && !reread) return
   try {
     const key = SPEND_PREFIX + (await $.session.id())
@@ -194,6 +209,7 @@ export async function addToolOut($: EngineInterface, tool: string, tokens: numbe
     if (reread) {
       next.rereads = (next.rereads ?? 0) + 1
       next.rereadTok = (next.rereadTok ?? 0) + tokens
+      if (file) next.rereadFiles = putReread(next.rereadFiles, file)
     }
     await $.store.set(key, next)
     $.ui.invalidate('ui.render')
@@ -218,6 +234,7 @@ export async function addContext(
     const growth = nextGrowth(next.growth, next.ctxPrev, tokens)
     if (growth !== undefined) next.growth = growth
     next.ctxPrev = tokens
+    if (next.ctxFirst === undefined) next.ctxFirst = tokens
     await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
   } catch { /* the runway waits for the next turn */ }
 }

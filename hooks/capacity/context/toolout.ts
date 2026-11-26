@@ -31,3 +31,6 @@ export const topTools = (byTool: Record<string, number> | undefined, n: number):
     .filter(([, c]) => c > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, n)
+
+/** A file's name without its folders, splitting on both `/` and `\`. */
+export const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path

@@ -69,6 +69,10 @@ export type Spent = Spend & {
   /** Files the main thread read again unchanged, and the tokens those re-reads cost. */
   rereads?: number
   rereadTok?: number
+  /** The context size after the first priced main turn: an estimate of the setup (system prompt, tools, memory). */
+  ctxFirst?: number
+  /** Re-reads per file basename, the 5 most recently re-read files, oldest first. */
+  rereadFiles?: Record<string, number>
   totTok?: number
   subsAtMain?: number
   /** Subagent cost counted from the same moment as subsAtMain, so a record from before that does not skew the saving. */

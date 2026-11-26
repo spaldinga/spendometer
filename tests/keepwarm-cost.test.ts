@@ -295,3 +295,34 @@ test('a session id that cannot be read leaves the band without a cost and throws
   expect(await band.find({ key: 'spend' })).toBeUndefined()
   await band.unmount()
 })
+
+test('ctxFirst is the context after the first priced main turn and stays when later turns grow it', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  // No record yet: the first turn creates it, and the context of that turn is the setup estimate.
+  const { store } = engine(on, { keep: true })
+  await seed($, 18)
+  await done($, { usage: USED })
+  expect((store.get('spend:S1') as Spent).ctxFirst).toBe(200000)
+  // A record that has one keeps it while ctxPrev moves on.
+  store.set('spend:S1', { ...(store.get('spend:S1') as Spent), ctxFirst: 50000, ctxPrev: 150000 })
+  await done($, { usage: USED })
+  const m = store.get('spend:S1') as Spent
+  expect([m.ctxFirst, m.ctxPrev]).toEqual([50000, 200000])
+})
+
+test('ctxFirst and rereadFiles survive a read-modify-write in order; non-number values are dropped', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const files = { 'old.ts': 3, 'bad.ts': 'x', 'new.ts': 1 }
+  const { store } = engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(2, 1, 0.5), ctxFirst: 18000, rereadFiles: files } } })
+  await seed($, 18)
+  await done($, { usage: USED })
+  const m = store.get('spend:S1') as Spent
+  expect(m.ctxFirst).toBe(18000)
+  expect(Object.entries(m.rereadFiles ?? {})).toEqual([['old.ts', 3], ['new.ts', 1]])
+  // A junk ctxFirst is dropped, and the first turn then sets it.
+  store.set('spend:S1', { ...FRESH(2, 1, 0.5), ctxFirst: 'x', rereadFiles: 7 })
+  await done($, { usage: USED })
+  const j = store.get('spend:S1') as Spent
+  expect(j.ctxFirst).toBe(200000)
+  expect(j.rereadFiles).toBeUndefined()
+})

@@ -48,11 +48,11 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `safety/guard/band.tsx` | `heldBand`: the band drawn while a command is held | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store (`cleanOldCache`; `resetCache` empties the atom on /clear), and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
-| `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output (`addToolOut`), context size and growth (`addContext`), keep-warm figures; `readDays`, `spendLine`, `cleanOldSpend`, `cleanOldPace`, `cleanOldDays`, the clean-up ages | no |
+| `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output and the most recent re-read files (`addToolOut`, `putReread`), context size, growth and the first turn's size, an estimate of the setup (`addContext`), keep-warm figures; `readDays`, `spendLine`, `cleanOldSpend`, `cleanOldPace`, `cleanOldDays`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
 | `band/card.ts` | The card frame (`cardSvg`): the tab, the columns, where each zone goes, status lines, alt text; its tabs (Cost, Capacity: the domains) with `tabFrom`, which maps the old names, and the spend type | yes |
 | `capacity/usage/card.ts` | The pace strip (`paceStrip`) | yes |
-| `capacity/context/card.ts` | CONVERSATION SIZE / RE-CACHE (`sizeZone`), TOOL OUTPUT (`toolsZone`), `runwayOf` | yes |
+| `capacity/context/card.ts` | CONVERSATION SIZE / RE-CACHE (`sizeZone`: one stacked bar of setup, chat, the top tools, other tools and free room from `stackOf`, and a half-circle gauge of turns left beside the figure when the column is wide enough), TOOL OUTPUT (`toolsZone`: file chips for the re-read files, the caption coloured as the bar), `runwayOf` | yes |
 | `cost/spend/card.ts` | SPEND (`spendZone`, with `spendFiguresOf` and the `CardSpend` type), DELEGATION (`delegZone`), PER MESSAGE (`avgZone`), BY MODEL (`modelsZone`, `MODEL_COLOR`) | yes |
 | `cost/cache/card.ts` | CACHE DISCOUNT (`discountZone`) | yes |
 | `band/widths.ts` | The row's width in columns for each layout (`needOf`, `WidthIn`), from plain data; the window names and cell counts (`NAMES`, `SHORT`, `CELLS`, `LOW_AT`, `TIGHT_CELLS`) | yes |
@@ -60,8 +60,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `cost/spend/metrics.ts` | Cost-side figures from the `Spent` record: hit rate, outliers, top types and models, delegation | yes |
 | `capacity/context/runway.ts` | Context growth (`nextGrowth`) and runway turns | yes |
 | `band/card-metrics.ts` | `metricsOf` and `Metrics`: the card's metric row, assembled from both domains | yes |
-| `capacity/context/toolout.ts` | Tool output tokens and the re-read keys | yes |
-| `capacity/context/size.ts` | The `seen` atom (re-read keys), `clearSeen`, `measureCall` (returns the tool, tokens and re-read flag), `forgetPath`, `isDeny` | no |
+| `capacity/context/toolout.ts` | Tool output tokens, the re-read keys and `baseName` | yes |
+| `capacity/context/size.ts` | The `seen` atom (re-read keys), `clearSeen`, `measureCall` (returns the tool, tokens, re-read flag and, for a re-read, the file's basename), `forgetPath`, `isDeny` | no |
 | `capacity/usage/pace.ts` | Pace of a usage window | yes |
 | `capacity/usage/windows.ts` | The `windows` atom, `clean`, `trackPace`, `paceFor`, `liveWindows`, `pull`, `setWindows`, `keptWindows` | no |
 | `capacity/usage/art.ts` | The pie, 5h pace track, `paceWords`, `fmtReset`, `fmtSpan`, `PACE_TIP`, `PaceRow` | yes |
@@ -95,7 +95,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
    on the desktop) and let `layoutOf` pick the layout. From the first reply on the desktop the band is one row at every width: wide, compact (5 steps, tabs and + inline), step 4 without + (the tabs open and close the card), then slimmer variants (no 5h pace track, no keep box, the 5h window only), and last the minimal row (5h pie and percent, Robo, +; no tabs), chosen even when it does not fit. There is no buttons row and no tight layout there. The terminal, and the desktop before the first reply, keep compact, tight and a row of their own for buttons that do not fit.
 3. Build the row (`band/row.tsx`; buttons in `band/buttons.tsx`, the progress row in `band/progress-row.tsx`): label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm mark (a green ✓ only while on), then the
    tab buttons (desktop, once there is a cache view, card open or closed: a press opens the card on that tab, or closes it on the tab in use; `pressTab` over `toggleFold`), and fold (not from compact step 4 down, until the minimal row, see 2).
-4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` builds the drawing kit (`kitOf`) and draws the chosen tab (Cost: SPEND, DELEGATION, CACHE DISCOUNT, PER MESSAGE, BY MODEL; Capacity: the pace strip, CONVERSATION SIZE, TOOL OUTPUT) at the
+4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` builds the drawing kit (`kitOf`) and draws the chosen tab (Cost: SPEND, DELEGATION, CACHE DISCOUNT, PER MESSAGE, BY MODEL; Capacity: the pace strip, CONVERSATION SIZE with its bar and gauge, TOOL OUTPUT with its chips) at the
    band's width, handing each zone function in a slice's `card.ts` the kit, its box and its data; `fitOpen` drops the progress row if the band would pass `maxRows`.
 
 ## Tests

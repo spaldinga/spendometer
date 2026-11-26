@@ -5,7 +5,7 @@
 import { atom, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import { dropPath, noteRead, readKey, tokOf } from './toolout'
+import { baseName, dropPath, noteRead, readKey, tokOf } from './toolout'
 
 /** Read keys (path and range) the main thread read and has not edited since: a second read of one is a re-read. Lost on a reload. */
 const seen = atom({ plugin: 'spendometer', key: 'seen' } as const, [] as string[])
@@ -21,7 +21,7 @@ export function isDeny(r: unknown): boolean {
 }
 
 /** What one finished call put in the main context. */
-export type Measured = { tool: string; tokens: number; reread: boolean }
+export type Measured = { tool: string; tokens: number; reread: boolean; /** The basename of the file a re-read read again. */ file?: string }
 
 /**
  * Counts a finished call's output in the main context: the size of the text the model read, by tool name.
@@ -43,7 +43,7 @@ export async function measureCall($: EngineInterface, tool: string, e: unknown, 
         return n.seen
       })
     }
-    return { tool, tokens, reread }
+    return reread && typeof a.file_path === 'string' ? { tool, tokens, reread, file: baseName(a.file_path) } : { tool, tokens, reread }
   } catch { /* the figure misses this call */ }
   return null
 }

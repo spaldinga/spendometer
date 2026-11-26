@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { SEEN_CAP, dropPath, noteRead, normPath, readKey, tokOf, topTools } from '../hooks/capacity/context/toolout'
+import { SEEN_CAP, baseName, dropPath, noteRead, normPath, readKey, tokOf, topTools } from '../hooks/capacity/context/toolout'
 
 test('tokens are a quarter of the characters, rounded up, and 0 without text', () => {
   expect(tokOf('abcd')).toBe(1)
@@ -46,4 +46,11 @@ test('the top tools are the largest first, zero and below left out', () => {
   expect(topTools({ Grep: 6, Bash: 18, Read: 12, Glob: 0, Web: -3 }, 3)).toEqual([['Bash', 18], ['Read', 12], ['Grep', 6]])
   expect(topTools({ Grep: 6, Bash: 18, Read: 12 }, 2)).toEqual([['Bash', 18], ['Read', 12]])
   expect(topTools(undefined, 3)).toEqual([])
+})
+
+test('a basename is the last part of a path in either spelling', () => {
+  expect(baseName('C:\\r\\sub\\Card.ts')).toBe('Card.ts')
+  expect(baseName('/r/sub/card.ts')).toBe('card.ts')
+  expect(baseName('card.ts')).toBe('card.ts')
+  expect(baseName('/r/mixed\\path/x.md')).toBe('x.md')
 })

@@ -34,6 +34,9 @@ export type Metrics = {
   /** Files re-read unchanged, and what those re-reads cost in tokens. */
   rereads: number
   rereadTok: number
+  /** The context size after the first main turn (an estimate of the setup), and the most recently re-read files with their counts, newest first. */
+  ctxFirst: number | null
+  rereadFiles: [string, number][]
 }
 
 /** The metrics of a session record with `free` tokens of context left; null when the record knows none of them. */
@@ -61,5 +64,7 @@ export const metricsOf = (s: Spent | null, free: number): Metrics | null => {
     toolTok: Object.values(s.byTool ?? {}).reduce((a, n) => a + (n > 0 ? n : 0), 0),
     rereads: s.rereads ?? 0,
     rereadTok: s.rereadTok ?? 0,
+    ctxFirst: s.ctxFirst ?? null,
+    rereadFiles: Object.entries(s.rereadFiles ?? {}).reverse(),
   }
 }

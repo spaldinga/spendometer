@@ -5,7 +5,7 @@ import { resetHold } from '../hooks/safety/guard/hold'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 
-type Rec = { byTool?: Record<string, number>; rereads?: number; rereadTok?: number }
+type Rec = { byTool?: Record<string, number>; rereads?: number; rereadTok?: number; rereadFiles?: Record<string, number> }
 
 /** The engine beneath: a store to inspect, and a tool stub that answers with `text` (4 characters a token) or refuses. */
 const engine = (on: On, o: { deny?: boolean; text?: string; isError?: boolean } = {}) => {
@@ -93,4 +93,28 @@ test('a result with no text adds nothing', async ($, on) => {
   const { record } = engine(on, { text: '' })
   await $.tool.call({ tool: 'Grep' } as never)
   expect(record()).toBeUndefined()
+})
+
+test('a re-read records the file basename; the same file twice counts 2, and the newest moves last', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { record } = engine(on)
+  const read = (p: string) => $.tool.call({ tool: 'Read', file_path: p } as never)
+  for (const p of ['C:\\r\\a.ts', '/r/b.ts']) await read(p)
+  expect(record()?.rereadFiles).toBeUndefined()
+  await read('c:/r/a.ts')
+  await read('/r/b.ts')
+  expect(Object.entries(record()!.rereadFiles!)).toEqual([['a.ts', 1], ['b.ts', 1]])
+  // a.ts again: count 2, now the newest.
+  await read('c:/r/a.ts')
+  expect(Object.entries(record()!.rereadFiles!)).toEqual([['b.ts', 1], ['a.ts', 2]])
+})
+
+test('only the 5 most recently re-read files are kept', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { record } = engine(on)
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(n => `/r/${n}.ts`)
+  for (const p of names) await $.tool.call({ tool: 'Read', file_path: p } as never)
+  for (const p of names) await $.tool.call({ tool: 'Read', file_path: p } as never)
+  expect(Object.keys(record()!.rereadFiles!)).toEqual(['c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'])
+  expect(record()?.rereads).toBe(7)
 })

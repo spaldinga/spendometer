@@ -4,14 +4,65 @@ project: spendometer
 order: 90
 kind: feature
 size: M
-status: todo
+status: doing
 source: docs/plans/2026-11-24-card-tabs.md, step 3
 ---
 
 # Context tab pictures
 
+## Purpose
+The 🔋 Capacity tab (the plan's "Context tab"; item 85 renamed it) says how full the conversation is and what filled
+it, but only in figures and dots. Give it pictures that answer "what filled it" and "how long does it last" at a
+glance, without making the tab taller.
+
+## Why
+From the plan (2026-11-24): "Numbers alone are hard to read: every figure should have a picture next to it." The
+plan's Context row asks for one stacked bar (setup, chat, tool output by tool), a gauge of turns left and file chips for
+re-reads.
+
 ## What
-The stacked bar (setup, chat, tool output by tool; needs `ctxFirst`), a gauge of turns left, and file chips for re-reads (needs `rereadFiles`). Details in [the plan](../plans/2026-11-24-card-tabs.md).
+Mapped onto today's files (the plan predates the refactor of item 80 and the tabs of item 85):
+- **Stacked bar** in CONVERSATION SIZE (`sizeZone`, `hooks/capacity/context/card.ts`), in place of the dot chart:
+  setup, chat, tool output by its top tools, then free. Setup is `ctxFirst`, an estimate: the alt text says so.
+- **Gauge of turns left**: a half-circle at the right of the CONVERSATION SIZE figure, from the runway
+  (`hooks/capacity/context/runway.ts`). The runway text line stays.
+- **File chips** in TOOL OUTPUT (`toolsZone`): one chip per re-read file, basename and count, newest first, as many as
+  fit.
+- Data: `Spent.ctxFirst` (set by `addContext` on the first main turn that has a record) and `Spent.rereadFiles`
+  (basename → re-reads, the 5 most recent files; `addToolOut` gets the basename from `measureCall`), both carried by
+  `readSpend` and `recordOf` (`hooks/cost/spend/record.ts`). `metricsOf` (`hooks/band/card-metrics.ts`) passes them on.
 
 ## Done when
-The Context tab shows pictures, not only figures.
+The Capacity tab shows the stacked bar, the gauge and the chips at 3, 2 and 1 columns, and is no taller at any width
+than before this item.
+
+Built and committed 2026-11-26; not yet checked in the app.
+
+### Check in the app
+After `/reload-plugins --force`, open the card on 🔋 Capacity:
+- CONVERSATION SIZE has one bar in place of the dots: grey setup, the hue for chat, the tool colours, then empty free
+  room. The tool names in TOOL OUTPUT's caption have the same colours as their bar parts.
+- After two turns, a half-circle gauge at the right of the token figure shows the turns left (`~12`), red at 5 or
+  fewer, orange at 15 or fewer, green above. On a narrow column the gauge is left out; the runway line stays.
+- Read the same file twice: TOOL OUTPUT shows a chip `name.ts ×1` under the figure; more files give more chips, newest
+  first, as many as fit.
+- On a narrow band (1 column) the tool output status line names the most re-read file.
+- The card is as tall as before at wide, medium and narrow widths.
+- The alt text (hover the card or a screen reader) lists setup, chat and tool output, says setup is an estimate, and
+  names the re-read files.
+
+## Open
+Assumptions taken while building without the user (2026-11-26), for review in the app:
+- Setup is the context after the first main turn (`ctxFirst`), so it also holds the first message and reply. The bar
+  calls it setup; the alt text says it is an estimate. A record from before this item has no `ctxFirst`: the bar then
+  has no setup part (chat starts at zero).
+- Tool output is cumulative and counts output a compaction since dropped, so the bar clamps it to what fits in the
+  context after setup; chat is the rest. The top 3 tools get their own colour, the rest one "other" part.
+- The gauge's full scale is 40 turns (more shows a full arc); colours at 5 and 15 turns. It needs a column of at least
+  260 px; below that only the runway line shows.
+- Chips show basename and count (`card.ts ×2`); two files with the same basename count together. Capped at 5 files,
+  most recent re-read first; a chip that does not fit is dropped, not shortened.
+- The dot chart goes: the bar replaces it, so the zone keeps its height (218 px wide, 249 px narrow, pinned in
+  `tests/card-pictures.test.ts`). The bar sits a few px higher than the dots did, to clear the caption.
+- Tool colours: the top three tools blue, lilac and peach, other tools tan. Tan is near the warm chat hue: check it.
+- A file named like an integer (`123`) would sort first in the stored object and so look oldest. Not guarded.

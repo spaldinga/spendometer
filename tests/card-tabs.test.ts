@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DANGER, FABLE, HUE, ORANGE, YELLOW } from '../hooks/band/look'
+import { DANGER, FABLE, HUE, LC_LA, LC_PE, ORANGE, YELLOW } from '../hooks/band/look'
 import { TABS, TAB_NAMES, cardSvg, tabFrom } from '../hooks/band/card'
 import type { Metrics } from '../hooks/band/card-metrics'
 import { WARM, COLD, SPEND, WIDTHS, METRICS, ROW, colWOf, colXOf, body, plainText, PACE_OK, PACE_LOW, TAB_IDS, cap, cost, after, titleOf, NONE, byModel } from './card-kit'
@@ -140,17 +140,17 @@ test('tool output: the figure in tokens, the top tools and the re-reads in orang
   // Two columns: the second title is at the second column.
   expect(titleOf(body(cap(1400, METRICS).source), 'TOOL OUTPUT')).toBe(colXOf(1400, 2, 1))
   // 1400: the column fits every tool and the re-reads.
-  expect(s).toContain(`>Bash 18k · Read 12k · Grep 6k<tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
+  expect(s).toContain(`>Bash 18k</tspan> · <tspan fill="${LC_LA}">Read 12k</tspan> · <tspan fill="${LC_PE}">Grep 6k</tspan><tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
   // No re-reads: no orange part. One re-read is singular.
   const none = after(body(cap(1400, { ...METRICS, rereads: 0, rereadTok: 0 }).source), 'TOOL OUTPUT')
-  expect(none).toContain('>Bash 18k · Read 12k · Grep 6k</text>')
+  expect(none).toContain(`>Bash 18k</tspan> · <tspan fill="${LC_LA}">Read 12k</tspan> · <tspan fill="${LC_PE}">Grep 6k</tspan></text>`)
   expect(none).not.toContain('re-read')
   expect(after(body(cap(1400, { ...METRICS, rereads: 1 }).source), 'TOOL OUTPUT')).toContain('> · 1 re-read</tspan>')
 })
 
 test('tool output: at the narrowest two-column width the re-read part stays and tools are cut from the back', () => {
   const s = after(body(cap(682, METRICS).source), 'TOOL OUTPUT')
-  expect(s).toContain(`>Bash 18k<tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
+  expect(s).toContain(`>Bash 18k</tspan><tspan fill="${ORANGE}" font-weight="700"> · 4 re-reads</tspan>`)
   // Every caption fits its column (0.56 em a character, as the card estimates).
   for (const m of s.matchAll(/<text x="[\d.]+" y="\d+" font-size="18" font-weight="500"[^>]*>(.*?)<\/text>/g)) expect(plainText(m[1]).length * 18 * 0.56).toBeLessThanOrEqual(colWOf(682, 2))
 })

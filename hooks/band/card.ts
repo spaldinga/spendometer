@@ -8,7 +8,7 @@ import { cheaperModels, keepWarmCost } from '../cost/cache/chip'
 import { TTL_MIN, mineModel } from '../cost/cache/facts'
 import type { CacheView } from '../cost/cache/facts'
 export type { Mode } from './look'
-import { runwayOf, sizeZone, toolsZone } from '../capacity/context/card'
+import { runwayOf, sizeZone, stackOf, toolsZone } from '../capacity/context/card'
 import type { Metrics } from './card-metrics'
 import { cardColsOf } from '../layout'
 import { resultsSentence } from '../cost/spend/results'
@@ -119,7 +119,19 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
           { draw: (x, y, w) => modelsZone(kit, x, y, w, metrics?.models ?? []), status: { dot: MUTED, variants: modelsLine.length ? [`by model ${modelsLine.join(' · ')}`, `by model ${modelsLine.slice(0, 2).join(' · ')}`, `by model ${modelsLine[0]}`] : ['by model: after a few turns'] } },
         ]
       : [
-          { draw: (x, y, w) => sizeZone(kit, x, y, w, { tokens: v.tokens, window: v.window, cold, runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }) },
+          {
+            draw: (x, y, w) =>
+              sizeZone(kit, x, y, w, {
+                tokens: v.tokens,
+                window: v.window,
+                cold,
+                runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [],
+                setup: mm?.ctxFirst,
+                tools: mm?.tools,
+                toolTok: mm?.toolTok,
+                gauge: mm?.runway,
+              }),
+          },
           {
             draw: (x, y, w) => toolsZone(kit, x, y, w, metrics),
             status: {
@@ -128,6 +140,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
                 mm && mm.toolTok > 0
                   ? [
                       `tool output ${tok(mm.toolTok)} tokens` + (mm.tools.length ? ` · ${mm.tools.map(([k, n]) => `${k} ${tok(n)}`).join(' · ')}` : '') + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
+                      ...(mm.rereads > 0 && mm.rereadFiles.length ? [`tool output ${tok(mm.toolTok)} tokens · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'} (${mm.rereadFiles[0][0]} ×${mm.rereadFiles[0][1]})`] : []),
                       `tool output ${tok(mm.toolTok)} tokens` + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
                       `tool output ${tok(mm.toolTok)} tokens`,
                     ]
@@ -168,6 +181,12 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   const delegAlt = metrics?.deleg
     ? ` Delegating saved about ${usd(metrics.deleg.saved)}; subagents ran ${fmtSpan(metrics.deleg.workMs)} of work in ${fmtSpan(metrics.deleg.wallMs)}.`
     : ''
+  // What the Capacity bar and chips show, in words: the same clamped figures as the bar, and the setup said to be an estimate.
+  const stack = m && m.ctxFirst !== null ? stackOf(v.tokens, v.window, m.ctxFirst, m.tools, m.toolTok) : null
+  const makeupAlt = stack
+    ? ` Context makeup: setup about ${tok(stack.setup)} (an estimate from the first turn), chat about ${tok(stack.chat)}, tool output about ${tok(stack.tools.reduce((a, [, c]) => a + c, stack.other))}.`
+    : ''
+  const rereadAlt = m && m.rereadFiles.length ? ` Re-read files: ${m.rereadFiles.map(([n, c]) => `${n} ×${c}`).join(', ')}.` : ''
   const metricsAlt = m
     ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
       (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${famName(id)} ${usd(c)}`).join(', ')}.` : '') +
@@ -177,6 +196,8 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
           (m.rereads > 0 ? `; ${m.rereads} re-read${m.rereads === 1 ? '' : 's'} of unchanged files, about ${tok(m.rereadTok)} tokens` : '') +
           '.'
         : '') +
+      makeupAlt +
+      rereadAlt +
       delegAlt +
       (runwayLine ? ` Context runway: ${runwayLine}.` : '')
     : delegAlt

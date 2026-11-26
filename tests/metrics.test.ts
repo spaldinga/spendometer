@@ -173,3 +173,12 @@ test('the tool output figures: top three tools, the sum over all, and the re-rea
   const old = metricsOf({ main: 1, subs: 0, last: 0, at: 0 }, 0)!
   expect([old.tools, old.toolTok, old.rereads, old.rereadTok]).toEqual([[], 0, 0, 0])
 })
+
+test('metricsOf passes on ctxFirst and the re-read files newest first', () => {
+  const s: Spent = { main: 1, subs: 0, last: 0, at: 0, ctxFirst: 18000, rereadFiles: { 'a.ts': 1, 'b.ts': 3, 'c.ts': 2 } }
+  const m = metricsOf(s, 0)!
+  expect(m.ctxFirst).toBe(18000)
+  expect(m.rereadFiles).toEqual([['c.ts', 2], ['b.ts', 3], ['a.ts', 1]])
+  const old = metricsOf({ main: 1, subs: 0, last: 0, at: 0 }, 0)!
+  expect([old.ctxFirst, old.rereadFiles]).toEqual([null, []])
+})

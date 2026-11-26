@@ -105,15 +105,16 @@ test('the runway is a second caption under CONVERSATION SIZE, with the rows and 
   const s = body(c.source)
   expect(s).toContain('>~40 turns left at +6k a turn<')
   expect(s).toContain('>24% of the 1M context · 760k free<')
-  // Both captions, and the dots, sit inside the 124 px row, above the rule under it.
+  // Both captions, and the bar, sit inside the 124 px row, above the rule under it.
   const x = colXOf(1400, 2, 0)
   const ys = (re: RegExp) => Number(re.exec(s)![1])
   const second = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>~40 turns left`))
   const first = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>24% of the`))
   expect(first).toBeLessThan(second)
   expect(second + 4).toBeLessThanOrEqual(YC + ROW)
-  const dotYs = [...s.matchAll(/<circle cx="[\d.]+" cy="(\d+)" r="3"/g)].map(m => Number(m[1])).slice(0, 50)
-  expect(Math.max(...dotYs) + 3).toBeLessThan(first - 12)
+  const barYs = [...s.matchAll(/<rect x="[\d.]+" y="(\d+)" width="[\d.]+" height="16"/g)].map(m => Number(m[1]))
+  expect(barYs.length).toBeGreaterThan(0)
+  expect(Math.max(...barYs) + 16).toBeLessThan(first - 12)
   // At every width, the long form where it fits the column and the short one where it does not; not while the growth is unknown.
   for (const w of [800, 300]) expect(body(cap(w, METRICS).source)).toContain('turns left')
   expect(body(cap(300, METRICS).source)).toContain('>~40 turns left at +6k a turn<')

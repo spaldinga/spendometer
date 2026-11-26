@@ -46,7 +46,7 @@ const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as n
 /** Measures a finished call (capacity/context) and adds what it found to the Spent record (cost/spend). */
 const countCall = async ($: EngineInterface, tool: string, e: unknown, r: unknown): Promise<void> => {
   const m = await measureCall($, tool, e, r)
-  if (m) await addToolOut($, m.tool, m.tokens, m.reread)
+  if (m) await addToolOut($, m.tool, m.tokens, m.reread, m.file)
 }
 
 
