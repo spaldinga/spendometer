@@ -9,7 +9,7 @@ import { resultsSentence, resultsText } from './results'
 import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'
-export type Kind = 'wide' | 'stacked' | 'tight'
+export type Kind = 'wide' | 'stacked' | 'tight' | 'minimal'
 
 // The band's own colours, measured from the app.
 export const TEXT = '#e8e2d2'

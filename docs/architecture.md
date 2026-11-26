@@ -61,9 +61,9 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 
 1. Read the cache view, usage windows, spend and keep-warm state.
 2. Estimate each layout's width in columns from the text it will show (`textCols`; about half a column a character
-   on the desktop) and let `layoutOf` pick wide, compact (5 steps) or tight. Buttons that do not fit go to their own row.
+   on the desktop) and let `layoutOf` pick the layout. From the first reply on the desktop the band is one row at every width: wide, compact (5 steps, tabs and + inline), step 4 without + (the tabs open and close the card), then slimmer variants (no 5h pace track, no keep box, the 5h window only), and last the minimal row (5h pie and percent, Robo, +; no tabs), chosen even when it does not fit. There is no buttons row and no tight layout there. The terminal, and the desktop before the first reply, keep compact, tight and a row of their own for buttons that do not fit.
 3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm checkbox (✓/✗, measured as two columns), then the
-   tab buttons (card open), and fold.
+   tab buttons (desktop, once there is a cache view, card open or closed: a press opens the card on that tab, or closes it on the tab in use; `pressTab` over `toggleFold`), and fold (not from compact step 4 down, until the minimal row, see 2).
 4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` draws the chosen tab at the
    band's width; `fitOpen` drops the progress row if the band would pass `maxRows`.
 

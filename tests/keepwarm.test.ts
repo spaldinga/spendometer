@@ -127,7 +127,7 @@ test('an open window pings 50 idle minutes after the last request; the ping star
   await clock.advance(30 * MIN)
   // 80 minutes after the last turn, 30 after the ping: warm, with 30 minutes left; the next ping is 50 after the first.
   expect(forks.length).toBe(1)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 110 } })
   expect((await band.findAll({ type: 'Svg' })).map(s => s.props.alt)).toEqual(['Robo, bobbing', 'WARM'])
   expect(await band.find({ text: ' 30m left' })).toBeDefined()
   await band.unmount()

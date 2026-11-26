@@ -73,15 +73,16 @@ test('squeezed, the folded cache shrinks to the chip and the next cost on the on
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: WARM_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
 
-  // 60 columns: the compact row (both windows, the chip and the next cost, about 30 columns) plus the fold button fits.
-  const half = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 60 } })
+  // 80 columns: the compact row (both windows, the chip and the next cost, about 30 columns) plus the fold button fits.
+  const half = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 80 } })
   expect(await half.find({ key: 'block' })).toBeDefined()
   expect(String((await half.find({ key: 'row' }))?.text)).not.toContain('m left')
   expect(await half.find({ text: '$0.15' })).toBeDefined()
   await half.unmount()
 
   const narrow = await $.ui.mount({ plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: { ...PROPS, bodyColumns: 14 } })
-  expect(await narrow.find({ key: 'cache' })).toBeDefined()
+  // 14 columns: the minimal row, with the fold button alone (no tabs, no keep box).
+  expect(await narrow.find({ key: 'cache-fold' })).toBeDefined()
   await narrow.press({ key: 'cache-fold' })
   // Narrow's card is the compact one: 14 columns is a 228 px band.
   expect(JSON.stringify(await narrow.find({ key: 'card' }))).toContain('width=\\"228\\"')

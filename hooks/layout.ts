@@ -40,10 +40,19 @@ export const CHIP_COLS = 8
 /** Robo alone, 26 px: about 3 columns. The terminal's one-letter chip ` W ` is 3 too. */
 export const ROBO_COLS = 3
 /**
- * One icon button on the compact and tight layouts, its gap included: about 58 px plus a 12 px gap
- * measured on 2026-11-13, 70 px = 6 columns. The fold button counts the same.
+ * One icon button on the compact and tight layouts, its gap included. Measured again on 2026-11-26 at 58
+ * columns (590 px, about 10.2 px a column): `◷`, `$` and `+` each 30 px plus a 10 px gap, 40 px = 4 columns;
+ * the tab in use, in brackets, 41 px: one column more (TAB_BRACKET_COLS). The 2026-11-13 figure (58 px plus
+ * 12, 6 columns) sent the buttons to a row of their own with half the row empty. The fold button counts the same.
  */
-export const COMPACT_BUTTON_COLS = 6
+export const COMPACT_BUTTON_COLS = 4
+/** The extra column the tab in use takes for its brackets, on the compact and tight layouts. */
+export const TAB_BRACKET_COLS = 1
+/**
+ * The keep-warm box on the compact and tight rows: a plain ✓ with its gap, measured 2026-11-26 at 51 columns
+ * (520 px, about 10.2 px a column) at about 31 px: 3 columns. It has no button background, so it is smaller than the icon buttons.
+ */
+export const KEEP_COMPACT_COLS = 3
 /** Columns of slack a compact variant with the buttons inline must leave. */
 export const COMPACT_SLACK = 2
 /** The compact row's variants, from everything (0) to the least (4); see layoutOf. */
@@ -83,25 +92,51 @@ export type Need = {
   buttons: number
   /** The fold button and the buttons with their words, as the wide row draws them. */
   buttonsWide: number
+  /** The fold button's columns inside `buttons` when the narrow layouts may drop it (the tabs are there to open and close the card), else 0. */
+  fold: number
+  /** The desktop's slimmer variants of the last compact step, each narrower than the one before (no buttons counted): 1 no pace track, 2 also no keep box, 3 also only the 5h window. */
+  slim?: number[]
+  /** The minimal row: the 5h pie and percent, Robo and the fold button. Set with `slim`. */
+  minimal?: number
 }
 
-export type Layout = { kind: Kind; buttonsRow: boolean; compactStep: number }
+export type Layout = {
+  kind: Kind
+  buttonsRow: boolean
+  compactStep: number
+  fold: boolean
+  /** The slimmer variants of the last compact step, desktop only: 1 no pace track, 2 also no keep box, 3 also only the 5h window. Absent: none. */
+  slim?: number
+}
 
 /**
  * wide with the word buttons inline, else the first compact variant that fits with the icon buttons
- * inline (and COMPACT_SLACK to spare), else the last variant with the buttons on a row of their own,
- * else tight, the icon buttons on the cache row if they fit.
+ * inline (and COMPACT_SLACK to spare), else (when the fold button can be dropped, as the tabs open and close
+ * the card) the last variant with the buttons inline but no fold button. On the desktop (`need.slim` and
+ * `need.minimal` set) the row then slims down, one step at a time, and always ends in the minimal row, which is
+ * chosen even when it does not fit: the band is one row at every width. Without them (the terminal, and the
+ * desktop before the first reply): the last variant with the buttons off the row (a row of their own), else
+ * tight, the icon buttons on the cache row if they fit. `need.fold` is 0 when the fold button cannot go.
  */
 export const layoutOf = (columns: number, need: Need): Layout => {
   const room = columns
   const b = need.buttons
-  if (need.wide + need.buttonsWide <= room) return { kind: 'wide', buttonsRow: false, compactStep: 0 }
+  if (need.wide + need.buttonsWide <= room) return { kind: 'wide', buttonsRow: false, compactStep: 0, fold: true }
   for (let s = 0; s < need.compact.length; s++) {
-    if (need.compact[s] + b + COMPACT_SLACK <= room) return { kind: 'stacked', buttonsRow: false, compactStep: s }
+    if (need.compact[s] + b + COMPACT_SLACK <= room) return { kind: 'stacked', buttonsRow: false, compactStep: s, fold: true }
   }
   const last = need.compact.length - 1
-  if (need.compact[last] <= room) return { kind: 'stacked', buttonsRow: b > 0, compactStep: last }
-  return { kind: 'tight', buttonsRow: b > 0 && need.tight + b > room, compactStep: 0 }
+  const drops = need.fold > 0
+  const bare = b - need.fold
+  if (drops && need.compact[last] + bare + COMPACT_SLACK <= room) return { kind: 'stacked', buttonsRow: false, compactStep: last, fold: false }
+  if (need.slim && need.minimal !== undefined) {
+    for (let i = 0; i < need.slim.length; i++) {
+      if (need.slim[i] + bare + COMPACT_SLACK <= room) return { kind: 'stacked', buttonsRow: false, compactStep: last, fold: false, slim: i + 1 }
+    }
+    return { kind: 'minimal', buttonsRow: false, compactStep: last, fold: true, slim: need.slim.length }
+  }
+  if (need.compact[last] <= room) return { kind: 'stacked', buttonsRow: (drops ? bare : b) > 0, compactStep: last, fold: !drops }
+  return { kind: 'tight', buttonsRow: (drops ? bare : b) > 0 && need.tight + (drops ? bare : b) > room, compactStep: 0, fold: !drops }
 }
 
 /**
@@ -155,5 +190,9 @@ export const PIE_COLS = 2
 /**
  * The 5h pace track in the top row (PACE_TRACK_PX in cache-art.ts, 64, 44 and 30 px) as columns at DESKTOP_COL_PX,
  * rounded up, plus the one column of margin before it. The words after it are counted as text.
+ *
+ * The compact track is 44 px: measured 2026-11-26 at about 10.2 px a column (58 columns = 590 px), 4.3 columns, so 5 with
+ * the margin before it (it was 7 at the old 8.6 px a column). The estimate must stay at or above the real width: an
+ * under-estimate makes the app wrap.
  */
-export const PACE_TRACK_COLS = { wide: 8 + 1, compact: 6 + 1, tight: 4 + 1 } as const
+export const PACE_TRACK_COLS = { wide: 8 + 1, compact: 5, tight: 4 + 1 } as const

@@ -7,23 +7,23 @@ import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fit
 import { shown } from './visible'
 
 // The compact row's five variants (each narrower), the fold button and the icon buttons (6 columns each), and the wide row's word buttons.
-const NEED = { wide: 118, compact: [60, 52, 46, 40, 34], tight: 15, buttons: 18, buttonsWide: 4 + 14 + 12 }
+const NEED = { wide: 118, compact: [60, 52, 46, 40, 34], tight: 15, buttons: 18, buttonsWide: 4 + 14 + 12, fold: 0 }
 const SLACK = 2
 
 test('a width that fits the wide row and the word buttons keeps the buttons inline', () => {
-  expect(layoutOf(160, NEED)).toEqual({ kind: 'wide', buttonsRow: false, compactStep: 0 })
-  expect(layoutOf(NEED.wide + NEED.buttonsWide, NEED)).toEqual({ kind: 'wide', buttonsRow: false, compactStep: 0 })
+  expect(layoutOf(160, NEED)).toEqual({ kind: 'wide', buttonsRow: false, compactStep: 0, fold: true })
+  expect(layoutOf(NEED.wide + NEED.buttonsWide, NEED)).toEqual({ kind: 'wide', buttonsRow: false, compactStep: 0, fold: true })
 })
 
 test('where the wide row does not fit, the compact row with everything and the buttons inline is chosen', () => {
   expect(layoutOf(NEED.wide + NEED.buttonsWide - 1, NEED).kind).toBe('stacked')
-  expect(layoutOf(NEED.compact[0] + NEED.buttons + SLACK, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 0 })
+  expect(layoutOf(NEED.compact[0] + NEED.buttons + SLACK, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 0, fold: true })
 })
 
 test('each step is chosen when the one before does not fit, with 2 columns of slack', () => {
   for (let s = 1; s < 5; s++) {
     const room = NEED.compact[s] + NEED.buttons + SLACK
-    expect(layoutOf(room, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: s })
+    expect(layoutOf(room, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: s, fold: true })
     // One column less and this step has no slack left: the next one (or the buttons row) takes over.
     expect(layoutOf(room - 1, NEED).compactStep).toBe(Math.min(s + 1, 4))
   }
@@ -33,23 +33,71 @@ test('each step is chosen when the one before does not fit, with 2 columns of sl
 
 test('the buttons leave for a row of their own only after the last step fails inline', () => {
   const inline4 = NEED.compact[4] + NEED.buttons + SLACK
-  expect(layoutOf(inline4, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4 })
-  expect(layoutOf(inline4 - 1, NEED)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4 })
-  expect(layoutOf(NEED.compact[4], NEED)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4 })
+  expect(layoutOf(inline4, NEED)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: true })
+  expect(layoutOf(inline4 - 1, NEED)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4, fold: true })
+  expect(layoutOf(NEED.compact[4], NEED)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4, fold: true })
 })
 
 test('very narrow is tight, with the buttons on the cache row when they fit and on their own row when not', () => {
-  expect(layoutOf(NEED.compact[4] - 1, { ...NEED, tight: 15 })).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0 })
+  expect(layoutOf(NEED.compact[4] - 1, { ...NEED, tight: 15 })).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0, fold: true })
   const t = { ...NEED, compact: [200, 200, 200, 200, 200] }
-  expect(layoutOf(t.tight + t.buttons, t)).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0 })
-  expect(layoutOf(t.tight + t.buttons - 1, t)).toEqual({ kind: 'tight', buttonsRow: true, compactStep: 0 })
-  expect(layoutOf(20, t)).toEqual({ kind: 'tight', buttonsRow: true, compactStep: 0 })
+  expect(layoutOf(t.tight + t.buttons, t)).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0, fold: true })
+  expect(layoutOf(t.tight + t.buttons - 1, t)).toEqual({ kind: 'tight', buttonsRow: true, compactStep: 0, fold: true })
+  expect(layoutOf(20, t)).toEqual({ kind: 'tight', buttonsRow: true, compactStep: 0, fold: true })
 })
 
 test('with no buttons there is never a buttons row', () => {
   const n = { ...NEED, buttons: 0, buttonsWide: 0 }
-  expect(layoutOf(NEED.compact[4], n)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4 })
-  expect(layoutOf(10, n)).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0 })
+  expect(layoutOf(NEED.compact[4], n)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: true })
+  expect(layoutOf(10, n)).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0, fold: true })
+})
+
+// The fold button goes when the tabs are there: they open and close the card, so + is only for the room it leaves.
+const DROPS = { ...NEED, fold: 6 }
+test('the fold button is dropped before the buttons leave the row: step 4 inline without it, then off the row without it', () => {
+  const full = DROPS.compact[4] + DROPS.buttons + SLACK
+  expect(layoutOf(full, DROPS)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: true })
+  const bare = DROPS.compact[4] + (DROPS.buttons - DROPS.fold) + SLACK
+  expect(layoutOf(full - 1, DROPS)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: false })
+  expect(layoutOf(bare, DROPS)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: false })
+  expect(layoutOf(bare - 1, DROPS)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4, fold: false })
+  expect(layoutOf(DROPS.compact[4], DROPS)).toEqual({ kind: 'stacked', buttonsRow: true, compactStep: 4, fold: false })
+})
+
+test('tight without the fold button: the buttons stay on the cache row when they fit, else off it', () => {
+  const t = { ...DROPS, compact: [200, 200, 200, 200, 200] }
+  expect(layoutOf(t.tight + t.buttons - t.fold, t)).toEqual({ kind: 'tight', buttonsRow: false, compactStep: 0, fold: false })
+  expect(layoutOf(t.tight + t.buttons - t.fold - 1, t)).toEqual({ kind: 'tight', buttonsRow: true, compactStep: 0, fold: false })
+})
+
+test('wide and the earlier compact steps keep the fold button even when it could be dropped', () => {
+  expect(layoutOf(160, DROPS)).toEqual({ kind: 'wide', buttonsRow: false, compactStep: 0, fold: true })
+  expect(layoutOf(DROPS.compact[2] + DROPS.buttons + SLACK, DROPS)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 2, fold: true })
+})
+
+// The desktop's slim steps and the minimal row: widths without buttons, each narrower than the step before.
+const SLIM = { ...DROPS, slim: [30, 24, 16], minimal: 18 }
+const BARE = SLIM.buttons - SLIM.fold
+test('desktop: after step 4 without +, the row slims one step at a time (no track, no keep, 5h only), tabs inline', () => {
+  expect(layoutOf(SLIM.compact[4] + BARE + SLACK, SLIM)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: false })
+  for (let i = 0; i < 3; i++) {
+    const room = SLIM.slim[i] + BARE + SLACK
+    expect(layoutOf(room, SLIM)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 4, fold: false, slim: i + 1 })
+    // One column less and the next step (or the minimal row) takes over.
+    expect(layoutOf(room - 1, SLIM).slim).toBe(i === 2 ? 3 : i + 2)
+  }
+})
+
+test('desktop: below the last slim step the minimal row, with + and no tabs, whatever the width (even 0)', () => {
+  const room = SLIM.slim[2] + BARE + SLACK - 1
+  expect(layoutOf(room, SLIM)).toEqual({ kind: 'minimal', buttonsRow: false, compactStep: 4, fold: true, slim: 3 })
+  expect(layoutOf(0, SLIM).kind).toBe('minimal')
+  expect(layoutOf(0, SLIM).buttonsRow).toBe(false)
+})
+
+test('desktop: wide and the earlier compact steps are unchanged by the slim steps', () => {
+  expect(layoutOf(160, SLIM).kind).toBe('wide')
+  expect(layoutOf(SLIM.compact[1] + SLIM.buttons + SLACK, SLIM)).toEqual({ kind: 'stacked', buttonsRow: false, compactStep: 1, fold: true })
 })
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
@@ -93,9 +141,9 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   return $.ui.mount({ plugin: 'spendometer', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
 }
 
-test('at 70 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
-  const band = await mountAt($, on, 70)
-  // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: 64 is the least width for step 0 with the button inline.
+test('at 90 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
+  const band = await mountAt($, on, 90)
+  // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: with the tabs (3 more icon buttons) 85 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
@@ -111,16 +159,12 @@ test('at 70 columns the compact row holds only the essentials, buttons inline as
   await band.unmount()
 })
 
-test('where even step 4 does not fit inline (37 columns with buttons), the buttons leave the compact row for a row of their own', async ($, on) => {
-  const band = await mountAt($, on, 30)
-  const row = await band.find({ key: 'buttons-row' })
-  expect(row).toBeDefined()
-  const inside = JSON.stringify(row)
-  // The keep button sits beside the chip on the cache row, not among the buttons.
-  expect(inside).not.toContain('keep-warm')
-  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
-  expect(inside).toContain('cache-fold')
-  expect(await band.find({ text: '99%' })).toBeDefined()
+test('the compact buttons, measured 2026-11-26: fold and three tabs are 4 × 4 columns + 1 for the brackets = 17', async ($, on) => {
+  // At 6 columns a button the band sent them to a row of their own at 58 columns with half the row empty.
+  const band = await mountAt($, on, 64)
+  const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
+  const text = ((await $.command.run({ command: 'spendometer', args: '', ...RUN })) as { text: string }).text
+  expect(text).toMatch(/compact [\d/]+\+17\b/)
   await band.unmount()
 })
 
@@ -159,7 +203,7 @@ test('wide, card open: tabs and fold each have the same gap before them', async 
 test('compact, card open: tabs and fold each have the same gap before them', async ($, on) => gapsAt($, on, 70))
 
 test('compact, card open: every hover tip sits wholly above its button, so its frame never crosses the row text', async ($, on) => {
-  const band = await mountAt($, on, 70)
+  const band = await mountAt($, on, 90)
   expect(shown(await band.find({ key: 'row' })).split(' next').length - 1).toBe(1)
   await band.press({ key: 'cache-fold' })
   const tips = (await band.findAll({ type: 'Box' })).filter(b => b.props.position === 'absolute')
@@ -189,38 +233,76 @@ test('compact: the keep button sits in the chip block after the next cost', asyn
 const tabLabelsOf = async (band: Awaited<ReturnType<typeof mountAt>>) =>
   Promise.all(['overview', 'context', 'cost'].map(async id => (await band.find({ key: `tab-${id}-button` }))?.props.label))
 
-test('tab buttons: none while the card is closed, words on the wide row, the chosen one in brackets, each before the fold button', async ($, on) => {
+test('tab buttons: there with the card closed, words on the wide row, one press opens the card on that tab, the chosen one in brackets, each before the fold button', async ($, on) => {
   const band = await mountAt($, on, 160)
-  expect(await band.find({ key: 'tab-overview-button' })).toBeUndefined()
-  await band.press({ key: 'cache-fold' })
+  expect(await band.find({ key: 'card' })).toBeUndefined()
   expect(await tabLabelsOf(band)).toEqual(['[Overview]', 'Context', 'Cost'])
   const keys = keysOf(await band.find({ key: 'row' }))
   expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
   // Each carries hover text.
   for (const text of [/^Overview: /, /^Context: /, /^Cost: /]) expect(await band.find({ type: 'Text', text })).toBeDefined()
-  // Pressing one chooses it: the card, the brackets and the store follow.
+  // Closed: a tab opens the card and is stored, in one press.
   await band.press({ key: 'tab-cost-button' })
   expect(await tabLabelsOf(band)).toEqual(['Overview', 'Context', '[Cost]'])
   expect(lastKv.get('cardTab')).toBe('cost')
   expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
-  // Closing the card takes the tabs away.
+  // Open: another tab switches, the card stays.
+  await band.press({ key: 'tab-context-button' })
+  expect(await band.find({ key: 'card' })).toBeDefined()
+  expect(lastKv.get('cardTab')).toBe('context')
+  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  // Open: the tab in use closes the card; the tabs stay, the tab stays chosen.
+  await band.press({ key: 'tab-context-button' })
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  expect(lastKv.get('cardTab')).toBe('context')
+  // The fold button opens it again on that tab.
   await band.press({ key: 'cache-fold' })
-  expect(await band.find({ key: 'tab-cost-button' })).toBeUndefined()
+  expect(await band.find({ key: 'card' })).toBeDefined()
+  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  await band.unmount()
+})
+
+test('a tab press and the fold button share one state: open via a tab, then /spendometer fold closes it', async ($, on) => {
+  const band = await mountAt($, on, 160)
+  const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
+  const fold = async () => ((await $.command.run({ command: 'spendometer', args: 'fold', ...RUN })) as { text: string }).text
+  await band.press({ key: 'tab-cost-button' })
+  expect(await band.find({ key: 'card' })).toBeDefined()
+  expect(await fold()).toBe('cache card: closed')
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  // And the other way: opened by the command, the tab in use closes it.
+  expect(await fold()).toBe('cache card: open')
+  await band.press({ key: 'tab-cost-button' })
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  expect(await fold()).toBe('cache card: open')
+  await band.unmount()
+})
+
+/** How the band lays out its row: wide or stacked, whether the buttons have a row, and the row's children. */
+const layoutSignature = async (band: Awaited<ReturnType<typeof mountAt>>) =>
+  JSON.stringify([!!(await band.find({ key: 'inline' })), !!(await band.find({ key: 'block' })), !!(await band.find({ key: 'buttons-row' })), keysOf(await band.find({ key: 'row' }))])
+
+for (const columns of [160, 90, 70, 58, 40, 36, 30, 20]) {
+  test(`the layout is the same with the card open and closed (${columns} columns)`, async ($, on) => {
+    const band = await mountAt($, on, columns)
+    const closed = await layoutSignature(band)
+    await band.press({ key: (await band.find({ key: 'tab-overview-button' })) ? 'tab-overview-button' : 'cache-fold' })
+    expect(await band.find({ key: 'card' })).toBeDefined()
+    expect(await layoutSignature(band)).toBe(closed)
+    await band.unmount()
+  })
+}
+
+test('the terminal has no tab buttons, open or closed, and no card to open', async ($, on) => {
+  const band = await mountAt($, on, 160, true, 22, 'terminal')
+  expect(await tabLabelsOf(band)).toEqual([undefined, undefined, undefined])
+  expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
   await band.unmount()
 })
 
 test('tab buttons: one glyph each on the compact row, the chosen one in brackets', async ($, on) => {
   const band = await mountAt($, on, 70, true, 70)
-  expect(await tabLabelsOf(band)).toEqual(['[◷]', '◧', '$'])
-  await band.unmount()
-})
-
-test('tab buttons: where they do not fit beside the row they join the buttons row, still before the fold button', async ($, on) => {
-  const band = await mountAt($, on, 30, true, 70)
-  const row = await band.find({ key: 'buttons-row' })
-  expect(row).toBeDefined()
-  const keys = keysOf(row)
-  expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
   expect(await tabLabelsOf(band)).toEqual(['[◷]', '◧', '$'])
   await band.unmount()
 })
@@ -236,8 +318,8 @@ test('a stored tab is the one shown, and an unknown stored value reads as Overvi
   await band.unmount()
 })
 
-test('narrow: the keep button is on the cache row after the chip, before the spacer', async ($, on) => {
-  const narrow = await mountAt($, on, 20)
+test('the terminal, narrow: the keep button is on the cache row after the chip, before the spacer', async ($, on) => {
+  const narrow = await mountAt($, on, 12, true, 22, 'terminal')
   const cache = keysOf(await narrow.find({ key: 'cache' }))
   expect(cache.slice(0, 2)).toEqual(['chip-group', 'keep'])
   expect(cache.indexOf('grow')).toBeGreaterThan(cache.indexOf('keep'))
@@ -251,8 +333,8 @@ test('the keep button is there in the terminal too, right after the chip', async
   await band.unmount()
 })
 
-test('at 100 columns, a usual desktop window, everything stays on one wide row', async ($, on) => {
-  // Measured 2026-11-12: at about 102 columns the whole row fitted with some 14 columns to spare.
+test('at 100 columns, a usual desktop window, every button stays on the first row', async ($, on) => {
+  // Since the tabs always show (2026-11-26) the wide row needs about 140 columns; 100 is compact step 0.
   const band = await mountAt($, on, 100)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect(await band.find({ key: 'keep-warm' })).toBeDefined()
@@ -260,18 +342,21 @@ test('at 100 columns, a usual desktop window, everything stays on one wide row',
 })
 
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
-// step 0: 50, 1: 40 warm (50 cold), 2: 32, 3: 27, 4: 20 (a pie, 2 columns, in each window). With the buttons (fold, 6 columns) and 2 columns of slack:
-// step 0 from 64 columns, 1 from 54, 2 from 46, 3 from 41, 4 from 34; under 34 the buttons take a row of their own.
+// step 0: 53, 1: 43 warm, 2: 35, 3: 30, 4: 23 (a pie, 2 columns, in each window; the keep box 3 columns, measured 2026-11-26). The buttons
+// are the fold and three tabs, 4 columns each plus 1 for the brackets (17), and the fold is 4 of those. With 2 columns of slack:
+// step 0 from 72 columns, 1 from 62, 2 from 54, 3 from 49, 4 from 42 (with +); from 38 step 4 still inline but without +;
+// then slimmer variants of step 4: no pace track (23, same here as no pace shows), no keep box 20 (from 35), the 5h window
+// alone 14 (from 29); at 28 columns and under the minimal row (18: 5h pie and percent, Robo, +). Never a buttons row (desktop).
 const row = async (band: Awaited<ReturnType<typeof mountAt>>) => shown(await band.find({ key: 'row' }))
 
-test('the ladder: warm shows the next cost at step 0 (64 columns)', async ($, on) => {
-  const band = await mountAt($, on, 70)
+test('the ladder: warm shows the next cost at step 0 (from 73 columns)', async ($, on) => {
+  const band = await mountAt($, on, 75)
   expect(await row(band)).toContain('next')
   await band.unmount()
 })
 
-test('the ladder: at 59 columns the next cost is hidden while warm, the total and the chip stay', async ($, on) => {
-  const warm = await mountAt($, on, 59)
+test('the ladder: at 64 columns the next cost is hidden while warm, the total and the chip stay', async ($, on) => {
+  const warm = await mountAt($, on, 64)
   expect(await row(warm)).not.toContain('next')
   expect(await warm.find({ text: '≈$0.49' })).toBeDefined()
   expect(JSON.stringify(await warm.findAll({ type: 'Svg' }))).toContain('WARM')
@@ -287,8 +372,8 @@ test('cold keeps the next cost on the ladder as long as the chip or Robo fits (5
   await band.unmount()
 })
 
-test('the ladder: at 55 columns the cost total is gone', async ($, on) => {
-  const band = await mountAt($, on, 55)
+test('the ladder: at 56 columns the cost total is gone', async ($, on) => {
+  const band = await mountAt($, on, 56)
   expect(await band.find({ key: 'spend-total' })).toBeUndefined()
   expect(JSON.stringify(await band.findAll({ type: 'Svg' }))).toContain('WARM')
   expect(await band.find({ text: '99% left' })).toBeDefined()
@@ -296,8 +381,8 @@ test('the ladder: at 55 columns the cost total is gone', async ($, on) => {
   await band.unmount()
 })
 
-test('the ladder: at 43 columns Robo stands in for the chip', async ($, on) => {
-  const band = await mountAt($, on, 43)
+test('the ladder: at 50 columns Robo stands in for the chip', async ($, on) => {
+  const band = await mountAt($, on, 50)
   const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
   expect(svgs).toContain('Robo, bobbing')
   expect(svgs).not.toContain('WARM')
@@ -305,16 +390,125 @@ test('the ladder: at 43 columns Robo stands in for the chip', async ($, on) => {
   await band.unmount()
 })
 
-test('the ladder: at 40 columns the windows read 26% not 26% left, still inline', async ($, on) => {
-  const band = await mountAt($, on, 40)
+test('the ladder: at 44 columns the windows read 26% not 26% left, still inline', async ($, on) => {
+  const band = await mountAt($, on, 44)
   expect(await band.find({ text: '99%' })).toBeDefined()
   expect(await row(band)).not.toContain('99% left')
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   await band.unmount()
 })
 
+const PLAN = [
+  { content: 'Read the code', status: 'completed' },
+  { content: 'Write tests', status: 'in_progress' },
+  { content: 'Run tests', status: 'pending' },
+]
+const planOn = ($: Parameters<Parameters<typeof test>[1]>[0]) => {
+  return $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: PLAN } as never)
+}
+const TABS_ON = ['tab-overview-button', 'tab-context-button', 'tab-cost-button']
+
+// The desktop band is one row at every width. Probed 2026-11-26 from the band's debug line, at the plain content
+// (no pace shown): step 4 inline with + from 42 columns, without + from 38, no keep box from 35, the 5h window alone
+// from 29, the minimal row below that. With the 5h pace shown (ON_PACE) step 4 is 7 columns wider (30 against 23):
+// with + from 49, without + from 45, no pace track and words from 38.
+test('narrow ladder: at 44 columns the buttons are inline with the + button', async ($, on) => {
+  const band = await mountAt($, on, 44)
+  expect(await band.find({ key: 'cache-fold' })).toBeDefined()
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
+  await band.unmount()
+})
+
+test('narrow ladder: at 38 columns the tabs are inline without the + button, the tabs open and close the card', async ($, on) => {
+  const band = await mountAt($, on, 38)
+  expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
+  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  expect(await band.find({ text: '99%' })).toBeDefined()
+  await band.unmount()
+})
+
+test('narrow ladder: with the 5h pace shown, 46 columns keep the track', async ($, on) => {
+  const keeps = await paced($, on, 46, ON_PACE)
+  expect((await tracks(keeps)).length).toBe(1)
+  await keeps.unmount()
+})
+
+test('narrow ladder: with the 5h pace shown, 40 columns drop the track and its words, keeping the tabs and the keep box', async ($, on) => {
+  const band = await paced($, on, 40, ON_PACE)
+  expect(await tracks(band)).toEqual([])
+  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
+  expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('narrow ladder: at 36 columns the keep box goes, the tabs and both windows stay', async ($, on) => {
+  const band = await mountAt($, on, 36)
+  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
+  expect(await band.find({ text: '99%' })).toBeDefined()
+  expect(await band.find({ text: '82%' })).toBeDefined()
+  await band.unmount()
+})
+
+test('narrow ladder: at 30 columns only the 5h window is left, with the tabs', async ($, on) => {
+  const band = await mountAt($, on, 30)
+  expect(await band.find({ text: '82%' })).toBeDefined()
+  expect(await band.find({ text: '99%' })).toBeUndefined()
+  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
+  await band.unmount()
+})
+
+test('minimal (28 columns and under): the 5h pie and percent, Robo and +, nothing else; + opens the card on the stored tab', async ($, on) => {
+  const band = await mountAt($, on, 20)
+  for (const key of TABS_ON) expect(await band.find({ key })).toBeUndefined()
+  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  expect(await band.find({ key: 'spend-total' })).toBeUndefined()
+  expect(await band.find({ text: '82%' })).toBeDefined()
+  expect(await band.find({ text: '99%' })).toBeUndefined()
+  const alts = (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
+  expect(alts.filter(a => a.startsWith('5H'))).toEqual(['5H 18% used'])
+  expect(alts.some(a => a.startsWith('Robo'))).toBe(true)
+  expect(alts.some(a => a.startsWith('7D'))).toBe(false)
+  lastKv.set('cardTab', 'cost')
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  await band.press({ key: 'cache-fold' })
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
+  await band.press({ key: 'cache-fold' })
+  expect(await band.find({ key: 'card' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('minimal is the last resort: even at 10 columns it is the row, with Robo and +', async ($, on) => {
+  const band = await mountAt($, on, 10)
+  expect(await band.find({ key: 'cache-fold' })).toBeDefined()
+  expect(await band.find({ text: '82%' })).toBeDefined()
+  await band.unmount()
+})
+
+// No separate buttons row on the desktop, at any width, with or without a working plan, card closed or open.
+for (const columns of [160, 100, 70, 50, 44, 40, 36, 30, 26, 20, 10]) {
+  for (const plan of [false, true]) {
+    test(`the desktop never has a buttons row or buttons on the progress row (${columns} columns${plan ? ', a plan running' : ''})`, async ($, on) => {
+      on('tool.call', () => ({ result: 'ran' }))
+      const band = await mountAt($, on, columns)
+      if (plan) await planOn($)
+      for (const open of [false, true]) {
+        if (open) await band.press({ key: (await band.find({ key: 'cache-fold' })) ? 'cache-fold' : 'tab-overview-button' })
+        expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
+        expect(await band.find({ key: 'progress-buttons' })).toBeUndefined()
+      }
+      expect(await band.find({ key: 'card' })).toBeDefined()
+      expect(!!(await band.find({ key: 'progress-row' }))).toBe(plan)
+      await band.unmount()
+    })
+  }
+}
+
 test('the terminal keeps a one-letter chip once Robo would stand in', async ($, on) => {
-  const band = await mountAt($, on, 34, true, 22, 'terminal')
+  const band = await mountAt($, on, 30, true, 22, 'terminal')
   expect(await band.find({ text: ' W ' })).toBeDefined()
   expect(await band.findAll({ type: 'Svg' })).toEqual([])
   await band.unmount()
@@ -338,7 +532,7 @@ test('each button carries hover text on the desktop, and none in the terminal', 
   }
   // Hidden until hovered: the box around each text. (The kit does not expose the hover style itself.)
   const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
-  expect(hidden.length).toBe(5)
+  expect(hidden.length).toBe(8)
   await band.unmount()
 })
 
@@ -406,9 +600,9 @@ test('the compact row writes what is used, as /usage does: 5h first, each with i
   await band.unmount()
 })
 
-test('hovering a usage window on a row of three lines shows the same text', async ($, on) => {
-  // Narrow enough for the tight layout, whose windows are blocks of three lines.
-  const band = await mountAt($, on, 20)
+test('hovering a window on the last compact steps shows the same text as on the wide row', async ($, on) => {
+  // 36 columns: the narrowest step with both windows (the minimal row has the 5h window alone).
+  const band = await mountAt($, on, 36)
   expect(await band.find({ type: 'Text', text: /^7-day limit · 1% used, 99% left · resets in/ })).toBeDefined()
   await band.unmount()
 })
@@ -424,6 +618,17 @@ test('hovering the compact chip shows the idle time once cold', async ($, on) =>
   expect(await band.find({ type: 'Text', text: 'Cold, idle 2h 5m. The next message re-caches for $1.60 on Opus (cheaper: Sonnet $0.80, Haiku $0.20). Keep warm costs $0.05 an hour.' })).toBeDefined()
   await band.unmount()
 })
+
+for (const columns of [44, 36]) {
+  test(`at ${columns} columns a button's hover text is no wider than the room left of the buttons, so it is not cut off`, async ($, on) => {
+    // Seen 2026-11-26: the tab tips, 44 columns wide and anchored at the button's right, ran past the band's left edge.
+    const band = await mountAt($, on, columns)
+    const right = (await band.findAll({ type: 'Box' })).filter(b => b.props.position === 'absolute' && b.props.right === 0)
+    expect(right.length).toBeGreaterThan(0)
+    for (const b of right) expect(Number(b.props.width) <= columns - 16).toBe(true)
+    await band.unmount()
+  })
+}
 
 test('the hover boxes are hidden, each inside a visible keyed box', async ($, on) => {
   const band = await mountAt($, on, 160)
@@ -638,7 +843,7 @@ test('wide row, over pace: "out in ~1h 20m" in red, the track fill red', async (
 })
 
 test('compact row: a 44 px track and the check on pace, "out 1h" in red over pace; 7D has none', async ($, on) => {
-  const on1 = await paced($, on, 70, ON_PACE)
+  const on1 = await paced($, on, 72, ON_PACE)
   expect(await rowOf(on1)).toContain('5h 18% ✓')
   const t = await tracks(on1)
   expect(t.length).toBe(1)
@@ -647,21 +852,14 @@ test('compact row: a 44 px track and the check on pace, "out 1h" in red over pac
 })
 
 test('compact row, over pace', async ($, on) => {
-  const band = await paced($, on, 75, OVER_PACE)
+  const band = await paced($, on, 95, OVER_PACE)
   expect(await rowOf(band)).toContain('5h 60% out 1h')
   expect(await band.find({ type: 'Text', text: ' out 1h', props: { color: DANGER } })).toBeDefined()
   await band.unmount()
 })
 
-test('tight row, on pace: a 30 px track and the check', async ($, on) => {
-  const band = await paced($, on, 20, ON_PACE)
-  expect((await tracks(band))[0].props.width).toBe(30)
-  expect(await band.find({ type: 'Text', text: ' ✓' })).toBeDefined()
-  await band.unmount()
-})
-
-test('tight row, over pace: "1h", no "out"', async ($, on) => {
-  const band = await paced($, on, 20, OVER_PACE)
+test('the terminal, tight row, over pace: "1h", no "out"', async ($, on) => {
+  const band = await paced($, on, 20, OVER_PACE, 'terminal')
   const row = await rowOf(band)
   expect(row).toContain('1h')
   expect(row).not.toContain('out')
@@ -698,14 +896,14 @@ test('the track and words are counted: at 120 columns the row without pace is wi
   await band.unmount()
 })
 
-test('without pace the same 120 columns are one wide row', async ($, on) => {
-  const band = await mountAt($, on, 120)
+test('without pace the same 145 columns are one wide row', async ($, on) => {
+  const band = await mountAt($, on, 145)
   expect(await rowOf(band)).toContain('USAGE')
   await band.unmount()
 })
 
 test('compact row, over pace, squeezed: the ladder drops "out" and keeps the time', async ($, on) => {
-  const band = await paced($, on, 64, OVER_PACE)
+  const band = await paced($, on, 70, OVER_PACE)
   expect(await rowOf(band)).toContain('5h 60% 1h')
   await band.unmount()
 })

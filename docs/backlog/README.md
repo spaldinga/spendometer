@@ -17,6 +17,7 @@ What is next for spendometer, one file per item, so each item ships and is seen 
 | 100 | [Cost tab pictures](cost-pictures.md) | feature | M |
 | 110 | [README images and mockups for the tabs](readme-mockups.md) | change | S |
 | 120 | [Better tab icons](tab-icons.md) | design | S |
+| 130 | [The tight layout cuts off the 7D window](tight-layout-overflow.md) | bug | S |
 
 ## Format
 

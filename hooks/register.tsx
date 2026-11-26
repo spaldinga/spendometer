@@ -25,7 +25,7 @@ import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
+  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, KEEP_COMPACT_COLS, TAB_BRACKET_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -420,6 +420,20 @@ const toggleFold = async ($: EngineInterface): Promise<boolean | null> => {
   })
   $.ui.invalidate('ui.render')
   return open
+}
+
+/**
+ * A tab button: card closed, the tab is stored and the card opens; card open, another tab is stored, and the one
+ * in use closes the card. The fold is the one `toggleFold` keeps, so the fold button and `/spendometer fold` agree.
+ */
+const pressTab = async ($: EngineInterface, id: Tab): Promise<void> => {
+  const view = viewOf(await cacheFacts($), await $.clock.now())
+  const stored = await read($, fold)
+  const open = view !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
+  const same = id === (await tabOf($))
+  if (!open || !same) await $.store.set(TAB_KEY, id)
+  if (!open || same) await toggleFold($)
+  else $.ui.invalidate('ui.render')
 }
 
 /** The usage windows straight from the engine, or none when it cannot say. */
@@ -879,6 +893,10 @@ export const register: Register = on => {
     // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
     // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
     // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
+    // A tip anchored at a button's right edge grows to the left: on a narrow band TIP_COLS ran past the band's left
+    // edge and cut the text off (2026-11-26), so it takes at most what the band leaves left of the buttons.
+    const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
+    const rightTipCols = Math.max(16, Math.min(TIP_COLS, columns - 16))
     const tip = (_key: string, text: string, side: 'left' | 'right' = 'right') =>
       Svg ? (
         <Box
@@ -891,7 +909,7 @@ export const register: Register = on => {
           borderStyle="round"
           borderDimColor
           paddingX={1}
-          width={TIP_COLS}
+          width={side === 'left' ? TIP_COLS : rightTipCols}
         >
           <Text wrap="wrap">{text}</Text>
         </Box>
@@ -909,8 +927,6 @@ export const register: Register = on => {
     )
     const grow = <Box key="grow" flexGrow={1} />
 
-    const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
-
     // What the conversation has cost so far, read from the store: it survives a restart.
     const paid = await readSpend($)
     const total = paid ? paid.main + paid.subs : 0
@@ -927,7 +943,7 @@ export const register: Register = on => {
       </Box>
     ) : null
 
-    // The card's tabs, only while it is open: words on the wide row, one glyph each elsewhere. The one in use is
+    // The card's tabs, whenever the fold button shows (open or closed): words on the wide row, one glyph each elsewhere. The one in use is
     // in brackets (a Button's own props are not known to take a dimmed look).
     const tab = await tabOf($)
     const TAB_GLYPH: Record<Tab, string> = { overview: '◷', context: '◧', cost: '$' }
@@ -940,7 +956,7 @@ export const register: Register = on => {
       const base = isWide ? TAB_NAMES[id] : TAB_GLYPH[id]
       return id === tab ? `[${base}]` : base
     }
-    const tabsShown = open && Svg !== null
+    const tabsShown = Svg !== null && view !== null
     const tabButtons = (isWide: boolean) =>
       tabsShown
         ? TABS.map(id => (
@@ -948,10 +964,7 @@ export const register: Register = on => {
               <Button
                 key={`tab-${id}-button`}
                 label={tabLabel(id, isWide)}
-                onPress={async () => {
-                  await $.store.set(TAB_KEY, id)
-                  $.ui.invalidate('ui.render')
-                }}
+                onPress={() => pressTab($, id)}
               />
               {tip(`tab-${id}`, TAB_TIPS[id])}
             </Box>
@@ -1018,7 +1031,7 @@ export const register: Register = on => {
     // ✓ and ✗ are one character, but a font may draw them two columns wide: measured as two, as the flame was.
     const keepButtonCols = buttonCols('  ', BUTTON_GAP, k)
     const keepWideCols = keep !== null ? keepButtonCols : 0
-    const keepCompactCols = keep !== null ? COMPACT_BUTTON_COLS : 0
+    const keepCompactCols = keep !== null ? KEEP_COMPACT_COLS : 0
     const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + keepWideCols + CACHE_MARGIN : 0
     const cacheBlockCols =
       hasCache && view
@@ -1032,52 +1045,67 @@ export const register: Register = on => {
       (keepAlone ? keepButtonCols : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
     // The tabs: a glyph button each, and the one in use has its two brackets.
-    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? 2 : 0)
+    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? TAB_BRACKET_COLS : 0)
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
     const k2 = Svg ? COMPACT_CHAR_COLS : 1
     const t2 = (s: string) => textCols(s, k2)
     const nextShown = (step: number) => nextCost !== null && (step === 0 || view?.mode === 'cold')
-    const compactAt = (step: number) =>
+    // The slimmer desktop variants of step 4 (layoutOf): 1 no 5h pace track or words, 2 also no keep box, 3 also
+    // only the 5h window (else the first one).
+    const fiveAt = Math.max(0, list.findIndex(w => w.kind === 'five_hour'))
+    const compactAt = (step: number, slim = 0) =>
       ROW_PAD +
       list.reduce(
         (n, w, i) =>
-          n +
-          (Svg
-            ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`) + PIE_COLS + trackCols(i, 'compact')
-            : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`)) +
-          COMPACT_MARGIN,
+          slim >= 3 && i !== fiveAt
+            ? n
+            : n +
+              (Svg
+                ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${slim ? '' : paceLine(i, 'compact', step < 2)}`) + PIE_COLS + (slim ? 0 : trackCols(i, 'compact'))
+                : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`)) +
+              COMPACT_MARGIN,
         0,
       ) +
       (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
-      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + keepCompactCols + COMPACT_MARGIN : 0)
+      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + (slim >= 2 ? 0 : keepCompactCols) + COMPACT_MARGIN : 0)
+    // The minimal row: the 5h pie and its percent, Robo and the fold button. No next cost, keep box, tabs or cost.
+    const minimalCols = ROW_PAD + PIE_COLS + t2(`${useds[fiveAt] ?? 0}%${list[fiveAt] ? lowText(fiveAt) : ''}`) + COMPACT_MARGIN + ROBO_COLS + COMPACT_MARGIN + COMPACT_BUTTON_COLS
+    // From the first reply on the desktop the band is one row at every width (tabs shown); the terminal keeps its layouts.
+    const slimNeed = Svg && tabsShown && !waitingOnly ? { slim: [1, 2, 3].map(s => compactAt(4, s)), minimal: minimalCols } : {}
     const need = {
       wide: rowCols(true, CELLS, cacheInlineCols),
       compact: Array.from({ length: COMPACT_STEPS }, (_, s) => (waitingOnly ? rowCols(false, CELLS, 0) : compactAt(s))),
       tight: view ? ROW_PAD + badgeCols + t(summaryText) + keepCompactCols : rowCols(false, TIGHT_CELLS, 0),
       buttons: buttonsCols,
       buttonsWide: buttonsWideCols,
+      fold: button && tabsShown ? COMPACT_BUTTON_COLS : 0,
+      ...slimNeed,
     }
-    const { kind, buttonsRow, compactStep } = layoutOf(columns, need)
+    const { kind, buttonsRow, compactStep, fold: foldShown, slim = 0 } = layoutOf(columns, need)
+    const minimal = kind === 'minimal'
+    const foldEl = foldShown ? button : null
     lastWidth = {
       body: typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : null,
       viewport: typeof e.viewport?.columns === 'number' ? e.viewport.columns : null,
       used: columns,
-      kind: kind === 'stacked' ? `compact step ${compactStep}` : kind,
-      need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}`,
+      kind: minimal ? 'minimal' : kind === 'stacked' ? `compact step ${compactStep}${slim ? `, slim ${slim}` : ''}` : kind,
+      need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}${need.slim ? `, slim ${need.slim.join('/')}+${need.buttons - need.fold}, minimal ${need.minimal}` : ''}`,
     }
     const buttons = [keepAlone ? keepButton : null]
-    // Buttons that do not fit beside the row take a row of their own, right-aligned, under the band's main rows.
+    // Buttons that do not fit beside the row take a row of their own, right-aligned: the terminal, and the desktop
+    // before the first reply. From the first reply on the desktop layoutOf never asks for one.
     const buttonsRowEl = buttonsRow ? (
       <Box key="buttons-row" flexDirection="row" paddingX={1}>
         {grow}
         {tabButtons(kind === 'wide')}
-        {button}
+        {foldEl}
         {buttons}
       </Box>
     ) : null
-    const inlineButtons = buttonsRow ? [] : [...tabButtons(kind === 'wide'), button, ...buttons]
+    // The minimal row has the fold button alone: the tabs are not drawn.
+    const inlineButtons = buttonsRow ? [] : [...(minimal ? [] : tabButtons(kind === 'wide')), foldEl, ...buttons]
 
     const running = (await read($, crew)).filter(w => !w.isDone)
     const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
@@ -1166,7 +1194,7 @@ export const register: Register = on => {
     const progressRow = progressOf('progress-row', rowPx, rowPx)
 
     const isWide = kind === 'wide'
-    const isCompact = kind === 'stacked'
+    const isCompact = kind === 'stacked' || minimal
     const spendBox = total <= 0 || (isCompact && compactStep >= 2) ? null : isCompact ? (
       <Box key="spend" flexShrink={0} marginRight={COMPACT_MARGIN}>
         <Text key="spend-total" color="text" bold>{`≈${usd(total)}`}</Text>
@@ -1296,7 +1324,7 @@ export const register: Register = on => {
           {Svg ? <Box key="pie-gap" marginRight={1}>{pie(w, p, i)}</Box> : null}
           <Text color={p.col} bold>{`${p.used}%`}</Text>
           {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
-          {paceEls(w, p, 'compact', compactStep < 2)}
+          {slim ? null : paceEls(w, p, 'compact', compactStep < 2)}
           {tip(`w-tip-${i}`, p.tip, 'left')}
         </Box>
       )
@@ -1309,7 +1337,7 @@ export const register: Register = on => {
     )
     const usage = [
       ...(list.length > 0
-        ? list.map(isWide ? wide : isCompact ? compact : stacked)
+        ? list.map((w, i) => (slim >= 3 && i !== fiveAt ? null : (isWide ? wide : isCompact ? compact : stacked)(w, i)))
         : isCompact ? [] : [<Box key="wait" flexShrink={0} marginRight={3}><Text color="subtle">waiting for the first reply</Text></Box>]),
       spendBox,
     ]
@@ -1349,7 +1377,7 @@ export const register: Register = on => {
           ? <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />
           : <Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode][0]} `}</Text>
     // The next message's cost: always at step 0, after that only while cold.
-    const showNext = mine !== undefined && (compactStep === 0 || cold)
+    const showNext = !minimal && mine !== undefined && (compactStep === 0 || cold)
     const badge = Svg
       ? [
           <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />,
@@ -1391,7 +1419,7 @@ export const register: Register = on => {
           {inlineButtons}
         </Box>
       )
-    } else if (kind === 'stacked') {
+    } else if (kind === 'stacked' || minimal) {
       // Compact: one line, the chip and the next message's cost standing in for the cache block.
       rows = (
         <Box key="row" flexDirection="row" paddingX={1} alignItems="center">
@@ -1405,7 +1433,7 @@ export const register: Register = on => {
                 {showNext ? <Text key="next" color="subtle"> next</Text> : null}
                 {chipHover}
               </Box>
-              {keepButton}
+              {slim >= 2 ? null : keepButton}
             </Box>
           )}
           {grow}
