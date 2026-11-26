@@ -9,7 +9,7 @@ import type { Spend, Spent } from '../../../types'
 import { cacheFacts } from '../cache/facts'
 import { familyOf, turnCost, usd } from '../prices'
 import type { TurnUsage } from '../prices'
-import { dayKey, lastDays } from './days'
+import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { isCommit, isPr, resultsSentence } from './results'
 
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
@@ -220,4 +220,23 @@ export async function addContext(
     next.ctxPrev = tokens
     await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
   } catch { /* the runway waits for the next turn */ }
+}
+
+/** Drops the saved spend records under `keys` last written before `cutoff` (clock ms). */
+export async function cleanOldSpend($: EngineInterface, keys: string[], cutoff: number): Promise<void> {
+  for (const key of keys) {
+    if (!key.startsWith(SPEND_PREFIX)) continue
+    const s = (await $.store.get(key)) as Partial<Spent> | null | undefined
+    if (s && typeof s.at === 'number' && s.at < cutoff) await $.store.delete(key)
+  }
+}
+
+/** Drops the pace records an older version kept. */
+export async function cleanOldPace($: EngineInterface, keys: string[]): Promise<void> {
+  for (const key of keys) if (key.startsWith(OLD_PACE_PREFIX)) await $.store.delete(key)
+}
+
+/** Drops the daily totals under `keys` older than DAY_KEEP_DAYS, counted from `nowMs`. */
+export async function cleanOldDays($: EngineInterface, keys: string[], nowMs: number): Promise<void> {
+  for (const key of keys) if (key.startsWith(DAY_PREFIX) && isOldDay(key, nowMs, DAY_KEEP_DAYS)) await $.store.delete(key)
 }

@@ -1,17 +1,16 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { CacheFacts, Spent } from '../types'
 import { LIST_TOOLS, REPORT_TOOL, labelOf } from './activity/progress/progress'
 import { countStep, dropFinished, noteListCall, noteReport, startTurn } from './activity/progress/state'
 import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew'
 import { SHELLS, holdCommand } from './safety/guard/hold'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
-import { CACHE_PREFIX, TTL_MS, cacheFacts, putCache, resetCache } from './cost/cache/facts'
-import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, addToolOut, addContext } from './cost/spend/record'
+import { TTL_MS, cacheFacts, cleanOldCache, putCache, resetCache } from './cost/cache/facts'
+import { SPEND_KEEP_MS, addKeepWarm, addResults, addSpend, addToolOut, addContext, cleanOldDays, cleanOldPace, cleanOldSpend } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
-import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
+import { cleanOldKeep, freshKeep } from './cost/cache/keepwarm/state'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
 import { afterTurn, endConversation, keepOf, noteCompact, noteRequest, noteSeeded, startKeep } from './cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, warnCold } from './cost/cache/keepwarm/command'
@@ -21,7 +20,6 @@ import { arm, renderBand } from './band/render'
 import { resetFold } from './band/buttons'
 import { HOLD_KEY, SETTINGS, settingsAnswer, switchOf } from './band/settings'
 import { nextGrowth } from './capacity/context/runway'
-import { DAY_PREFIX, isOldDay } from './cost/spend/days'
 import { pull, setWindows } from './capacity/usage/windows'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -113,30 +111,12 @@ export const register: Register = on => {
     try {
       const nowMs = await $.clock.now()
       const cutoff = nowMs - SPEND_KEEP_MS
-      for (const key of await $.store.keys()) {
-        if (key.startsWith(CACHE_PREFIX)) {
-          const c = (await $.store.get(key)) as Partial<CacheFacts> | null | undefined
-          if (c && typeof c.lastAt === 'number' && c.lastAt < cutoff) await $.store.delete(key)
-          continue
-        }
-        // Pace samples are no longer kept: the pace comes from the window's own length.
-        if (key.startsWith(OLD_PACE_PREFIX)) {
-          await $.store.delete(key)
-          continue
-        }
-        if (key.startsWith(KEEP_PREFIX)) {
-          const k = (await $.store.get(key)) as { at?: unknown } | null | undefined
-          if (k && typeof k.at === 'number' && k.at < cutoff) await $.store.delete(key)
-          continue
-        }
-        if (key.startsWith(DAY_PREFIX)) {
-          if (isOldDay(key, nowMs, DAY_KEEP_DAYS)) await $.store.delete(key)
-          continue
-        }
-        if (!key.startsWith(SPEND_PREFIX)) continue
-        const s = (await $.store.get(key)) as Partial<Spent> | null | undefined
-        if (s && typeof s.at === 'number' && s.at < cutoff) await $.store.delete(key)
-      }
+      const keys = await $.store.keys()
+      await cleanOldCache($, keys, cutoff)
+      await cleanOldPace($, keys) // pace samples are no longer kept: the pace comes from the window's own length
+      await cleanOldKeep($, keys, cutoff)
+      await cleanOldDays($, keys, nowMs)
+      await cleanOldSpend($, keys, cutoff)
     } catch { /* an entry that stays is only a few bytes */ }
     // The conversation's window comes back from the store (a restart lost its timer); /keepwarm is registered unless cache-tax is there.
     try { await startKeep($, kw) } catch { /* the band goes on without keep-warm */ }

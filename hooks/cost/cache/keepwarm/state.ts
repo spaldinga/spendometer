@@ -119,3 +119,12 @@ export async function lastAtOf($: EngineInterface): Promise<number> {
     return 0
   }
 }
+
+/** Drops the keep-warm records under `keys` last written before `cutoff` (clock ms). */
+export async function cleanOldKeep($: EngineInterface, keys: string[], cutoff: number): Promise<void> {
+  for (const key of keys) {
+    if (!key.startsWith(KEEP_PREFIX)) continue
+    const k = (await $.store.get(key)) as { at?: unknown } | null | undefined
+    if (k && typeof k.at === 'number' && k.at < cutoff) await $.store.delete(key)
+  }
+}

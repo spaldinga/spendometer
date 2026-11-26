@@ -98,3 +98,12 @@ export const viewOf = (c: CacheFacts | null, now: number): CacheView | null => {
   }
 }
 
+
+/** Drops the saved cache facts under `keys` whose last request is before `cutoff` (clock ms). */
+export async function cleanOldCache($: EngineInterface, keys: string[], cutoff: number): Promise<void> {
+  for (const key of keys) {
+    if (!key.startsWith(CACHE_PREFIX)) continue
+    const c = (await $.store.get(key)) as Partial<CacheFacts> | null | undefined
+    if (c && typeof c.lastAt === 'number' && c.lastAt < cutoff) await $.store.delete(key)
+  }
+}
