@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, LINE, MUTED, OK, ORANGE, TEXT, YELLOW, svgDoc } from '../hooks/band/look'
-import { MODELS, cardSvg, chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, paceTrackSvg, paceWords, pieSvg, roboSvg, wedgePath } from '../hooks/cache-art'
+import { MODELS } from '../hooks/cost/prices'
+import { cardSvg, chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, paceTrackSvg, paceWords, pieSvg, roboSvg, wedgePath } from '../hooks/cache-art'
 import type { CacheView, PaceRow } from '../hooks/cache-art'
 import type { Metrics } from '../hooks/metrics'
 

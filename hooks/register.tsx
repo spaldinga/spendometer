@@ -13,9 +13,11 @@ import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
   PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD,
-  MODELS, TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, paceTrackSvg, paceWords, pieSvg, roboSvg, turnCost, usd, warmCost,
+  TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, fmtIdle, fmtReset, mineModel, paceTrackSvg, paceWords, pieSvg, roboSvg,
 } from './cache-art'
-import type { CacheView, PaceMode, PaceRow, Tab, TurnUsage } from './cache-art'
+import type { CacheView, PaceMode, PaceRow, Tab } from './cache-art'
+import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
+import type { TurnUsage } from './cost/prices'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
 import type { Keep } from './keepwarm'
 import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, keepwarmCommand, keepwarmStatus, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, startKeep, warnCold } from './keepwarm'
