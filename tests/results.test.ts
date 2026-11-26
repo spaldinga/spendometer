@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import { cardSvg } from '../hooks/band/card'
 import type { CacheView } from '../hooks/cost/cache/facts'
 import { isCommit, isPr, resultsSentence, resultsText } from '../hooks/cost/spend/results'
-import { resetHold } from '../hooks/register'
+import { resetHold } from '../hooks/safety/guard/hold'
 import { spendLine } from '../hooks/cost/spend/record'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')

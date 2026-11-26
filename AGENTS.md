@@ -60,7 +60,7 @@ timers are lost.
 ## Conventions
 
 - `on(...)` and `$.noun.method(...)` are spelled literally; helpers that take `$` are top-level
-  functions. Pure logic lives beside `register.tsx` (`progress.ts`, `guard.ts`, `cache-art.ts`).
+  functions. Pure logic lives beside `register.tsx` (`progress.ts`, `cache-art.ts`).
 - Calls that drive Claude (`$.command.run`) are fired, never awaited, inside a hook.
 - Anything that can stop the user's work (the git hold) fails open with a note in the transcript.
-- Keep the upstream MIT notice and the Blast Radius (Apache-2.0) credit in `hooks/guard.ts`.
+- Keep the upstream MIT notice and the Blast Radius (Apache-2.0) credit in `hooks/safety/guard/guard.ts`.

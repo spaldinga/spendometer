@@ -8,9 +8,9 @@ import { dropFinished, noteListCall, noteReport, readProgress } from './activity
 import { CREW_SHOWN, addCrew, crewText, dropDoneCrew, finishCrew, noteCrewStep, runningCrew } from './activity/crew'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './activity/progress/themes'
 import type { ThemeId } from './activity/progress/themes'
-import { classify, measure as measureRisk, refusal } from './guard'
+import { SHELLS, heldNow, holdCommand } from './safety/guard/hold'
+import { heldBand } from './safety/guard/band'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
-import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import { TABS, TAB_NAMES, cardSvg } from './band/card'
 import type { Tab } from './band/card'
@@ -249,21 +249,6 @@ const measure = async ($: EngineInterface, lastAt: number | null, model: string 
 }
 
 
-// ---------- Hold and show ----------
-/** The shells whose command lines are read. */
-const SHELLS = ['Bash', 'PowerShell'] as const
-const HOLD_LIMIT_MS = 10 * 60 * 1000
-/** A wait that came back sooner than this did not wait, so it is not used to hold. */
-const WAIT_FLOOR_MS = 100
-/**
- * A hook has seconds of its own time, but time inside a `$` call is free, so a hold
- * waits in a short process: `sleep` where there is one, and on Windows, where there
- * is not, one second of `ping`.
- */
-const WAITS: readonly (readonly string[])[] = [['sleep', '0.5'], ['ping', '-n', '2', '127.0.0.1']]
-
-type Held = { command: string; risk: Risk; report: Report | null; decision: 'proceed' | 'cancel' | null }
-/** The call being held, or null. One at a time; a second risky call waits its turn. */
 /**
  * The 30 s redraw. A reload loses this flag and the old timer with it, and a resume may skip session.start,
  * so the timer is armed from the start, the first request and the first render; the flag keeps it to one.
@@ -279,92 +264,20 @@ const arm = ($: EngineInterface): void => {
   }
 }
 
-let held: Held | null = null
-/** Which of WAITS works on this machine: unknown until tried, -1 when none does. */
-let waitAt: number | null = null
-
-/** Waits a moment inside a process. False when this machine has no way to: then nothing can be held. */
-async function waitTick($: EngineInterface): Promise<boolean> {
-  for (let i = waitAt ?? 0; i < WAITS.length && waitAt !== -1; i++) {
-    try {
-      const before = await $.clock.now()
-      const r = await $.process.run([...WAITS[i]], { timeoutMs: 5000 })
-      if (r.exitCode === 0 && (await $.clock.now()) - before >= WAIT_FLOOR_MS) {
-        waitAt = i
-        return true
-      }
-    } catch { /* not on this machine: try the next */ }
-    if (waitAt === i) break
-  }
-  waitAt = -1
-  return false
-}
-
-/** For tests: forget the held call and which wait works. */
-export const resetHold = (): void => {
-  held = null
-  waitAt = null
-}
-
-/**
- * Lets a shell command run and counts its commits and pull requests when it did. The call's result carries
- * no exit status the mod can read, so "ran" means nothing in front of it refused it (no `deny` in the result).
- */
-async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> | R, command: string, tool: string): Promise<R> {
-  const r = await next(e)
+/** Counts what a shell command that ran left behind: its commits and pull requests, and its output in the context. */
+const afterShell = async ($: EngineInterface, tool: string, e: unknown, command: string, r: unknown): Promise<void> => {
   if (!isDeny(r)) await addResults($, command)
   await countCall($, tool, e, r)
-  return r
 }
 
 export const register: Register = on => {
   /** The keep-warm pinger's state for this process: one conversation at a time. */
   const kw = freshKeep()
 
-  // A git command that throws work away is held until the person answers in the band.
-  // Cancel, no answer and an interrupted turn refuse it. A machine that cannot hold,
-  // or an error while holding, lets it through with a note: this is a second look,
-  // and the permission rules are still in front of it.
   for (const tool of SHELLS) {
     on('tool.call', { tool }, async ($, e, next) => {
       const command = String(e.command ?? '')
-      const risk = classify(command)
-      if (risk === null) return pass($, e, next, command, tool)
-      // The hold is on unless /spendometer hold off said otherwise.
-      if (!(await switchOf($, HOLD_KEY, true))) return pass($, e, next, command, tool)
-      const interrupted = { deny: refusal('the turn was interrupted', risk.label) }
-      // `held` is claimed with no await between the check and the claim, so two waiting calls can't both get through.
-      while (held !== null) {
-        if (next.signal?.aborted) return interrupted
-        if (!(await waitTick($))) break
-      }
-      if (waitAt === -1) {
-        void Promise.resolve($.ui.log(`could not hold \`${risk.label}\` to show what it changes: this machine has no way to wait. It runs as usual.`)).catch(() => {})
-        return pass($, e, next, command, tool)
-      }
-      const mine: Held = { command, risk, report: null, decision: null }
-      held = mine
-      let why: string | null = null
-      try {
-        mine.report = await measureRisk($, risk, await $.session.cwd())
-        $.ui.invalidate('ui.render')
-        const startedAt = await $.clock.now()
-        while (mine.decision === null && why === null) {
-          if (next.signal?.aborted) why = 'the turn was interrupted'
-          else if ((await $.clock.now()) - startedAt > HOLD_LIMIT_MS) why = 'no answer within 10 minutes'
-          else if (!(await waitTick($))) break
-        }
-      } catch { /* an error while holding lets the command through, below */ } finally {
-        if (held === mine) held = null
-        $.ui.invalidate('ui.render')
-      }
-      const summary = mine.report?.summary ?? risk.label
-      if (mine.decision === 'cancel') return { deny: refusal('the user pressed Cancel', summary) }
-      if (why !== null) return { deny: refusal(why, summary) }
-      if (mine.decision !== 'proceed') {
-        void Promise.resolve($.ui.log(`could not keep holding \`${risk.label}\`, so it runs as usual.`)).catch(() => {})
-      }
-      return pass($, e, next, command, tool)
+      return holdCommand($, e, next, command, () => switchOf($, HOLD_KEY, true), r => afterShell($, tool, e, command, r))
     })
   }
 
@@ -623,30 +536,9 @@ export const register: Register = on => {
     const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : null
 
     // A held command takes the band: what it would lose, and the two answers. Cancel comes first.
-    const holding = held
-    if (holding && holding.report) {
-      const rep = holding.report
-      const shown = holding.command.length > 90 ? holding.command.slice(0, 89) + '…' : holding.command
-      return (
-        <Box key="held" flexDirection="column" paddingX={1}>
-          <Box flexDirection="row" alignItems="center">
-            <Text key="held-chip" backgroundColor={ORANGE} color={INK} bold>{' HELD '}</Text>
-            <Text key="held-command" color="text" bold>{` ${shown}`}</Text>
-            <Box key="grow" flexGrow={1} />
-            <Box key="held-no" flexShrink={0} marginLeft={1}>
-              <Button key="held-cancel" label="Cancel" onPress={() => { holding.decision = 'cancel' }} />
-            </Box>
-            <Box key="held-yes" flexShrink={0} marginLeft={1}>
-              <Button key="held-proceed" label="Proceed" onPress={() => { holding.decision = 'proceed' }} />
-            </Box>
-          </Box>
-          <Text key="held-summary" color={YELLOW} bold>{`Would ${rep.summary}`}</Text>
-          {rep.lines.map((l, i) => <Text key={`held-line-${i}`} color="text">{`  ${l}`}</Text>)}
-          {rep.more > 0 ? <Text key="held-more" color="subtle">{`  and ${rep.more} more`}</Text> : null}
-          {rep.note ? <Text key="held-note" color="subtle">{rep.note}</Text> : null}
-        </Box>
-      )
-    }
+    const holding = heldNow()
+    const heldEl = holding ? heldBand(holding, ui) : null
+    if (heldEl) return heldEl
     // The atom is cleared by a resume and refilled only by events that may not come: an empty one asks the engine.
     arm($)
     const kept = await keptWindows($)

@@ -19,7 +19,7 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 | `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record |
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display and delegation figures |
-| `tool.call` | The git hold ([guard](../hooks/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
+| `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
 | `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
 
@@ -28,7 +28,7 @@ On this machine `classic.SessionStart` is skipped for user-installed mods; don't
 ## Modules
 
 Pure modules take data and return data or an SVG string; they never touch the engine (`$`), so they are tested
-directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts` and the stores under `cost/`.
+directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/guard/` and the stores under `cost/`.
 
 | File | Role | Pure |
 |---|---|---|
@@ -37,7 +37,9 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `cost/cache/keepwarm/state.ts` | The switch's state: the `Keep` record, the per-conversation records in the store, the constants (on by default, 24h after each message; [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `cost/cache/keepwarm/lifecycle.ts` | The conversation lifecycle (seat, detect cache-tax, restore, the band's hooks) and the mark's state and hover (follows the cache: cold stops the window) | no |
 | `cost/cache/keepwarm/command.ts` | `/keepwarm` and its status line, the durations, and the cold-send warning | no |
-| `guard.ts` | Recognises risky git commands and holds them | no |
+| `safety/guard/guard.ts` | Recognises risky git commands and measures what they would lose (keeps the MIT and Blast Radius notices) | no |
+| `safety/guard/hold.ts` | The hold: `holdCommand`, `heldNow`, `SHELLS`, `resetHold`; the held call and the working wait are private module variables | no |
+| `safety/guard/band.tsx` | `heldBand`: the band drawn while a command is held | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store, and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output (`addToolOut`), context size and growth (`addContext`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
@@ -73,7 +75,7 @@ never been type-checked.
 |---|---|---|
 | Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress (`activity/progress/state.ts`), crew (`activity/crew.ts`), turn, seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
-| Module variables | Lost on reload | `lastWidth` (for the status command), timers |
+| Module variables | Lost on reload | `lastWidth` (for the status command), timers, the redraw flag (`ticking`), the held call and the working wait (`held`, `waitAt`, in `safety/guard/hold.ts`) |
 
 The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; new fields must be carried by both.
 

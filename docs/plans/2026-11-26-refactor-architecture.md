@@ -200,3 +200,9 @@ all tests pass with only import lines changed (until step 21); the band looks th
   `THEMES`. Helpers used by one theme live in it: `dotted` in vitals, `PULSE` in wake, `CAPS`/`SMALL` in bridge.
   `kit.ts` keeps `CY`, `CHAR`, `FONT` and the helpers several themes use. README's file list is already stale
   (names `cache-art.ts`); not touched.
+- **Step 16:** `ticking`, `arm` and `TICK_MS` are the band's 30 s redraw timer, not the hold's: they stay in
+  `register.tsx` (for the band/settings steps). The hold is `holdCommand($, e, next, command, isOn, after)` in
+  `safety/guard/hold.ts`: `isOn` is register's `switchOf($, HOLD_KEY, true)` and `after` is register's `afterShell`
+  (adds results via cost, counts output via capacity), so the hold imports neither domain. `pass` lost its `$`,
+  `command` and `tool` parameters for that. The held band is `heldBand(holding, ui)` in `safety/guard/band.tsx`;
+  register keeps the `if` that returns it. `HOLD_KEY` stays in register.

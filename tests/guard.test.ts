@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { classify } from '../hooks/guard'
-import { resetHold } from '../hooks/register'
+import { classify } from '../hooks/safety/guard/guard'
+import { resetHold } from '../hooks/safety/guard/hold'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const PROPS = { hasSurvey: false, isWorking: true, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 12 }, view: {} } as const

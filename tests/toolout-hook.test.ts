@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { resetHold } from '../hooks/register'
+import { resetHold } from '../hooks/safety/guard/hold'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 
