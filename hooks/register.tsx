@@ -12,13 +12,15 @@ import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
-  PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD,
-  TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, fmtIdle, fmtReset, mineModel, paceTrackSvg, paceWords, pieSvg, roboSvg,
+  PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, WORD,
+  TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, fmtReset, paceTrackSvg, paceWords, pieSvg, roboSvg,
 } from './cache-art'
-import type { CacheView, PaceMode, PaceRow, Tab } from './cache-art'
+import type { PaceMode, PaceRow, Tab } from './cache-art'
 import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
 import type { TurnUsage } from './cost/prices'
-import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
+import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
+import type { CacheView } from './cost/cache/facts'
+import { SPEND_PREFIX, addKeepWarm, readSpend, recordOf } from './cost/spend/record'
 import type { Keep } from './keepwarm'
 import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, keepwarmCommand, keepwarmStatus, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, startKeep, warnCold } from './keepwarm'
 export { pingKeptCacheWarm }
@@ -386,21 +388,6 @@ const paceFor = (w: Window, now: number) => (w.kind === 'five_hour' ? paceOf(w, 
 const dots = (left: number, cells: number): { on: string; off: string } => {
   const n = Math.max(0, Math.min(cells, Math.round((left / 100) * cells)))
   return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
-}
-
-
-/** What the cache drawings read, or null until a request and its context size are known. */
-export const viewOf = (c: CacheFacts | null, now: number): CacheView | null => {
-  if (!c || c.lastAt <= 0 || c.tokens <= 0) return null
-  const idleMs = Math.max(0, now - c.lastAt)
-  return {
-    mode: idleMs >= TTL_MS ? 'cold' : 'warm',
-    idle: fmtIdle(idleMs),
-    idleMin: Math.floor(idleMs / 60000),
-    tokens: c.tokens,
-    window: c.window,
-    mine: familyOf(c.model),
-  }
 }
 
 const pull = async ($: EngineInterface): Promise<void> => {

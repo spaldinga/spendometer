@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { cardSvg } from '../hooks/cache-art'
-import type { CacheView } from '../hooks/cache-art'
+import type { CacheView } from '../hooks/cost/cache/facts'
 import { isCommit, isPr, resultsSentence, resultsText } from '../hooks/cost/spend/results'
 import { resetHold, spendLine } from '../hooks/register'
 

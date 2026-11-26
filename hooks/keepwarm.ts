@@ -8,13 +8,13 @@
 // gone, and the quiet after a compaction. What differs: the state is spendometer's (one switch per
 // conversation, one record `keep:<id>` in the store), and the cache clock is the band's own cache facts.
 //
-// Pure of the band: everything the band owns (the cache facts, the session record) is read and written through cache-store.ts.
+// Pure of the band: everything the band owns (the cache facts, the session record) is read and written through cost/cache/facts.ts and cost/spend/record.ts.
 
 import type { EngineInterface } from 'claude-code'
 
-import { addKeepWarm, cacheFacts, putCache } from './cache-store'
+import { cacheFacts, putCache, TTL_MS } from './cost/cache/facts'
+import { addKeepWarm } from './cost/spend/record'
 import { MODELS, coldCost, familyOf, turnCost, usd, warmCost } from './cost/prices'
-import { TTL_MS } from './cache-art'
 
 /**
  * The default for conversations with no switch of their own: on unless it is exactly false. Its own key, so a stale

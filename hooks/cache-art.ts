@@ -4,7 +4,8 @@
 import { DANGER, EMPTY, FABLE, HUE, ICE, INK, LINE, MUTED, OK, ORANGE, TEXT, YELLOW, svgDoc } from './band/look'
 import type { Mode } from './band/look'
 import { MODELS, coldCost, costOf, modelName, tok, usd } from './cost/prices'
-import type { Model } from './cost/prices'
+import { TTL_MIN, fmtIdle, mineModel } from './cost/cache/facts'
+import type { CacheView } from './cost/cache/facts'
 export type { Mode } from './band/look'
 import { RUNWAY_CAP } from './metrics'
 import type { Metrics } from './metrics'
@@ -18,42 +19,12 @@ export type Kind = 'wide' | 'stacked' | 'tight' | 'minimal'
 export const MODEL_COLOR: Record<string, string> = { opus: HUE.warm, sonnet: ORANGE, haiku: YELLOW, fable: FABLE }
 export const WORD: Record<Mode, string> = { warm: 'WARM', cold: 'COLD' }
 
-/** The prompt cache lives an hour after the last request that read or wrote it. */
-export const TTL_MIN = 60
-export const TTL_MS = TTL_MIN * 60 * 1000
-
 /**
  * The band's width in CSS pixels for a column count: the engine keeps 5 cells
  * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
  * so the card never runs past the slot; the few pixels left are band colour.
  */
 export const bandPx = (columns: number): number => (columns + 5) * 12
-
-/** Idle time the way the card writes it: 18m, 2h 5m, 3d 9h. */
-export const fmtIdle = (ms: number): string => {
-  const mins = Math.max(0, Math.floor(ms / 60000))
-  if (mins < 60) return `${mins}m`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ${mins % 60}m`
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`
-}
-
-/** What every drawing of the cache reads. */
-export type CacheView = {
-  mode: Mode
-  /** How long since the last request, written out: 3d 9h, 18m. */
-  idle: string
-  /** The same in whole minutes, for the warm countdown. */
-  idleMin: number
-  /** Context the next request re-sends. */
-  tokens: number
-  /** The model's context window. */
-  window: number
-  /** This session's MODELS id, or null when the model isn't priced. */
-  mine: string | null
-}
-
-export const mineModel = (v: CacheView): Model | undefined => MODELS.find(m => m.id === v.mine)
 
 /** cache-tax pings once per 50 idle minutes: 1.2 pings an hour, each reading the whole context. */
 export const PINGS_PER_HOUR = 1.2
