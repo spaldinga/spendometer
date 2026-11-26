@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { dayKey, dayOfKey, isOldDay, lastDays } from '../hooks/days'
+import { dayKey, dayOfKey, isOldDay, lastDays } from '../hooks/cost/spend/days'
 
 // Local noon, so the local date is the same in every time zone.
 const NOON = new Date(2026, 10, 18, 12).getTime()

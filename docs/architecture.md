@@ -40,7 +40,8 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
 | `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
 | `toolout.ts` | Tool output tokens and the re-read keys | yes |
-| `pace.ts`, `days.ts`, `results.ts` | Pace of a usage window; spend per day; commits and PRs from command text | yes |
+| `pace.ts` | Pace of a usage window | yes |
+| `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
 | `progress.ts`, `progress-art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
 | `font.ts` | The embedded Outfit font for SVG text | data |
 

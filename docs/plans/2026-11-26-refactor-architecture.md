@@ -1,6 +1,6 @@
 # Refactor: code by domain, small files, named numbers (backlog 80)
 
-Status: plan, agreed in conversation on 2026-11-26. Not started. Building starts after the user approves this plan.
+Status: approved by the user on 2026-11-26. Step 1 done; the app check after it is pending.
 
 ## Purpose
 

@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { turnCost, usd } from '../hooks/cache-art'
-import { dayKey } from '../hooks/days'
+import { dayKey } from '../hooks/cost/spend/days'
 import { metricsOf } from '../hooks/metrics'
 import type { Spent } from '../types'
 import { pingKeptCacheWarm } from '../hooks/register'

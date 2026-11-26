@@ -5,7 +5,7 @@ import { SANS } from './font'
 import { RUNWAY_CAP } from './metrics'
 import type { Metrics } from './metrics'
 import { cardColsOf } from './layout'
-import { resultsSentence, resultsText } from './results'
+import { resultsSentence, resultsText } from './cost/spend/results'
 import type { Pace } from './pace'
 
 export type Mode = 'warm' | 'cold'

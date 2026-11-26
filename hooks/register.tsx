@@ -7,7 +7,7 @@ import { BAR_H, crewSvg } from './progress-art'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
-import { isCommit, isPr, resultsSentence } from './results'
+import { isCommit, isPr, resultsSentence } from './cost/spend/results'
 import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import {
@@ -21,7 +21,7 @@ import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, ke
 export { pingKeptCacheWarm }
 export type { PingUsage } from './keepwarm'
 import { metricsOf, nextGrowth, putSpan } from './metrics'
-import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
+import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './cost/spend/days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
