@@ -128,13 +128,11 @@ press **Proceed**.
   <img alt="A held git reset --hard HEAD~2: it would drop two commits and discard changes in three files, with Cancel and Proceed buttons" src="assets/hold-light.svg">
 </picture>
 
-### Keep the cache warm, wrap up cleanly
+### Keep the cache warm
 
 - **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): a checkbox, per conversation, on by default. It keeps the
   prompt cache alive for 24 hours after each of your messages (every message starts the 24 hours again), so coming back after a break doesn't re-pay for the
-  whole context. The box is ✓ ticked or ✗ unticked, right after the WARM/COLD chip: untick it and it stays off in that conversation. The box follows the cache: when the cache goes cold (the computer slept or was off, so nothing could ping) it turns ✗, and your next message turns it ✓ again. Click a ✗ over a cold cache to warm it now with one ping (about the price of a re-write); its hover says which state it is in. Hover the chip to see what keeping warm costs an hour and what it has saved.
-- **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
-  conversation's cache go cold.
+  whole context. The box is ✓ ticked or ✗ unticked, right after the WARM/COLD chip: untick it and it stays off in that conversation. The box follows the cache: when the cache goes cold (the computer slept or was off, so nothing could ping) it turns ✗, and your next message turns it ✓ again. Click a ✗ over a cold cache to warm it now with one ping (about the price of a re-write); its hover says which state it is in. Hover the chip to see what keeping warm costs an hour and what it has saved. To let a finished conversation go cold, untick the box or type `/keepwarm off`.
 
 ## What it shows
 
@@ -171,17 +169,13 @@ press **Proceed**.
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
   PowerShell tool, spendometer holds the call and shows what it would lose (files, untracked paths,
   or the commits a force push would drop) with **Cancel** and **Proceed**.
-- **Wrap up button** (off by default). Runs your `/debrief` command, writes the conversation's
-  cost into the transcript for it to quote, and then stops keeping this conversation's cache
-  warm while leaving the switch on for the next one.
 - **A `progress` tool** Claude can call to report steps on a request it keeps no task list for.
 
 ## Requirements
 
 - Claude Code 2.1.287 or later (mods load by default from that version).
 - `git` on your `PATH`, for the hold.
-- Optional: a `/debrief` command or skill for the Wrap up button. Without it that button does not appear.
-  Keep warm is built in. Uninstall cache-tax (`claude plugin uninstall cache-tax@claude-code-mods`): installed, it
+- Keep warm is built in. Uninstall cache-tax (`claude plugin uninstall cache-tax@claude-code-mods`): installed, it
   pings too, and spendometer stays passive.
 
 Built and used on Windows 11 in the Claude desktop app, in dark and light themes. See
@@ -205,10 +199,9 @@ Remove it with `/plugin uninstall spendometer@spendometer`.
 
 ```
 /spendometer fold           open or close the cache card from the keyboard
-/spendometer cost           print this conversation's cost (Wrap up runs it for the debrief)
+/spendometer cost           print this conversation's cost
 /spendometer progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
 /spendometer progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
-/spendometer wrapup on      show the Wrap up button (default: off)
 /spendometer hold off       stop holding risky git commands (default: on)
 /spendometer                show the settings and the width the band was drawn at
 ```
@@ -218,8 +211,8 @@ The Keep warm checkbox is in the band, saved per conversation (on until unticked
 ## How it works
 
 - **No model calls.** Everything is read from events Claude Code already raises: rate limits,
-  turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm checkbox
-  (its pings cost a few cents each) and Wrap up (runs your debrief).
+  turn and subagent events, tool calls. The exception is yours to trigger: the Keep warm checkbox
+  (its pings cost a few cents each).
 - **Progress without tokens.** The bar follows the task-list tool calls Claude makes
   (`TodoWrite`, the Task tools, the desktop app's plan). The text bar counts a step in progress as half; the drawn bar
   pulses the step in progress and turns it solid when it lands.

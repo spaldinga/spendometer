@@ -533,9 +533,9 @@ export async function noteSeeded($: EngineInterface, s: Keep) {
 
 /**
  * The main thread's turn finished. With the switch on and a response that reached the cache, the window becomes
- * at least 24 hours from now. A wrap-up's debrief turn ends the window instead and renews nothing; the switch stays.
+ * at least 24 hours from now.
  */
-export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: boolean; wrapped: boolean }) {
+export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: boolean }) {
   if (!(await active($, s))) return
   // An off at any point in this turn wins over the window the turn would open.
   const offs = s.turnOffs ?? s.offs
@@ -545,10 +545,6 @@ export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: bool
   if (s.deadline && now >= s.deadline) await stop($, s, null)
   s.compacted = false
   s.waitForTurn = false
-  if (t.wrapped) {
-    await stop($, s, 'wrapped up', true)
-    return
-  }
   // A turn that failed before any response touched nothing, and its cache may be cold: it opens no window.
   if (t.hasUsage && s.offs === offs && (await switchOn($, s.sid))) {
     await startWindow($, s, Math.max(WINDOW_MS, s.deadline - now), PING_AFTER_MS, offs)
@@ -568,7 +564,7 @@ export type KeepView = {
   switch: boolean
   /** The cache is cold now: nothing is keeping it warm, whatever the switch says. */
   cold: boolean
-  /** The reason the window stopped, such as a ping that found the cache gone or a wrap-up; null while ticked or never stopped. */
+  /** The reason the window stopped, such as a ping that found the cache gone; null while ticked or never stopped. */
   stopped: string | null
 }
 

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { CacheFacts, Ending, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
+import type { CacheFacts, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
 import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, fmtElapsed, labelOf, pulseText } from './progress'
 import { BAR_H, crewSvg } from './progress-art'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
@@ -49,7 +49,6 @@ const TIGHT_CELLS = 6
 const TICK_MS = 30_000
 /** The mod's own settings command: one name, so a rename touches one line. */
 const SETTINGS = 'spendometer'
-const WRAP_KEY = 'wrapUp'
 const HOLD_KEY = 'hold'
 /** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
 const THEME_KEY = 'progressTheme'
@@ -67,7 +66,6 @@ const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold 
 const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
 const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
 const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[])
-const ending = atom({ plugin: 'spendometer', key: 'ending' } as const, null as Ending)
 /** Subagent cost since the last main turn finished: it joins the next main turn's `last`. */
 const subsSince = atom({ plugin: 'spendometer', key: 'subsSince' } as const, 0)
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
@@ -75,7 +73,7 @@ const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as n
 /** Read keys (path and range) the main thread read and has not edited since: a second read of one is a re-read. Lost on a reload. */
 const seen = atom({ plugin: 'spendometer', key: 'seen' } as const, [] as string[])
 
-/** The conversation's cost as one line for the transcript, so a debrief can quote it instead of leaving cost empty. */
+/** The conversation's cost as one line for the transcript. */
 export const spendLine = (s: Spend & { commits?: number; prs?: number }): string =>
   `this conversation has cost about ${usd(s.main + s.subs)} so far (main session ${usd(s.main)}, subagents ${usd(s.subs)}). ` +
   'An estimate from token counts at list prices; not a bill.' +
@@ -277,19 +275,19 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 const settingsAnswer = async ($: EngineInterface, kw: Keep, args: string): Promise<string> => {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | wrapup on|off | hold on|off | keepwarm [on|off|status|90m|always]. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | keepwarm [on|off|status|90m|always]. With no argument it shows the settings.`
   // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
   if (name === 'keepwarm') {
     if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
     return keepwarmCommand($, kw, args.trim().slice('keepwarm'.length))
   }
-  const key = name === 'wrapup' ? WRAP_KEY : name === 'hold' ? HOLD_KEY : null
+  const key = name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
     await $.store.set(key, value === 'on')
     $.ui.invalidate('ui.render')
     return `${name}: ${value}`
   }
-  // A command's answer is text the model reads, which a log line is not: this is how the cost reaches a debrief.
+  // A command's answer is text the model reads, which a log line is not.
   if (name === 'cost' && value === undefined) {
     const s = await readSpend($)
     return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
@@ -318,10 +316,8 @@ const settingsAnswer = async ($: EngineInterface, kw: Keep, args: string): Promi
     return themeList(await themeOf($))
   }
   if (name !== '' && name !== 'status') return usage
-  const wrap = await switchOf($, WRAP_KEY, false)
   const hold = await switchOf($, HOLD_KEY, true)
   return (
-    `wrapup: ${wrap ? 'on' : 'off'} - a Wrap up button that runs the debrief skill and lets this conversation go cold\n` +
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
     `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
     `tab: ${await tabOf($)} - the card shows one tab at a time: overview, context or cost\n` +
@@ -340,8 +336,6 @@ const widthLine = (): string =>
     ? 'band: not drawn yet since the mod loaded'
     : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}${lastWidth.fit ? `; open card ${lastWidth.fit}` : ''}`
 
-/** The skill a wrap-up runs; its turn's end stops this conversation's keep-warm window. */
-const DEBRIEF = 'debrief'
 const CREW_MAX = 40
 const CREW_SHOWN = 5
 /** How wide a button's hover text is, in columns. */
@@ -448,20 +442,6 @@ const measure = async ($: EngineInterface, lastAt: number | null, model: string 
     window: u.context.window || c?.window || 0,
     model: m || c?.model || null,
   }))
-}
-
-/** Whether a slash command of that name is there to run. */
-const hasCommand = async ($: EngineInterface, name: string): Promise<boolean> => {
-  try {
-    return (await $.command.list()).some(c => c.name === name)
-  } catch {
-    return false
-  }
-}
-
-/** A slash command, fired and not awaited: one run from inside a hook the turn waits on can hang. */
-const fire = ($: EngineInterface, command: string, args: string): void => {
-  void Promise.resolve($.command.run({ command, args })).catch(() => {})
 }
 
 /** The running subagents as the band names them: "Explore 4, sonnet-coder 12", kind and requests made. */
@@ -615,8 +595,8 @@ export const register: Register = on => {
     try {
       await $.command.register({
         name: SETTINGS,
-        description: "Settings for the band above the prompt: the progress row's look, the Wrap up button and the hold for risky git commands",
-        argumentHint: 'fold | cost | progress [id] | wrapup on|off | hold on|off',
+        description: "Settings for the band above the prompt: the progress row's look and the hold for risky git commands",
+        argumentHint: 'fold | cost | progress [id] | hold on|off',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
@@ -792,8 +772,6 @@ export const register: Register = on => {
         await update($, turn, () => ({ startedAt: now, steps: 1 }))
         await update($, progress, p => (p && p.isFinished ? null : p))
         await update($, crew, list => list.filter(w => !w.isDone))
-        // The turn the wrap-up asked for has begun: its end is the conversation's.
-        await update($, ending, s => (s === 'asked' ? 'running' : s))
       } else {
         await update($, turn, t => (t ? { ...t, steps: t.steps + 1 } : { startedAt: now, steps: 1 }))
       }
@@ -835,9 +813,6 @@ export const register: Register = on => {
       return r
     }
     if (paid > 0) await addSpend($, paid, true, e.usage)
-    // The debrief's turn is in: this conversation's window stops and the turn renews nothing. The switch stays as it was.
-    const wrapped = (await read($, ending)) === 'running'
-    if (wrapped) await update($, ending, () => null)
     const now = await $.clock.now()
     const c = await read($, { plugin: 'spendometer', key: 'cache' } as const)
     // turn.step stamps the exact request time; when no step of this turn did, the turn's end is the floor.
@@ -846,7 +821,7 @@ export const register: Register = on => {
     await measure($, lastAt, e.usage?.model ?? null)
     await addContext($)
     // After the cache clock is stamped: the next ping counts from it.
-    try { await afterTurn($, kw, { hasUsage: !!e.usage, wrapped }) } catch { /* the next turn tries again */ }
+    try { await afterTurn($, kw, { hasUsage: !!e.usage }) } catch { /* the next turn tries again */ }
     return r
   })
 
@@ -932,27 +907,6 @@ export const register: Register = on => {
         {tip('keep', keepTip(keepView, keepColdUsd))}
       </Box>
     )
-    // Ends the conversation: runs the debrief, then lets go of this conversation's cache.
-    const wrapping = await read($, ending)
-    const wrapLabel = (isWide: boolean) => (isWide ? (wrapping ? '🎌 Wrapping up…' : '🎌 Wrap up') : wrapping ? '🎌…' : '🎌')
-    const wrapShown = (await switchOf($, WRAP_KEY, false)) && (await hasCommand($, DEBRIEF))
-    const wrapButton = (isWide: boolean) => wrapShown ? (
-      <Box key="wrap" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        <Button
-          key="wrap-up"
-          label={wrapLabel(isWide)}
-          onPress={async () => {
-            if ((await read($, ending)) !== null) return
-            await update($, ending, () => 'asked' as const)
-            // The cost first, as a command's answer, so the debrief has the figure to quote.
-            const s = await readSpend($)
-            if (s && s.main + s.subs > 0) fire($, SETTINGS, 'cost')
-            fire($, DEBRIEF, '')
-          }}
-        />
-        {tip('wrap', "Wrap up: runs /debrief with this conversation's cost, then stops keeping this conversation's cache warm.")}
-      </Box>
-    ) : null
     const grow = <Box key="grow" flexGrow={1} />
 
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
@@ -1075,11 +1029,10 @@ export const register: Register = on => {
     const buttonsWideCols =
       (button ? FOLD_COLS : 0) +
       (tabsShown ? TABS.reduce((n, id) => n + buttonCols(tabLabel(id, true), BUTTON_GAP, k), 0) : 0) +
-      (keepAlone ? keepButtonCols : 0) +
-      (wrapShown ? buttonCols(wrapLabel(true), BUTTON_GAP, k) : 0)
+      (keepAlone ? keepButtonCols : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
     // The tabs: a glyph button each, and the one in use has its two brackets.
-    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (wrapShown ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? 2 : 0)
+    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? 2 : 0)
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
@@ -1114,7 +1067,7 @@ export const register: Register = on => {
       kind: kind === 'stacked' ? `compact step ${compactStep}` : kind,
       need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}`,
     }
-    const buttons = [keepAlone ? keepButton : null, wrapButton(kind === 'wide')]
+    const buttons = [keepAlone ? keepButton : null]
     // Buttons that do not fit beside the row take a row of their own, right-aligned, under the band's main rows.
     const buttonsRowEl = buttonsRow ? (
       <Box key="buttons-row" flexDirection="row" paddingX={1}>

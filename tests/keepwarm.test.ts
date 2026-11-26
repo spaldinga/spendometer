@@ -85,7 +85,6 @@ const engine = (on: On, opts: Opts = {}) => {
   return { store, ran, logs, forks, session, registered }
 }
 
-const WRAP = { wrapUp: true }
 type $ = Parameters<Parameters<typeof test>[1]>[0]
 
 /** A session whose last main-thread request was `idleMin` minutes before the clock's now. */
@@ -801,77 +800,6 @@ function hold() {
     release: () => { for (const r of releases) r() },
   }
 }
-test('Wrap up runs the debrief; its turn stops the window and renews nothing while the switch stays on', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { store, ran, forks } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
-  stopStep(on)
-  await seed($, 18)
-  await keepwarm($, '6h')
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160 } })
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
-
-  await band.press({ key: 'wrap-up' })
-  expect(ran).toEqual(['debrief'])
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrapping up…')
-  // A second press while it runs asks for nothing more.
-  await band.press({ key: 'wrap-up' })
-  expect(ran).toEqual(['debrief'])
-
-  // The debrief's own turn starts and ends; only then is the window stopped.
-  for await (const c of $.turn.step({ turnId: 'T9', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
-  expect(recOf(store)?.deadline).toBe(NOW + 6 * HOUR)
-  await done($, { usage: USED })
-  expect(ran).toEqual(['debrief'])
-  expect(recOf(store)?.deadline).toBeUndefined()
-  expect(recOf(store)?.on).toBeUndefined()
-  expect(store.get('keepDefault')).toBe(true)
-  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, wrapped up')
-  await clock.advance(3 * HOUR)
-  expect(forks.length).toBe(0)
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
-  // The switch stays on: the next ordinary turn opens a window again.
-  await done($, { usage: USED })
-  expect(recOf(store)?.deadline).toBeGreaterThan(NOW)
-  await band.unmount()
-})
-
-test('a turn already running when Wrap up is pressed does not end the conversation early', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
-  await seed($, 18)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await band.press({ key: 'wrap-up' })
-  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ reason: 'answer', answer: 'ok', usage: null, durationMs: 1000 })
-  await clock.advance(5000)
-  expect(ran).toEqual(['debrief'])
-  await band.unmount()
-})
-
-test('with keep-warm off, Wrap up only runs the debrief; without the debrief skill there is no button', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: false, commands: ['debrief'], prefill: WRAP })
-  on('turn.step', async function* ($, e) {
-    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
-  })
-  await seed($, 18)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await band.press({ key: 'wrap-up' })
-  for await (const c of $.turn.step({ turnId: 'T9', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
-  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ reason: 'answer', answer: 'ok', usage: null, durationMs: 1000 })
-  await clock.advance(5000)
-  expect(ran).toEqual(['debrief'])
-  await band.unmount()
-})
-
-test('without the debrief skill there is no Wrap up button', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  engine(on, { keep: true, prefill: WRAP })
-  await seed($, 18)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
-  await band.unmount()
-})
 
 const USED = { model: 'claude-opus-5-5', input_tokens: 1e6, output_tokens: 1e6, cache_read_input_tokens: 2e6, cache_creation_input_tokens: 1e6 }
 const done = ($: Parameters<Parameters<typeof test>[1]>[0], extra: object) =>
@@ -905,9 +833,9 @@ test("the band adds up the conversation's cost, the main session's and its subag
   await band.unmount()
 })
 
-test('the cost command answers with the line a debrief can quote, and Wrap up still runs the debrief', async ($, on) => {
+test('the cost command answers with a line the model can quote', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { ran } = engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
+  engine(on, { keep: true })
   const cost = async () => ((await $.command.run({ command: 'spendometer', args: 'cost', ...RUN })) as { text: string }).text
   await seed($, 18)
   // Nothing spent yet: the command says so rather than printing zeros.
@@ -919,11 +847,6 @@ test('the cost command answers with the line a debrief can quote, and Wrap up st
     'this conversation has cost about $36.50 so far (main session $32.40, subagents $4.10). ' +
       'An estimate from token counts at list prices; not a bill.',
   )
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await band.press({ key: 'wrap-up' })
-  // The cost is asked for first, then the debrief.
-  expect(ran).toEqual(['spendometer cost', 'debrief'])
-  await band.unmount()
 })
 
 const DAY = 24 * 60 * MIN
@@ -1180,18 +1103,17 @@ test('a session id that cannot be read leaves the band without a cost and throws
   await band.unmount()
 })
 
-test('Wrap up is absent by default and appears after /spendometer wrapup on', async ($, on) => {
+test('/spendometer wrapup is gone: it answers with the usage text and writes nothing', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { store } = engine(on, { keep: true, commands: ['debrief'] })
+  const { store } = engine(on, { keep: true, commands: ['debrief'], prefill: { wrapUp: true } })
   await seed($, 18)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
-  const r = await $.command.run({ command: 'spendometer', args: 'wrapup on', ...RUN })
+  const r = (await $.command.run({ command: 'spendometer', args: 'wrapup on', ...RUN })) as { text: string }
+  expect(r.text).toContain('Usage')
+  expect(r.text).not.toContain('wrapup')
+  // The old key is left as it was, not written.
   expect(store.get('wrapUp')).toBe(true)
-  expect(JSON.stringify(r)).toContain('wrapup')
-  expect(await band.find({ key: 'wrap-up' })).toBeDefined()
-  await $.command.run({ command: 'spendometer', args: 'wrapup off', ...RUN })
-  expect(store.get('wrapUp')).toBe(false)
   expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
   await band.unmount()
 })
@@ -1203,7 +1125,7 @@ test('/spendometer registers itself, reports status, and answers anything else w
   expect(registered).toContain('spendometer')
   const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
   const status = await text('')
-  expect(status).toContain('wrapup: off')
+  expect(status).not.toContain('wrapup')
   expect(status).toContain('hold: on')
   expect(await text('status')).toBe(status)
   await text('hold off')
@@ -1624,24 +1546,6 @@ test('a restored window whose cache is already cold is stopped: the box is off a
   await band.unmount()
 })
 
-test('a wrap-up stop shows an off box until the next turn opens a window again', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
-  stopStep(on)
-  await seed($, 18)
-  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await band.press({ key: 'wrap-up' })
-  for await (const c of $.turn.step({ turnId: 'T9', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
-  expect(await label(band)).toBe('✓')
-  await done($, { usage: USED })
-  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, wrapped up')
-  expect(await label(band)).toBe('✗')
-  const text = JSON.stringify(await band.findAll({ type: 'Text' }))
-  expect(text).toContain('Keep warm stopped: wrapped up. Click to start again, or your next message will.')
-  await done($, { usage: USED })
-  expect(await label(band)).toBe('✓')
-  await band.unmount()
-})
 
 test('an untick is not undone by cold or by a turn: the box stays off', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })

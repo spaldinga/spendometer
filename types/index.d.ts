@@ -76,9 +76,6 @@ export type Spent = Spend & {
   spans?: [number, number][]
 }
 
-/** Wrapping up a conversation: asked for by the button, then running once the debrief's turn has started. */
-export type Ending = 'asked' | 'running' | null
-
 declare module 'claude-code' {
   interface PluginState {
     'spendometer': {
@@ -88,7 +85,6 @@ declare module 'claude-code' {
       progress: Progress | null
       turn: Turn | null
       crew: Worker[]
-      ending: Ending
       subsSince: number
       realAt: number | null
       seen: string[]

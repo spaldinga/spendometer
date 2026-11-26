@@ -72,10 +72,12 @@ const QUIET = [{ ...WINDOWS[0], resetsAt: '2099-01-01T03:30:00Z' }, WINDOWS[1]]
 /** The store of the last mountAt, for tests that read what the band wrote. */
 let lastKv = new Map<string, unknown>()
 
-/** A warm cache, both windows, a saved cost, keep-warm on, Wrap up switched on with a debrief command. */
+/** Set for a test that wants the old Wrap up setting in the store and a debrief command, to prove neither draws anything. */
+let legacyWrap = false
+/** A warm cache, both windows, a saved cost, keep-warm on. */
 const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number, keep = true, idleMin = 22, surface: 'desktop' | 'terminal' = 'desktop', maxRows = 40, now = NOW, limits: readonly object[] = QUIET) => {
   mock.clock(on, { now })
-  const kv = (lastKv = new Map<string, unknown>([['keepDefault', keep], ['wrapUp', true], ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
+  const kv = (lastKv = new Map<string, unknown>([['keepDefault', keep], ...(legacyWrap ? [['wrapUp', true] as [string, unknown]] : []), ['spend:S1', { main: 0.46, subs: 0.03, last: 0.03, at: NOW }]]))
   on('session.id', () => ({ value: 'S1' }))
   on('store.get', ($, e) => ({ value: kv.get(e.key) }))
   on('store.set', ($, e) => { kv.set(e.key, e.value); return { value: undefined } })
@@ -85,7 +87,7 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000, tokens: 200000 }, rateLimits: limits } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('classic.SessionStart', () => ({}))
-  on('command.list', () => ({ value: ['debrief'].map(name => ({ name, description: '', source: 'plugin' as const })) }))
+  on('command.list', () => ({ value: (legacyWrap ? ['debrief'] : []).map(name => ({ name, description: '', source: 'plugin' as const })) }))
   await $.session.start({ surface, isInteractive: true, cwd: '/work' })
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: idleMin * 60, context_tokens: 200000, model: 'claude-opus-5-5' })
   return $.ui.mount({ plugin: 'spendometer', surface, component: 'AbovePrompt', props: { ...PROPS, bodyColumns: columns, maxRows } })
@@ -93,10 +95,9 @@ const mountAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramet
 
 test('at 70 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
   const band = await mountAt($, on, 70)
-  // The estimate: the compact row is 50 columns here (step 0), the icon buttons 18 and 2 columns of slack: 70 is the least width for step 0 with the buttons inline.
+  // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: 64 is the least width for step 0 with the button inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌')
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
   expect(await band.find({ text: '99% left' })).toBeDefined()
   expect(await band.find({ text: '82% left' })).toBeDefined()
@@ -118,7 +119,6 @@ test('where even step 4 does not fit inline (37 columns with buttons), the butto
   // The keep button sits beside the chip on the cache row, not among the buttons.
   expect(inside).not.toContain('keep-warm')
   expect(await band.find({ key: 'keep-warm' })).toBeDefined()
-  expect(inside).toContain('wrap-up')
   expect(inside).toContain('cache-fold')
   expect(await band.find({ text: '99%' })).toBeDefined()
   await band.unmount()
@@ -128,7 +128,6 @@ test('at 160 columns the same content is one wide row, buttons inline with their
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
-  expect((await band.find({ key: 'wrap-up' }))?.props.label).toBe('🎌 Wrap up')
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
@@ -147,7 +146,7 @@ test('FOLD_COLS counts the fold button the way buttonCols counts every other but
 const gapsAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number) => {
   const band = await mountAt($, on, columns)
   await band.press({ key: 'cache-fold' })
-  for (const key of ['tab-overview', 'tab-context', 'tab-cost', 'fold', 'wrap']) {
+  for (const key of ['tab-overview', 'tab-context', 'tab-cost', 'fold']) {
     const box = await band.find({ key })
     expect(box).toBeDefined()
     expect([key, box?.props.marginLeft]).toEqual([key, BUTTON_GAP])
@@ -155,9 +154,9 @@ const gapsAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Paramete
   await band.unmount()
 }
 
-test('wide, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 160))
+test('wide, card open: tabs and fold each have the same gap before them', async ($, on) => gapsAt($, on, 160))
 
-test('compact, card open: tabs, fold and wrap each have the same gap before them', async ($, on) => gapsAt($, on, 70))
+test('compact, card open: tabs and fold each have the same gap before them', async ($, on) => gapsAt($, on, 70))
 
 test('compact, card open: every hover tip sits wholly above its button, so its frame never crosses the row text', async ($, on) => {
   const band = await mountAt($, on, 70)
@@ -257,23 +256,22 @@ test('at 100 columns, a usual desktop window, everything stays on one wide row',
   const band = await mountAt($, on, 100)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect(await band.find({ key: 'keep-warm' })).toBeDefined()
-  expect(await band.find({ key: 'wrap-up' })).toBeDefined()
   await band.unmount()
 })
 
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
-// step 0: 50, 1: 40 warm (50 cold), 2: 32, 3: 27, 4: 20 (a pie, 2 columns, in each window). With the buttons (18) and 2 columns of slack:
-// step 0 from 70 columns, 1 from 60, 2 from 52, 3 from 47, 4 from 40; under 40 the buttons take a row of their own.
+// step 0: 50, 1: 40 warm (50 cold), 2: 32, 3: 27, 4: 20 (a pie, 2 columns, in each window). With the buttons (fold, 6 columns) and 2 columns of slack:
+// step 0 from 64 columns, 1 from 54, 2 from 46, 3 from 41, 4 from 34; under 34 the buttons take a row of their own.
 const row = async (band: Awaited<ReturnType<typeof mountAt>>) => shown(await band.find({ key: 'row' }))
 
-test('the ladder: warm shows the next cost at step 0 (70 columns)', async ($, on) => {
+test('the ladder: warm shows the next cost at step 0 (64 columns)', async ($, on) => {
   const band = await mountAt($, on, 70)
   expect(await row(band)).toContain('next')
   await band.unmount()
 })
 
-test('the ladder: at 65 columns the next cost is hidden while warm, the total and the chip stay', async ($, on) => {
-  const warm = await mountAt($, on, 65)
+test('the ladder: at 59 columns the next cost is hidden while warm, the total and the chip stay', async ($, on) => {
+  const warm = await mountAt($, on, 59)
   expect(await row(warm)).not.toContain('next')
   expect(await warm.find({ text: '≈$0.49' })).toBeDefined()
   expect(JSON.stringify(await warm.findAll({ type: 'Svg' }))).toContain('WARM')
@@ -298,8 +296,8 @@ test('the ladder: at 55 columns the cost total is gone', async ($, on) => {
   await band.unmount()
 })
 
-test('the ladder: at 47 columns Robo stands in for the chip', async ($, on) => {
-  const band = await mountAt($, on, 47)
+test('the ladder: at 43 columns Robo stands in for the chip', async ($, on) => {
+  const band = await mountAt($, on, 43)
   const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
   expect(svgs).toContain('Robo, bobbing')
   expect(svgs).not.toContain('WARM')
@@ -316,7 +314,7 @@ test('the ladder: at 40 columns the windows read 26% not 26% left, still inline'
 })
 
 test('the terminal keeps a one-letter chip once Robo would stand in', async ($, on) => {
-  const band = await mountAt($, on, 40, true, 22, 'terminal')
+  const band = await mountAt($, on, 34, true, 22, 'terminal')
   expect(await band.find({ text: ' W ' })).toBeDefined()
   expect(await band.findAll({ type: 'Svg' })).toEqual([])
   await band.unmount()
@@ -335,18 +333,18 @@ test('with the card open, nothing sits between the compact row and the card, and
 
 test('each button carries hover text on the desktop, and none in the terminal', async ($, on) => {
   const band = await mountAt($, on, 160)
-  for (const text of [/^Show the cache card/, /^Keep warm is on/, /^Wrap up: runs \/debrief/, /^Warm for 38 more minutes · keep warm on/]) {
+  for (const text of [/^Show the cache card/, /^Keep warm is on/,/^Warm for 38 more minutes · keep warm on/]) {
     expect(await band.find({ type: 'Text', text })).toBeDefined()
   }
   // Hidden until hovered: the box around each text. (The kit does not expose the hover style itself.)
   const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
-  expect(hidden.length).toBe(6)
+  expect(hidden.length).toBe(5)
   await band.unmount()
 })
 
 test('the terminal has no hover text: it has no pointer to hover with', async ($, on) => {
   const term = await mountAt($, on, 160, true, 22, 'terminal')
-  expect(await term.find({ type: 'Text', text: /^Wrap up: runs \/debrief/ })).toBeUndefined()
+  expect(await term.find({ type: 'Text', text: /^Keep warm is on/ })).toBeUndefined()
   await term.unmount()
 })
 
@@ -362,7 +360,7 @@ test('the progress takes its own row at the bottom, even on a wide band, and the
   expect(await band.find({ key: 'progress' })).toBeUndefined()
   expect(await band.find({ key: 'progress-row' })).toBeDefined()
   expect(await band.find({ text: ' 1/3' })).toBeDefined()
-  for (const key of ['cache-fold', 'keep-warm', 'wrap-up']) expect(await band.find({ key })).toBeDefined()
+  for (const key of ['cache-fold', 'keep-warm']) expect(await band.find({ key })).toBeDefined()
   await band.unmount()
 })
 
@@ -707,7 +705,22 @@ test('without pace the same 120 columns are one wide row', async ($, on) => {
 })
 
 test('compact row, over pace, squeezed: the ladder drops "out" and keeps the time', async ($, on) => {
-  const band = await paced($, on, 70, OVER_PACE)
+  const band = await paced($, on, 64, OVER_PACE)
   expect(await rowOf(band)).toContain('5h 60% 1h')
   await band.unmount()
 })
+
+// One test a width: the mock's hooks can be registered once per test.
+for (const columns of [160, 100, 70, 30]) {
+  test(`no Wrap up button at ${columns} columns, even with the old setting in the store and a debrief command`, async ($, on) => {
+    legacyWrap = true
+    try {
+      const band = await mountAt($, on, columns)
+      expect(await band.find({ key: 'wrap-up' })).toBeUndefined()
+      expect(await band.find({ key: 'wrap' })).toBeUndefined()
+      await band.unmount()
+    } finally {
+      legacyWrap = false
+    }
+  })
+}

@@ -17,7 +17,7 @@ export const DESKTOP_CHAR_COLS = 0.78
 export const textCols = (s: string, k = 1): number => Math.ceil(s.length * k)
 /**
  * A Button draws its label plus this many columns of frame. Measured on 2026-11-18: `🔥 Keep warm`
- * 13.75 columns, `🎌 Wrap up` about 13, the fold button 4.
+ * 13.75 columns, the fold button 4.
  */
 export const BUTTON_CHROME = 4
 /** The Button groups on the band sit one column apart. */
