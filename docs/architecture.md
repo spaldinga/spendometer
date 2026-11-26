@@ -19,7 +19,7 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 | `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record; on `prompt.submit` also the cold-send warning and the brief coach (`coachFirst`, fired and never awaited) |
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display, the output pane's recent list and delegation figures |
-| `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
+| `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); the security advisor (warn only, see below); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)); a `Skill` hook that only runs the advisor |
 | `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme, `coach on|off|status`; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
 | `ui.render` (Pane), `ui.close` | The subagent output pane (`activity/output/pane.tsx`), opened by pressing a subagent in the band and refreshed on that subagent's steps and turn end; its close stops the reading |
@@ -47,6 +47,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `safety/guard/guard.ts` | Recognises risky git commands and measures what they would lose (keeps the MIT and Blast Radius notices) | no |
 | `safety/guard/hold.ts` | The hold: `holdCommand`, `heldNow`, `SHELLS`, `resetHold`; the held call and the working wait are private module variables | no |
 | `safety/guard/band.tsx` | `heldBand`: the band drawn while a command is held | no |
+| `safety/advisor/advisor.ts` | The security advisor (POC), pure: `checkCommand` (unknown host, upload, delete), `checkText` (hidden characters, injection phrases), `warning`, `textOf` | no |
+| `safety/advisor/log.ts` | `advise` (one transcript line, fire-and-forget, then recorded), `noteFindings`, `advisorReport`; the `advisorLog` store key and the `advisor` switch (`/spendometer advisor on|off|status`). Warn only: it never holds or changes a call and swallows its own errors | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store (`cleanOldCache`; `resetCache` empties the atom on /clear), and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom, `putSpan` and the last 10 main-turn costs, `recent`), commits and PRs (`addResults`), tool output and the most recent re-read files (`addToolOut`, `putReread`), context size, growth and the first turn's size, an estimate of the setup (`addContext`), keep-warm figures; `readDays`, `spendLine`, `cleanOldSpend`, `cleanOldPace`, `cleanOldDays`, the clean-up ages | no |

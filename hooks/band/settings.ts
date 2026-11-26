@@ -10,6 +10,7 @@ import { keepOf } from '../cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, keepwarmStatus } from '../cost/cache/keepwarm/command'
 import type { Keep } from '../cost/cache/keepwarm/state'
 import { readSpend, spendLine } from '../cost/spend/record'
+import { ADVISOR_KEY, advisorReport } from '../safety/advisor/log'
 import { TAB_KEY, tabOf, toggleFold } from './buttons'
 import { TABS, tabFrom } from './card'
 import type { Tab } from './card'
@@ -57,7 +58,7 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 export async function settingsAnswer($: EngineInterface, kw: Keep, args: string): Promise<string> {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | keepwarm [on|off|status|90m|always] | coach on|off|status. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | advisor on|off|status | keepwarm [on|off|status|90m|always] | coach on|off|status. With no argument it shows the settings.`
   // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
   if (name === 'keepwarm') {
     if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
@@ -65,6 +66,13 @@ export async function settingsAnswer($: EngineInterface, kw: Keep, args: string)
   }
   if (name === 'coach' && rest.length === 0 && (value === undefined || value === 'on' || value === 'off' || value === 'status')) {
     return coachCommand($, value)
+  }
+  if (name === 'advisor' && rest.length === 0) {
+    if (value === 'on' || value === 'off') {
+      await $.store.set(ADVISOR_KEY, value === 'on')
+      return `advisor: ${value}`
+    }
+    if (value === undefined || value === 'status') return advisorReport($)
   }
   const key = name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
@@ -104,6 +112,7 @@ export async function settingsAnswer($: EngineInterface, kw: Keep, args: string)
   const hold = await switchOf($, HOLD_KEY, true)
   return (
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
+    `advisor: ${(await switchOf($, ADVISOR_KEY, true)) ? 'on' : 'off'} - warns (never blocks) about unknown hosts, uploads, deletes and injection-like text; /${SETTINGS} advisor shows what it found\n` +
     `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
     `tab: ${await tabOf($)} - the card shows one tab at a time: cost or capacity\n` +
     `progress: ${await themeOf($)}\n` +

@@ -16,3 +16,4 @@ measuring never throws.
 - Bash and other long-running tools keep their background move and live output.
 - Tool output from tools not on the list is not counted: the TOOL OUTPUT figure is a lower bound.
 - A new tool to measure means a new hook entry, and a check that the tool has no background or live behaviour to lose.
+- Amended 2026-11-27: the security advisor (backlog 160) also hooks Skill, which has no background move or live output, and reads WebFetch's result.
