@@ -4,7 +4,7 @@ project: spendometer
 order: 80
 kind: refactor
 size: L
-status: todo
+status: done
 source: user feedback 2026-11-25
 ---
 

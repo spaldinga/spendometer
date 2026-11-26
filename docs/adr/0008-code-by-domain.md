@@ -1,6 +1,6 @@
 # 0008. Vertical slices, grouped by the user's four questions, with the band as infrastructure
 
-Status: proposed (2026-11-26)
+Status: accepted (2026-11-26)
 
 ## Context
 `hooks/register.tsx` grew to about 1,500 lines and `hooks/cache-art.ts` to about 870, each with several roles, and the

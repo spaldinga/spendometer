@@ -1,6 +1,6 @@
 # Refactor: code by domain, small files, named numbers (backlog 80)
 
-Status: approved by the user on 2026-11-26. Steps 1-8 done (step 1 checked in the app).
+Status: done 2026-11-26. All steps built; app checks after steps 1, 13, 15 and 19 passed.
 
 ## Purpose
 

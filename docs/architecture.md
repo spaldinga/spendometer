@@ -105,6 +105,11 @@ rendering through the kit and reading the visible text (`tests/visible.ts` leave
 no `toBeCloseTo`, no dynamic `import()`. Test files are named for the slice they cover (`<area>-<slice>.test.ts`, each under about 400 lines);
 setup several of them share lives in `tests/<area>-kit.ts` (`keepwarm-kit`, `layout-kit`, `card-kit`, `progress-kit`), exported unchanged.
 
+## Known debt
 
-
-Pixel and column figures are often unnamed (being named in step 20). See [refactor-architecture](backlog/refactor-architecture.md).
+- `register.tsx` (about 310 lines) still holds glue that joins two or more domains: the `turn.step` keep-warm save,
+  the `turn.complete` sequence (spend, crew, cache, keep warm), `measure`, `countCall`, `afterShell` and the compaction
+  check in `session.measure`. It is wiring, but longer than one call per event.
+- Small helpers are copied across domains on purpose ([ADR 0008](adr/0008-code-by-domain.md)): `tok`, `fmtIdle`,
+  `fmtSpan`, and the window `NAMES`/`COLORS`. The plan's "Learned while building" lists them.
+- The progress themes still have one-off pixel offsets inside each drawing; the shared node layout is named.
