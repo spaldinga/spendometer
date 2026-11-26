@@ -776,7 +776,10 @@ export const register: Register = on => {
       // Read before putCache overwrites lastAt. A turn that begins after the cache's hour would have found
       // it cold, but pings kept it warm: the difference between a cold re-cache and a cache read is saved.
       const before = e.index === 0 ? await cacheFacts($) : null
-      const was = await read($, realAt)
+      const lastReal = await read($, realAt)
+      // A warm-now ping re-wrote a cold cache since that request: the next message did not avoid a re-write, the ping
+      // paid it, so the gap counts from the ping.
+      const was = lastReal !== null && kw.rewroteAt > lastReal ? kw.rewroteAt : lastReal
       await update($, realAt, () => now)
       if (before && was !== null && now - was >= TTL_MS && now - before.lastAt < TTL_MS) {
         const m = MODELS.find(x => x.id === familyOf(before.model))
@@ -892,9 +895,12 @@ export const register: Register = on => {
     )
     const view = viewOf((await read($, { plugin: 'spendometer', key: 'cache' } as const)) ?? (await readStoredCache($)), now)
 
-    // On while this conversation's switch is on or its window is open; null (no button) beside cache-tax.
+    // Ticked while the cache is kept warm (see keepOf); null (no button) beside cache-tax.
     const keepView = await keepOf($, kw)
     const keep = keepView === null ? null : keepView.on
+    // What re-writing the cache costs, for the hover of a box that went off because the cache is cold.
+    const keepModel = view ? mineModel(view) : undefined
+    const keepColdUsd = view && keepModel ? coldCost(keepModel, view.tokens) : null
     // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
     // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
     // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
@@ -923,7 +929,7 @@ export const register: Register = on => {
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
         {/* plain: no brackets in the terminal and no button background on the desktop. */}
         <Button key="keep-warm" label={keepLabel} plain dimColor={!keep} onPress={() => pressKeep($, kw)} />
-        {tip('keep', keepTip(keepView))}
+        {tip('keep', keepTip(keepView, keepColdUsd))}
       </Box>
     )
     // Ends the conversation: runs the debrief, then lets go of this conversation's cache.

@@ -33,7 +33,7 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | File | Role | Pure |
 |---|---|---|
 | `register.tsx` | All event wiring; the band's render; the settings command | no |
-| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message) and the checkbox state and hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
+| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message), the checkbox state (follows the cache: cold stops the window, a click on a cold cache warms it with one ping) and its hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cache-store.ts` | Reads and writes the cache facts and the session's `Spent` record in atoms and the store | no |
 | `cache-art.ts` | Prices and models; the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |

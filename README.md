@@ -132,7 +132,7 @@ press **Proceed**.
 
 - **Keep warm** (built in; uninstall [cache-tax](https://github.com/karanb192/cache-tax) if you have it): a checkbox, per conversation, on by default. It keeps the
   prompt cache alive for 24 hours after each of your messages (every message starts the 24 hours again), so coming back after a break doesn't re-pay for the
-  whole context. The box is ✓ ticked or ✗ unticked, right after the WARM/COLD chip: untick it and it stays off in that conversation. Its hover says what the state means, including "ticked, but the cache went cold" when the computer slept or was off and nothing could ping. Hover the chip to see what keeping warm costs an hour and what it has saved.
+  whole context. The box is ✓ ticked or ✗ unticked, right after the WARM/COLD chip: untick it and it stays off in that conversation. The box follows the cache: when the cache goes cold (the computer slept or was off, so nothing could ping) it turns ✗, and your next message turns it ✓ again. Click a ✗ over a cold cache to warm it now with one ping (about the price of a re-write); its hover says which state it is in. Hover the chip to see what keeping warm costs an hour and what it has saved.
 - **Wrap up** (optional): runs your `/debrief` with the conversation's cost, then lets this
   conversation's cache go cold.
 
@@ -152,11 +152,13 @@ press **Proceed**.
 - **Keep warm checkbox** (built in). One box per conversation and the typed `/keepwarm` drive one state. It is on
   by default. With it on, every turn that reached the cache holds a window of 24 hours from then, so each message
   starts the 24 hours again; while the window is open and the cache is warm, a short ping goes out 50 minutes after
-  your last request, so the cache is read, not re-written, when you come back. The box is ✓ when this conversation's
-  switch is on (or a one-off window is open), else ✗: unticking turns the switch off and stops the window, and the
-  conversation stays unticked until you tick it again; a message does not tick it back. A computer that is off or
-  asleep cannot ping, so the cache can still go cold overnight: the box stays ✓, its hover says so, and the next
-  message re-writes the cache and starts the pings again.
+  your last request, so the cache is read, not re-written, when you come back. The box is ✓ while the cache is warm and
+  this conversation's switch is on (or a one-off window is open), else ✗: unticking turns the switch off and stops the
+  window, and the conversation stays unticked until you tick it again; a message does not tick it back. A computer that
+  is off or asleep cannot ping, so the cache can still go cold overnight: keep warm then stops with `the cache went
+  cold` and the box turns ✗, like the COLD chip. That is not an untick: the next message re-writes the cache, turns the
+  box ✓ and starts the pings again. A click on ✗ while the cache is cold sends one ping at once to warm it (its cost
+  is a re-write, shown in the hover) and opens 24 hours; if it cannot, one line in the transcript says why.
   `/keepwarm` or `/keepwarm on` (switch on, 24h), `90m` / `1h30m` (a one-off window), `always` (on for this and new
   conversations), `off` (off for this and new conversations, window stopped), `status` (time left, next ping, last ping).
   `/spendometer keepwarm [on | off | status | 90m | always]` does the same, and `/spendometer status` has a

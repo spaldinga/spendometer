@@ -10,6 +10,7 @@ What is next for spendometer, one file per item, so each item ships and is seen 
 | 40 | [Even spacing between the buttons](button-spacing.md) | bug | S |
 | 50 | [Buttons that are always there](buttons-always-reachable.md) | change | M |
 | 60 | [Keep warm as a checkbox](keep-warm-checkbox.md) | design | S |
+| 65 | [Keep warm follows the cache's WARM/COLD state](keep-warm-follows-cold.md) | change | S |
 | 70 | [The 5-hour pace in the top bar](pace-in-top-bar.md) | design | M |
 | 80 | [Architecture: smaller files, clear roles, named numbers](refactor-architecture.md) | refactor | L |
 | 90 | [Context tab pictures](context-pictures.md) | feature | M |

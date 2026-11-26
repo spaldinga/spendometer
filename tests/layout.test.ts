@@ -501,13 +501,13 @@ test('the card element is sized to the band on screen, so the shrunk drawing lea
 test('at 104 columns, with a cold cache idle 18 hours, the wide row and its word buttons no longer fit', async ($, on) => {
   // Measured on 2026-11-18: at 104 columns the wide row cut off the minutes and pushed the buttons out of view.
   const band = await mountAt($, on, 104, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✗') // cold: keep warm is off with the cache
   await band.unmount()
 })
 
 test('at 150 columns the same row stays wide, the buttons with their words', async ($, on) => {
   const band = await mountAt($, on, 150, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✗') // cold: keep warm is off with the cache
   await band.unmount()
 })
 

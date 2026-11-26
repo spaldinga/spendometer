@@ -31,3 +31,20 @@ of 6 hours after each turn, and was shown as a flame or an ice cube. User feedba
 - The label `✓`/`✗` is one character, but a font may draw it two columns wide; the layout measures it as two. The desktop app draws a button's text in its own colour, so the `✓` is white, not the pace's green; a `✅` emoji was tried and the plain `✓` preferred.
 - ADR 0004 still holds for the pinger and for staying passive beside cache-tax; its switch defaults and the 6-hour
   window are replaced by this decision.
+
+## Update 2026-11-26: the box follows the cache
+User feedback: after the computer slept past a ping the chip said COLD while the box still said ✓, which "makes no
+sense". Cold turns the box off; the next message or a click turns it on, and a click on a cold cache warms it now.
+
+- The box is ticked while the cache is not cold and (a window is open, or the switch is on and nothing stopped keep
+  warm). It is read at draw time, so it is right before any timer fires; a draw changes nothing.
+- Keep warm that finds the cache cold with its window open ends the window with the reason `the cache went cold`: when a
+  timer fires late, when a stored window is restored over a cold cache, and while waiting for a turn or after a
+  compaction. The cold stop does not touch the switch, so the next message (a turn with usage) opens 24 hours again.
+  Only a user untick stays off.
+- A click on the unticked box turns the switch on. If the cache is cold it also sends one ping at once, past the cold
+  guard that the timer's pings keep; the ping re-writes the cache, so on a reply the cache clock restarts from its send,
+  its cost is recorded and 24 hours open. A failure logs one line and leaves the box unticked. An untick while it is out
+  wins and its reply is dropped. While it is out the box reads as ticked.
+- The savings count ignores the gap a warm-now ping bridged: it paid the re-write, so the next message saved nothing.
+- This replaces the "ticked, but the cache went cold" hover and the consequence above that the box stays ticked.

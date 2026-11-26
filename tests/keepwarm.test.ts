@@ -228,15 +228,15 @@ test('no ping goes out after the deadline', async ($, on) => {
   expect(recOf(store)?.deadline).toBeUndefined()
 })
 
-test('no ping goes out on a cold cache; the first one comes 50 minutes after the next turn', async ($, on) => {
+test('on a cold cache the window stops at once with the cold reason; the first ping comes 50 minutes after the next turn', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { forks } = engine(on)
   await seed($, 70)
   expect(await keepwarm($, '6h')).toContain('The cache is cold now')
   await clock.advance(2 * HOUR)
   expect(forks.length).toBe(0)
-  expect(await keepwarm($, 'status')).toMatch(/cold now, first ping 50m after the next turn/)
-  await done($, { usage: null })
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the cache went cold')
+  await done($, { usage: USED })
   await clock.advance(49 * MIN)
   expect(forks.length).toBe(0)
   await clock.advance(MIN)
@@ -282,18 +282,18 @@ test('a compaction stops the pings until the next turn, whether session.compact 
   await seed($, 0)
   await keepwarm($, '6h')
   await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never)
-  await clock.advance(2 * HOUR)
+  await clock.advance(30 * MIN)
   expect(forks.length).toBe(0)
   expect(await keepwarm($, 'status')).toMatch(/waiting for the first turn after compaction/)
-  await done($, { usage: null })
+  await done($, { usage: USED })
   await clock.advance(50 * MIN)
   expect(forks.length).toBe(1)
   // The same without session.compact: a request over under half the messages of the one before.
   for await (const c of $.turn.step({ turnId: 'A', index: 0, model: 'claude-opus-5-5', messageCount: 60 })) void c
   for await (const c of $.turn.step({ turnId: 'A', index: 1, model: 'claude-opus-5-5', messageCount: 4 })) void c
-  await clock.advance(2 * HOUR)
+  await clock.advance(30 * MIN)
   expect(forks.length).toBe(1)
-  await done($, { usage: null })
+  await done($, { usage: USED })
   await clock.advance(50 * MIN)
   expect(forks.length).toBe(2)
 })
@@ -1500,7 +1500,7 @@ test('beside cache-tax /spendometer keepwarm says cache-tax is in charge', async
   expect(await spend('status')).toContain('keepwarm: cache-tax is in charge')
 })
 
-test('the checkbox hover tells ticked and warm, ticked and cold, ticked and stopped, and unticked apart', async ($, on) => {
+test('the checkbox hover tells ticked, cold, stopped by another reason and unticked apart', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { forks } = engine(on, { forks: [COLD] })
   await seed($, 18 * 60)
@@ -1510,26 +1510,286 @@ test('the checkbox hover tells ticked and warm, ticked and cold, ticked and stop
     await b.unmount()
     return text
   }
-  // Ticked, but the cache has been idle 18 hours: nothing could ping.
-  expect(await hover()).toContain('Ticked, but the cache went cold')
-  expect(await hover()).toContain('starts the pings again')
+  // The switch is on, but the cache has been idle 18 hours: the box is off, and a click warms it.
+  const cold = await hover()
+  expect(cold).toContain('The cache went cold (the computer slept or was off, so nothing could ping).')
+  expect(cold).toContain('Click to warm it now (about $1.60, a re-write of the cache), or your next message will.')
+  expect(cold).not.toContain('Ticked, but')
   // A turn warms it: ticked and warm.
   await done($, { usage: USED })
   const warm = await hover()
   expect(warm).toContain('Keep warm is on until 24h after your last message')
   expect(warm).toContain('every 50 idle minutes')
   expect(warm).toContain('Untick to stop')
-  // A ping that finds the cache gone stops the window, and the box says why.
+  // A ping that finds the cache gone stops the window, and the box says why and offers to start again.
   await clock.advance(50 * MIN)
   expect(forks.length).toBe(1)
   const stopped = await hover()
-  expect(stopped).toContain('Ticked, but keep warm stopped: the ping read 0')
-  expect(stopped).toContain('re-writes the cache')
-  // Unticked.
+  expect(stopped).toContain('Keep warm stopped: the ping read 0')
+  expect(stopped).toContain('Click to start again, or your next message will.')
+  // A click starts it again (the cache is warm, so no ping), a second click unticks.
   const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await b.press({ key: 'keep-warm' })
+  expect(await label(b)).toBe('✓')
+  await b.press({ key: 'keep-warm' })
   await b.unmount()
+  expect(forks.length).toBe(1)
   const off = await hover()
   expect(off).toContain('Keep warm is off in this conversation')
   expect(off).toContain('for 24h after each message')
+})
+
+test('without a price for the model the cold hover leaves out the dollar figure', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await seed($, 18 * 60, { model: 'mystery-1' })
+  const b = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const text = JSON.stringify(await b.findAll({ type: 'Text' }))
+  await b.unmount()
+  expect(text).toContain('Click to warm it now (a re-write of the cache), or your next message will.')
+})
+
+// ---------- The box follows the cache ----------
+
+test('a new conversation before its first reply, with the switch on, shows ticked', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on)
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('✓')
+  await band.unmount()
+})
+
+test('a late timer after a sleep: the box is off at the draw, the window stops with the cold reason, the switch stays on, and the next turn ticks it again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = hold()
+  // The ping out at 50 minutes finds nothing to fork and is held: no timer can run until it settles, as when the computer sleeps.
+  const { store, forks } = engine(on, { forks: [{ isAnswered: false, reason: 'nothing-to-fork' }], gate: held.gate, prefill: { 'keep:S1': { on: true, at: NOW } } })
+  await seed($, 0)
+  await keepwarm($, '6h')
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('✓')
+  await clock.advance(50 * MIN)
+  expect(forks.length).toBe(1)
+  await clock.advance(11 * MIN)
+  // 61 minutes since the last request and the window is still open in the state: the draw already says off.
+  expect(await label(band)).toBe('✗')
+  held.release()
+  await settle()
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the cache went cold')
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(recOf(store)?.on).toBe(true)
+  expect(await label(band)).toBe('✗')
+  // The next message opens 24 hours again.
+  await done($, { usage: USED })
+  expect(recOf(store)?.deadline).toBe(NOW + 61 * MIN + 24 * HOUR)
+  expect(await label(band)).toBe('✓')
+  await band.unmount()
+})
+
+test('cold ends the window in the waitForTurn and compacted states too', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { forks } = engine(on, { forks: [{ isAnswered: false, reason: 'nothing-to-fork' }] })
+  stopStep(on)
+  await seed($, 0)
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  expect(await keepwarm($, 'status')).toMatch(/nothing to fork yet/)
+  await clock.advance(11 * MIN)
+  expect(forks.length).toBe(1)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the cache went cold')
+  await done($, { usage: USED })
+  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never)
+  expect(await keepwarm($, 'status')).toMatch(/waiting for the first turn after compaction/)
+  await clock.advance(61 * MIN)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the cache went cold')
+})
+
+test('a restored window whose cache is already cold is stopped: the box is off and nothing is pinged', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, {
+    prefill: {
+      'keep:S1': { on: true, deadline: NOW + 3 * HOUR, at: NOW },
+      'cache:S1': { lastAt: NOW - 2 * HOUR, tokens: 200000, window: 1000000, model: 'claude-opus-5-5' },
+    },
+  })
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('✗')
+  await clock.advance(2 * HOUR)
+  expect(forks.length).toBe(0)
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, the cache went cold')
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(recOf(store)?.on).toBe(true)
+  await band.unmount()
+})
+
+test('a wrap-up stop shows an off box until the next turn opens a window again', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { keep: true, commands: ['debrief'], prefill: WRAP })
+  stopStep(on)
+  await seed($, 18)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'wrap-up' })
+  for await (const c of $.turn.step({ turnId: 'T9', index: 0, model: 'claude-opus-5-5', messageCount: 4 })) void c
+  expect(await label(band)).toBe('✓')
+  await done($, { usage: USED })
+  expect(await keepwarm($, 'status')).toBe('keepwarm stopped, wrapped up')
+  expect(await label(band)).toBe('✗')
+  const text = JSON.stringify(await band.findAll({ type: 'Text' }))
+  expect(text).toContain('Keep warm stopped: wrapped up. Click to start again, or your next message will.')
+  await done($, { usage: USED })
+  expect(await label(band)).toBe('✓')
+  await band.unmount()
+})
+
+test('an untick is not undone by cold or by a turn: the box stays off', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on)
+  await seed($, 0)
+  await done($, { usage: USED })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'keep-warm' })
+  expect(await label(band)).toBe('✗')
+  await clock.advance(2 * HOUR)
+  await done($, { usage: USED })
+  expect(await label(band)).toBe('✗')
+  expect(recOf(store)?.on).toBe(false)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  const text = JSON.stringify(await band.findAll({ type: 'Text' }))
+  expect(text).toContain('Keep warm is off in this conversation')
+  await band.unmount()
+})
+
+// ---------- A click on an off box warms a cold cache now ----------
+
+const cacheOf = (store: Map<string, unknown>) => store.get('cache:S1') as { lastAt: number }
+
+test('a click on the off box while the cache is cold sends one ping that re-writes it: the clock restarts, the cost is recorded, 24 hours open', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, forks, logs } = engine(on, { forks: [COLD] })
+  await seed($, 18 * 60)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('✗')
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(cacheOf(store).lastAt).toBe(NOW)
+  expect(await label(band)).toBe('✓')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
+  // 2 in at $4, 1 out at $20, 200k written at the 1-hour rate of $8, per million.
+  expect(Math.abs(stored(store).pings! - (8 + 20 + 1600000) / 1e6)).toBeLessThan(1e-9)
+  expect(logs).toEqual([])
+  expect(await keepwarm($, 'status')).toMatch(/^keepwarm 24h00m left · ping in 50m/)
+  await band.unmount()
+})
+
+test('/keepwarm on with a cold cache warms it now, as a click on the box does', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, { forks: [COLD] })
+  await seed($, 18 * 60)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await keepwarm($, 'on')).toMatch(/cache is cold, so one ping re-writes it now/)
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(cacheOf(store).lastAt).toBe(NOW)
+  expect(await label(band)).toBe('✓')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
+  await band.unmount()
+})
+
+test('a click on the off box whose fork has nothing to fork logs one line, and the box stays off with the switch on', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, forks, logs } = engine(on, { forks: [{ isAnswered: false, reason: 'nothing-to-fork' }] })
+  await seed($, 18 * 60)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(logs.length).toBe(1)
+  expect(logs[0]).toContain('could not warm the cache now')
+  expect(logs[0]).toContain('nothing to fork')
+  expect(logs[0]).toContain('next message')
+  expect(await label(band)).toBe('✗')
+  expect(recOf(store)?.on).toBe(true)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(store.has('spend:S1')).toBe(false)
+  await band.unmount()
+})
+
+test('a click on the off box whose ping fails says why and leaves the box off', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { forks, logs } = engine(on, { forks: [BUSY] })
+  await seed($, 18 * 60)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(logs).toEqual(['could not warm the cache now: the API call failed (429). Your next message re-writes it.'])
+  expect(await label(band)).toBe('✗')
+  await band.unmount()
+})
+
+test('an untick while the warm-now ping is out wins: the box turns off at once and the reply is dropped', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = hold()
+  const { store, forks } = engine(on, { gate: held.gate })
+  await seed($, 18 * 60)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const pressed = band.press({ key: 'keep-warm' })
+  await clock.settle()
+  expect(forks.length).toBe(1)
+  // Out: the box reads as ticked meanwhile.
+  expect(await label(band)).toBe('✓')
+  await keepwarm($, 'off')
+  expect(await label(band)).toBe('✗')
+  held.release()
+  await pressed
+  await settle()
+  expect(forks.length).toBe(1)
+  expect(await label(band)).toBe('✗')
+  expect(recOf(store)?.on).toBe(false)
+  expect(recOf(store)?.deadline).toBeUndefined()
+  expect(cacheOf(store).lastAt).toBe(NOW - 18 * 60 * MIN)
+  expect(store.has('spend:S1')).toBe(false)
+  await band.unmount()
+})
+
+test('a click on the off box while the cache is warm sends no ping: the switch goes on and 24 hours open', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store, forks } = engine(on, { prefill: { 'keep:S1': { on: false, at: NOW } } })
+  await seed($, 10)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await label(band)).toBe('✗')
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(forks.length).toBe(0)
+  expect(await label(band)).toBe('✓')
+  expect(recOf(store)).toMatchObject({ on: true, deadline: NOW + 24 * HOUR })
+  await band.unmount()
+})
+
+test('a warm-now ping that re-wrote a cold cache is not counted as saved by the next message; pings after it are', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { store } = engine(on, { forks: [COLD] })
+  stopStep(on)
+  await seed($, 0)
+  await step($, 0)
+  // 70 idle minutes with no window: cold. The click warms it with a ping that writes the cache.
+  await clock.advance(70 * MIN)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'keep-warm' })
+  await settle()
+  expect(stored(store).pings).toBeGreaterThan(1.5)
+  // 30 minutes on, the next message: the ping paid the re-write, so nothing was saved by keeping warm.
+  await clock.advance(30 * MIN)
+  await step($, 0)
+  expect(stored(store).saved).toBeUndefined()
+  // The pings that follow do keep a cache warm: a message after the hour on a cache they kept alive saves a re-write.
+  await keepwarm($, '6h')
+  await clock.advance(50 * MIN)
+  await clock.advance(30 * MIN)
+  await step($, 0)
+  expect(Math.abs(stored(store).saved! - (1.6 - 0.04))).toBeLessThan(1e-9)
+  await band.unmount()
 })

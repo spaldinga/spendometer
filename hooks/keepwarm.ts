@@ -30,6 +30,8 @@ const WINDOW_MS = 24 * 60 * 60 * 1000
 /** A cold send is warned about from this much context up. */
 const COLD_WARN_TOKENS = 50_000
 const PING_PROMPT = 'Reply with the single word: warm'
+/** The stopped reason when keep warm found the cache cold with its window open: the box turns off, the switch does not. */
+export const COLD_WHY = 'the cache went cold'
 const CACHE_TAX = 'cache-tax'
 const CACHE_TAX_NOTE =
   'cache-tax is installed and would ping too. Uninstall it with `claude plugin uninstall cache-tax@claude-code-mods` so spendometer keeps the cache warm.'
@@ -74,13 +76,19 @@ export type Keep = {
   inFlight: boolean
   /** The cache clock a cold-send warning was shown for, so one cold stretch warns once. */
   warnedAt: number
+  /** A "warm now" ping (a click on a cold cache's box) is out: the box reads as ticked meanwhile. */
+  warming: boolean
+  /** Counts warm-now pings, so a late one does not clear the flag of a newer one. */
+  warmId: number
+  /** When a warm-now ping last re-wrote a cold cache (clock ms): the savings count reads it, see register.tsx. */
+  rewroteAt: number
 }
 
 export function freshKeep(): Keep {
   return {
     sid: '', endingSid: '', passive: null, told: false, rechecked: false, deadline: 0, every: PING_AFTER_MS, compacted: false,
     transcript: 0, waitForTurn: false, retries: 0, retryReason: '', last: null, stopped: null, pending: null, gen: 0, tick: 0,
-    offs: 0, turnOffs: null, inFlight: false, warnedAt: 0,
+    offs: 0, turnOffs: null, inFlight: false, warnedAt: 0, warming: false, warmId: 0, rewroteAt: 0,
   }
 }
 
@@ -179,6 +187,8 @@ function clearWindow(s: Keep) {
   s.waitForTurn = false
   s.compacted = false
   s.transcript = 0
+  s.warming = false
+  s.rewroteAt = 0
   outdate(s)
   disarm(s)
 }
@@ -196,7 +206,6 @@ function statusText(s: Keep, now: number, lastAt: number): string {
   const pingText = s.last ? ` · last ping read ${fmtTok(s.last.read)} ${fmtUsd(s.last.usd)}` : ''
   const nextText = !lastAt ? ' · waiting for the first turn'
     : s.compacted ? ' · waiting for the first turn after compaction'
-    : isCold(lastAt, now) ? ` · cold now, first ping ${fmtDuration(s.every)} after the next turn`
     : s.waitForTurn ? ' · nothing to fork yet, first ping after the next turn'
     : s.retries ? ` · API busy, ping retry ${s.retries} of ${MAX_RETRIES}`
     : ` · ping in ${fmtDuration(lastAt + s.every - now)}`
@@ -206,7 +215,11 @@ function statusText(s: Keep, now: number, lastAt: number): string {
 /** Stops the window. `off` is a person's off: it also wins over a window a turn in flight was about to open. */
 async function stop($: EngineInterface, s: Keep, why: string | null, off = false) {
   // Set before any await, so a window being opened at the same moment sees the off and does not write itself back.
-  if (off) s.offs++
+  if (off) {
+    s.offs++
+    // A warm-now ping out is dropped on its return; the box must not keep reading ticked until then.
+    s.warming = false
+  }
   s.deadline = 0
   s.every = PING_AFTER_MS
   s.stopped = why
@@ -249,18 +262,74 @@ async function arm($: EngineInterface, s: Keep) {
   disarm(s)
   s.retries = 0
   if (now >= s.deadline) return stop($, s, null)
-  // A cold window still needs expiry cleanup, but must not send a model request.
-  if (lastAt && !s.compacted && !isCold(lastAt, now)) {
+  // A cold cache with the window open ends the window (the box turns off), whatever state it waits in: nothing
+  // here may send a model request for it. The switch is untouched, so the next message opens 24 hours again.
+  if (isCold(lastAt, now)) return stop($, s, COLD_WHY)
+  if (lastAt && !s.compacted) {
     const untilCold = lastAt + TTL_MS - now
-    // Waiting for a turn sends nothing, but wakes when the cache goes cold so the status says so.
+    // Waiting for a turn sends nothing, but wakes when the cache goes cold so the window ends then.
     if (s.waitForTurn) s.pending = $.clock.after(Math.min(s.deadline - now, untilCold), () => { void arm($, s) })
     else {
       const delay = Math.min(s.deadline - now, untilCold, Math.max(1000, lastAt + s.every - now))
       s.pending = $.clock.after(delay, () => { void ping($, s) })
     }
+  } else if (lastAt) {
+    // After a compaction nothing pings, but the window still wakes when the cache goes cold.
+    s.pending = $.clock.after(Math.min(s.deadline - now, lastAt + TTL_MS - now), () => { void arm($, s) })
   } else {
     s.pending = $.clock.after(s.deadline - now, () => { void arm($, s) })
   }
+  $.ui.invalidate('ui.render')
+}
+
+/** Why a fork that was not answered failed, in words. */
+const failedWhy = (reply: { reason?: string; status?: number | null }): string =>
+  reply.reason === 'api-error' ? `the API call failed${reply.status === null || reply.status === undefined ? '' : ` (${reply.status})`}`
+    : reply.reason === 'aborted' ? 'the ping was interrupted'
+    : 'the ping returned no text'
+
+/**
+ * A click on the unticked box while the cache is cold: one ping now, sent even though the cache is cold (the cold guard
+ * is for the timer's pings). It re-writes the cache, so on a reply the cache clock restarts from the send, the cost is
+ * recorded and the 24 hours open. `gen` and `offs` are what the click started with: an untick, /clear or compaction
+ * while the ping is out wins and its reply is dropped. A failure only logs; the box stays unticked, the switch on.
+ */
+async function warmNow($: EngineInterface, s: Keep, gen: number, offs: number) {
+  const id = ++s.warmId
+  s.warming = true
+  $.ui.invalidate('ui.render')
+  const settle = () => { if (s.warmId === id) { s.warming = false; s.inFlight = false } }
+  const sentAt = await $.clock.now()
+  if (gen !== s.gen || s.offs !== offs || s.inFlight) return settle()
+  const before = await lastAtOf($)
+  s.inFlight = true
+  const sent = await Promise.resolve($.model.fork({ prompt: PING_PROMPT })).then(reply => ({ reply }), (err: unknown) => ({ err }))
+  const reply = 'reply' in sent ? sent.reply : null
+  const used = reply && reply.isAnswered !== false ? reply.usage : null
+  const cost = used ? turnCost(used, (await cacheFacts($))?.model) : null
+  const after = await lastAtOf($)
+  settle()
+  $.ui.invalidate('ui.render')
+  if (gen !== s.gen || s.offs !== offs) return
+  if (!used) {
+    const why = 'err' in sent ? `the ping failed, ${sent.err instanceof Error ? sent.err.message : String(sent.err)}`
+      : !reply ? 'the engine did not send the ping'
+      : reply.isAnswered === false && reply.reason === 'nothing-to-fork' ? 'there is nothing to fork until your next message, which warms it'
+      : reply.isAnswered === false ? failedWhy(reply)
+      : 'the ping returned no text'
+    try { await $.ui.log(`could not warm the cache now: ${why}. Your next message re-writes it.`) } catch { /* the box says it */ }
+    return
+  }
+  // A request of the main thread while the ping was out replaced the cache: only the ping's cost is left to record.
+  const moved = after !== before
+  try {
+    if (!moved) await putCache($, c => (c ? { ...c, lastAt: Math.max(c.lastAt, sentAt) } : c))
+    if (cost !== null && cost > 0) await addKeepWarm($, { pings: cost })
+  } catch { /* the card shows no cost; the ping counted */ }
+  if (moved || gen !== s.gen || s.offs !== offs) return
+  s.rewroteAt = sentAt
+  s.last = { at: sentAt, read: used.cache_read_input_tokens, write: used.cache_creation_input_tokens, usd: cost, warm: false }
+  await startWindow($, s, WINDOW_MS, PING_AFTER_MS, offs)
   $.ui.invalidate('ui.render')
 }
 
@@ -316,9 +385,7 @@ async function ping($: EngineInterface, s: Keep) {
       s.waitForTurn = true
       return arm($, s)
     }
-    const reason = reply.reason === 'api-error' ? `the API call failed${reply.status === null || reply.status === undefined ? '' : ` (${reply.status})`}`
-      : reply.reason === 'aborted' ? 'the ping was interrupted'
-      : 'the ping returned no text'
+    const reason = failedWhy(reply)
     // A busy or failing API is usually brief; retry while a ping can still land a minute before the cache goes cold.
     if (reply.reason === 'api-error' && (reply.status === null || reply.status === undefined || reply.status === 429 || reply.status >= 500)) {
       const wait = MIN_PING_MS * 2 ** s.retries
@@ -491,43 +558,58 @@ export async function afterTurn($: EngineInterface, s: Keep, t: { hasUsage: bool
 
 // ---------- The switch, the button and the command ----------
 
-/** What the button shows: the switch (or a window a typed duration opened), and why a ticked box may not be keeping anything warm. */
+/**
+ * What the button shows. The box follows the cache: it is ticked while a window is open or the switch is on and nothing
+ * stopped keep warm, and never while the cache is cold (unless a warm-now ping is out), so it cannot disagree with the chip.
+ */
 export type KeepView = {
   on: boolean
-  /** The cache went cold while the box is ticked: nothing could ping (the computer slept or was off). */
+  /** This conversation's switch is on (its own, else the default). It says an unticked box was not the user's untick. */
+  switch: boolean
+  /** The cache is cold now: nothing is keeping it warm, whatever the switch says. */
   cold: boolean
-  /** The reason the window stopped while the box is ticked, such as a ping that found the cache gone. */
+  /** The reason the window stopped, such as a ping that found the cache gone or a wrap-up; null while ticked or never stopped. */
   stopped: string | null
 }
 
-/** The button's state; null when cache-tax is installed, so there is no button. */
+/** The button's state; null when cache-tax is installed, so there is no button. Only reads: a draw changes nothing. */
 export async function keepOf($: EngineInterface, s: Keep): Promise<KeepView | null> {
   try {
     if (!(await seat($, s)) && s.passive === null) return null
     if (s.passive) return null
     const now = await $.clock.now()
-    const on = (await switchOn($, s.sid)) || s.deadline > now
-    return { on, cold: on && isCold(await lastAtOf($), now), stopped: on ? s.stopped : null }
+    const sw = await switchOn($, s.sid)
+    // Before the first reply there is no cache clock (lastAt 0) and so no cold.
+    const cold = isCold(await lastAtOf($), now)
+    const on = s.warming || (!cold && (s.deadline > now || (sw && !s.stopped)))
+    return { on, switch: sw, cold: cold && !s.warming, stopped: on ? null : s.stopped }
   } catch {
     return null
   }
 }
 
-/** The button's hover: what the box means in the state it is in. */
-export const keepTip = (v: KeepView): string =>
-  !v.on
-    ? 'Keep warm is off in this conversation. Tick it to keep the cache warm for 24h after each message.'
-    : v.stopped
-      ? `Ticked, but keep warm stopped: ${v.stopped}. Your next message re-writes the cache and starts the pings again.`
+/**
+ * The button's hover: what the box means in the state it is in. `coldUsd` is what re-writing the cache costs, when the
+ * band knows it.
+ */
+export const keepTip = (v: KeepView, coldUsd: number | null = null): string =>
+  v.on
+    ? 'Keep warm is on until 24h after your last message. A short ping every 50 idle minutes keeps the cache warm (a few cents a ping). Untick to stop.'
+    : !v.switch
+      ? 'Keep warm is off in this conversation. Tick it to keep the cache warm for 24h after each message.'
       : v.cold
-        ? 'Ticked, but the cache went cold (the computer slept or was off, so nothing could ping). Your next message re-writes the cache and starts the pings again.'
-        : 'Keep warm is on until 24h after your last message. A short ping every 50 idle minutes keeps the cache warm (a few cents a ping). Untick to stop.'
+        ? `The cache went cold (the computer slept or was off, so nothing could ping). Click to warm it now (${coldUsd === null ? 'a re-write of the cache' : `about ${usd(coldUsd)}, a re-write of the cache`}), or your next message will.`
+        : v.stopped
+          ? `Keep warm stopped: ${v.stopped}. Click to start again, or your next message will.`
+          : 'Keep warm is off. Click to start again, or your next message will.'
 
 /** The answer to `/keepwarm status`, for `/spendometer status` too. */
 export async function keepwarmStatus($: EngineInterface, s: Keep): Promise<string> {
   await seat($, s)
   const now = await $.clock.now()
   const open = s.deadline > 0 && now < s.deadline
+  // Cold with the window still open: the timer has not fired yet (a sleep), but the answer is the same as after it.
+  if (open && isCold(await lastAtOf($), now)) return `keepwarm stopped, ${COLD_WHY}`
   if (!s.stopped && !open && (await switchOn($, s.sid))) return 'keepwarm is on, no window open: the next turn opens one'
   return statusText(s, now, await lastAtOf($))
 }
@@ -548,12 +630,23 @@ async function switchOnWithWindow($: EngineInterface, s: Keep, alsoDefault: bool
   $.ui.invalidate('ui.render')
 }
 
-/** The keep warm checkbox: ticked turns this conversation's switch off and stops its window; unticked ticks it and opens 24 hours. */
+/**
+ * The keep warm checkbox. Ticked: turns this conversation's switch off and stops its window, for good. Unticked: turns
+ * the switch on; on a cold cache it sends one ping now to warm it (and opens 24 hours when that lands), on a warm one it
+ * opens 24 hours.
+ */
 export async function pressKeep($: EngineInterface, s: Keep) {
   if (!(await active($, s))) return
+  // What the click started with: an untick while a warm-now ping is out wins over it.
+  const gen = s.gen
+  const offs = s.offs
   // Read now, not from the drawing the click landed on: a click before the redraw would repeat the last press.
-  if ((await keepOf($, s))?.on) await switchOff($, s, false)
-  else await switchOnWithWindow($, s, false)
+  if ((await keepOf($, s))?.on) return switchOff($, s, false)
+  await putKeepRec($, s.sid, { on: true })
+  const lastAt = await lastAtOf($)
+  if (lastAt > 0 && isCold(lastAt, await $.clock.now())) return warmNow($, s, gen, offs)
+  await startWindow($, s, WINDOW_MS, PING_AFTER_MS)
+  $.ui.invalidate('ui.render')
 }
 
 const USAGE = 'keepwarm takes on, a window such as 90m or 6h, or always, off, or status'
@@ -564,7 +657,7 @@ export async function keepwarmCommand($: EngineInterface, s: Keep, args: string)
   const words = args.trim().split(/\s+/).filter(Boolean)
   const now = await $.clock.now()
   const lastAt = await lastAtOf($)
-  const cold = isCold(lastAt, now) ? `. The cache is cold now, so the first ping comes ${fmtDuration(s.every)} after the next turn` : ''
+  const cold = isCold(lastAt, now) ? '. The cache is cold now, so it starts with your next message (/keepwarm on warms it now)' : ''
   const armed = (every: number) => `a ping ${fmtDuration(every)} after each idle stretch keeps the cache read, not re-written${cold}`
   if (words[0] === 'off') {
     await switchOff($, s, true)
@@ -575,6 +668,12 @@ export async function keepwarmCommand($: EngineInterface, s: Keep, args: string)
     return `keepwarm is on for this conversation and for new ones: each turn keeps a window of ${fmtDuration(WINDOW_MS)}, ${armed(PING_AFTER_MS)}; /keepwarm off turns it off`
   }
   if (!words.length || (words[0] === 'on' && words.length === 1)) {
+    // On a cold cache, the same as a click on the box: one ping now re-writes it, then the 24 hours open.
+    if (lastAt > 0 && isCold(lastAt, now) && (await active($, s))) {
+      await putKeepRec($, s.sid, { on: true })
+      void warmNow($, s, s.gen, s.offs)
+      return 'keepwarm is on for this conversation: the cache is cold, so one ping re-writes it now; then each turn keeps a window of 24h'
+    }
     await switchOnWithWindow($, s, false)
     return `keepwarm is on for this conversation: window ${fmtDuration(WINDOW_MS)}, renewed by each turn; ${armed(PING_AFTER_MS)}`
   }
