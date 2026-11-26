@@ -1,26 +1,25 @@
 // The cache card's drawings. Pure: each function returns an SVG string the band
 // hands to Svg. Nothing here touches the engine.
 
-import { DANGER, EMPTY, FABLE, HUE, LINE, MUTED, OK, ORANGE, TEXT, YELLOW, svgDoc } from './look'
+import { DANGER, EMPTY, FABLE, HUE, MUTED, OK, ORANGE, TEXT, YELLOW, kitOf, svgDoc } from './look'
 import type { Mode } from './look'
 import { modelName, tok, usd } from '../cost/prices'
 import { cheaperModels, keepWarmCost } from '../cost/cache/chip'
-import { TTL_MIN, fmtIdle, mineModel } from '../cost/cache/facts'
+import { TTL_MIN, mineModel } from '../cost/cache/facts'
 import type { CacheView } from '../cost/cache/facts'
 export type { Mode } from './look'
-import { RUNWAY_CAP } from '../capacity/context/runway'
+import { runwayOf, sizeZone, toolsZone } from '../capacity/context/card'
 import type { Metrics } from './card-metrics'
 import { cardColsOf } from '../layout'
 import { resultsSentence, resultsText } from '../cost/spend/results'
 import { PACE_TIP, fmtSpan } from '../capacity/usage/art'
 import type { PaceRow } from '../capacity/usage/art'
+import { paceStrip } from '../capacity/usage/card'
 
 /** Each model family's colour in the by-model split. */
 export const MODEL_COLOR: Record<string, string> = { opus: HUE.warm, sonnet: ORANGE, haiku: YELLOW, fable: FABLE }
 
 // ---------- The card, laid out for the band's width ----------
-type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
-
 /**
  * What this conversation has cost so far, split the way the card shows it; `days` is the account's daily
  * spend for the last 7 days, oldest first, today last; `saved` and `pings` are what keep-warm pings saved
@@ -52,64 +51,16 @@ const statusH = (lines: number): number => STATUS_PITCH * lines + 4
 export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, tab: Tab = 'overview'): { source: string; w: number; h: number; alt: string; cols: number } => {
   const mode = v.mode
   const cold = mode === 'cold'
-  const HUEM = HUE[mode]
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const t = (x: number, y: number, str: string, o: TextOpts = {}) =>
-    `<text x="${x}" y="${y}" font-size="${o.size || 11}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
-    ` letter-spacing="${o.ls ?? 0}" text-anchor="${o.anchor || 'start'}">${str}</text>`
-  const vline = (x: number, y: number, h: number) => `<rect x="${x}" y="${y}" width="1" height="${h}" fill="${LINE}"/>`
-  const hline = (y: number) => `<rect x="13" y="${y}" width="${W - 26}" height="1" fill="${LINE}"/>`
-  /** The first of `variants` that fits `px` (a character is estimated at 0.56 em: the mod cannot measure text), else the last. */
-  const pick = (variants: string[], px: number, size: number, em = 0.56) => variants.find(s => s.length * size * em <= px) ?? variants[variants.length - 1]
-  /** A column caption: the card reserves CARD_COL_PX for 33 characters at 18 px, so 0.53 em a character here. */
-  const capPick = (variants: string[], px: number, size: number) => pick(variants, px, size, 0.53)
+  const kit = kitOf(W, mode)
+  const { HUEM, esc, t, vline, hline, pick, capPick, big, dots, capSize, mhead, mwords, mdash, famName } = kit
 
   const mainCost = spend?.main ?? 0
   const subsCost = spend?.subs ?? 0
   const total = mainCost + subsCost
   const free = Math.max(0, v.window - v.tokens)
-  const share = v.window > 0 ? Math.min(1, v.tokens / v.window) : 0
-
-  // A zone's big figure with its small unit after it.
-  const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number, fill = TEXT) =>
-    `<text x="${x}" y="${yy}" font-weight="600" fill="${fill}"><tspan font-size="${bs}">${figure}</tspan>` +
-    (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">${unit}</tspan>` : '') +
-    '</text>'
-  /** Dots in `rows` rows of `cols`, each dot coloured by its index. */
-  const dots = (gx: number, gy: number, cols: number, step: number, rows: number, fill: (i: number) => string) => {
-    let d = ''
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) d += `<circle cx="${gx + 3 + c * step}" cy="${gy + r * 9}" r="3" fill="${fill(r * cols + c)}"/>`
-    return d
-  }
-  // A zone's caption size: a little smaller where the zone is narrow.
-  // Drawn at 12 px a column, shown at DESKTOP_COL_PX (8.6): about 70%. 18 shows as about 13 px, the band's own text size.
-  const capSize = (w: number) => (w < 230 ? 16 : 18)
 
   // The runway as a second caption line under IN CACHE, once the context growth is known.
-  const runwayTurns =
-    metrics && metrics.runway !== null && metrics.growth !== null ? (metrics.runway > RUNWAY_CAP ? `>${RUNWAY_CAP}` : `~${Math.round(metrics.runway)}`) : ''
-  const runwayLine = runwayTurns ? `${runwayTurns} turns left at +${metrics!.growth! >= 1000 ? tok(metrics!.growth!) : Math.round(metrics!.growth!)} a turn` : ''
-  const pct = Math.round(share * 100)
-  const zoneSize = (x: number, y: number, w: number, o: { runway?: string[] } = {}) => {
-    const caption = capPick([`${pct}% of the ${tok(v.window)} context · ${tok(free)} free`, `${pct}% of ${tok(v.window)} · ${tok(free)} free`], w, capSize(w))
-    const g = t(x, y + 24, cold ? 'RE-CACHE' : 'CONVERSATION SIZE', { size: 14, ls: 1.4 })
-    // 25 dots a row on the page; fewer only where the band is too narrow for them.
-    const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
-    const lit = Math.round(share * cols * 2)
-    const fill = (i: number) => (i < lit ? HUEM : EMPTY)
-    // With the runway line the figure, dots and first caption move up to leave the row's last 24 px for it.
-    if (o.runway && o.runway.length) {
-      return (
-        g +
-        big(x, y + 60, tok(v.tokens), 38, 'tokens', 15) +
-        dots(x, y + 68, cols, 9.6, 2, fill) +
-        t(x, y + 98, esc(caption), { size: capSize(w), w: 500 }) +
-        t(x, y + 118, esc(capPick(o.runway, w, capSize(w))), { size: capSize(w), w: 500 })
-      )
-    }
-    return g + big(x, y + 62, tok(v.tokens), 38, 'tokens', 15) + dots(x, y + 80, cols, 9.6, 2, fill) + t(x, y + 108, esc(caption), { size: capSize(w), w: 500 })
-  }
+  const { turns: runwayTurns, line: runwayLine } = runwayOf(metrics?.runway ?? null, metrics?.growth ?? null)
 
   // The account's spend over the last 7 days, when the card knows it and any of it is above zero.
   const days = spend?.days && spend.days.some(d => d > 0) ? spend.days.slice(-7) : null
@@ -217,79 +168,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     return g + big(x, y + 62, figure, 38, 'saved', 15, OK) + rows + words(capPick(variants, w, cap))
   }
 
-  // The pace strip, full width: one line a usage window. The label, a track (the bar is the share of the limit
-  // used, the tick is the share of the window's time gone: a bar past the tick is faster than the window allows,
-  // behind it is fine) and the forecast in words to the right of the track: "~48% at reset ✓" when the pace
-  // holds under 100%, "runs out in ~1h" otherwise. The whole strip is an SVG <title> (PACE_TIP), because the
-  // Box hover tips cannot target a region inside one Svg. The desktop draws the card
-  // at about 70%, so the words are 18 px here to read as about 13, the band's own size.
-  const paceStrip = () => {
-    const g = t(13, 24, 'PACE VS RESET', { size: 14, ls: 1.4 })
-    if (pace.length === 0) return g + t(13, 49, 'no usage windows reported', { size: 18, w: 500 })
-    const tx = 13 + 34
-    const tw = Math.round((W - 26 - 34) * 0.55)
-    const wx = tx + tw + 14
-    const room = W - 13 - wx
-    type Words = { lead: string; fill: string; rest: string; mark?: string }
-    const fits = (c: Words) => (c.lead.length + c.rest.length + (c.mark ? 2 : 0)) * 18 * 0.56 <= room
-    const words = (yy: number, vs: Words[]) => {
-      const c = vs.find(fits) ?? vs[vs.length - 1]
-      return (
-        `<text x="${wx}" y="${yy}" font-size="18" font-weight="500" fill="${MUTED}">` +
-        `<tspan fill="${c.fill}">${c.lead}</tspan>${c.rest}` +
-        (c.mark ? `<tspan fill="${OK}" font-weight="700" dx="4">${c.mark}</tspan>` : '') +
-        '</text>'
-      )
-    }
-    let s = g
-    pace.slice(0, 2).forEach((r, i) => {
-      const top = 36 + i * 28
-      const yb = top + 13
-      s += t(13, yb, r.label, { size: 16, fill: r.color })
-      s += `<rect x="${tx}" y="${top + 4}" width="${tw}" height="6" rx="3" fill="${EMPTY}"/>`
-      // The fill is what is used, red when the forecast runs out before the reset; the tick is the share of the
-      // window's time already gone, none while the reset is unknown.
-      const used = Math.max(0, Math.min(100, r.used ?? 0))
-      if (used > 0) {
-        const bw = Math.min(tw, Math.max(3, Math.round((used / 100) * tw)))
-        s += `<rect x="${tx}" y="${top + 4}" width="${bw}" height="6" rx="3" fill="${r.pace && !r.pace.ok ? DANGER : r.color}"/>`
-      }
-      if (r.untilResetMs !== null && r.windowMs && r.untilResetMs > 0 && r.untilResetMs <= r.windowMs) {
-        const gone = 1 - r.untilResetMs / r.windowMs
-        s += `<rect x="${tx + Math.min(tw - 2, Math.max(0, Math.round(gone * tw) - 1))}" y="${top}" width="2" height="14" fill="${TEXT}"/>`
-      }
-      if (r.pace) {
-        const lasts = fmtIdle(r.pace.lastsMs)
-        const reset = fmtIdle(r.pace.untilResetMs)
-        s += r.pace.ok
-          ? words(yb, [
-              { lead: `~${r.pace.atReset}% at reset`, fill: TEXT, rest: ` · resets ${reset}`, mark: '✓' },
-              { lead: `~${r.pace.atReset}% at reset`, fill: TEXT, rest: '', mark: '✓' },
-              { lead: `~${r.pace.atReset}%`, fill: TEXT, rest: '', mark: '✓' },
-            ])
-          : words(yb, [
-              { lead: `runs out in ~${lasts}`, fill: DANGER, rest: ` · resets ${reset}` },
-              { lead: `out in ~${lasts}`, fill: DANGER, rest: ` · resets ${reset}` },
-              { lead: `out ~${lasts}`, fill: DANGER, rest: '' },
-              { lead: `~${lasts}`, fill: DANGER, rest: '' },
-            ])
-      } else {
-        s += words(yb, [
-          { lead: 'pace unknown', fill: MUTED, rest: '' },
-          { lead: 'unknown', fill: MUTED, rest: '' },
-        ])
-      }
-    })
-    return `<g><title>${PACE_TIP}</title>${s}</g>`
-  }
-
-  // The metric zones of the Context and Cost tabs: each is shaped like the other zones (a title, a 38 px figure
-  // with its unit, a caption on the row's last line) and says so while its figure is unknown.
-  const mhead = (x: number, y: number, title: string) => t(x, y + 24, title, { size: 14, ls: 1.4 })
-  const mwords = (x: number, y: number, w: number, str: string) => t(x, y + 108, esc(str), { size: capSize(w), w: 500 })
-  const mdash = (x: number, y: number, w: number, title: string) => mhead(x, y, title) + big(x, y + 62, '—', 38, '', 15) + mwords(x, y, w, 'after a few turns')
-  const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
-
   // CACHE DISCOUNT: the share of input read from the cache, with the effective price a million tokens as its caption.
   const zoneDiscount = (x: number, y: number, w: number) => {
     if (!metrics || metrics.hit === null) return mdash(x, y, w, 'CACHE DISCOUNT')
@@ -341,23 +219,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     return mhead(x, y, 'BY MODEL') + fig + bar + cap
   }
 
-  // TOOL OUTPUT: tokens of tool output in the main context as the figure; the top tools as the caption, with the
-  // re-reads of unchanged files in orange after them. Tools are cut from the back until the line fits; the re-read part stays.
-  const zoneTools = (x: number, y: number, w: number) => {
-    if (!metrics || metrics.toolTok <= 0) return mdash(x, y, w, 'TOOL OUTPUT')
-    const size = capSize(w)
-    const reread = metrics.rereads > 0 ? `${metrics.rereads} re-read${metrics.rereads === 1 ? '' : 's'}` : ''
-    let list = metrics.tools.map(([k, n]) => `${k} ${tok(n)}`)
-    const len = (l: string[]) => (l.join(' · ') + (reread ? (l.length ? ' · ' : '') + reread : '')).length
-    while (list.length > 1 && len(list) * size * 0.56 > w) list = list.slice(0, -1)
-    const cap =
-      `<text x="${x}" y="${y + 108}" font-size="${size}" font-weight="500" fill="${MUTED}">` +
-      esc(list.join(' · ')) +
-      (reread ? `<tspan fill="${ORANGE}" font-weight="700">${list.length ? ' · ' : ''}${reread}</tspan>` : '') +
-      '</text>'
-    return mhead(x, y, 'TOOL OUTPUT') + big(x, y + 62, tok(metrics.toolTok), 38, 'tokens', 15) + cap
-  }
-
   // One tab at a time. A zone is its drawing and, for a card too narrow for its column, the line it becomes below.
   type Zone = { draw: (x: number, y: number, w: number) => string; status?: { dot: string; variants: string[] } }
   const spendHead = `≈${usd(total)} this thread`
@@ -371,9 +232,9 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
         ]
       : which === 'context'
         ? [
-            { draw: (x, y, w) => zoneSize(x, y, w, { runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] })},
+            { draw: (x, y, w) => sizeZone(kit, x, y, w, { tokens: v.tokens, window: v.window, cold, runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }) },
             {
-              draw: zoneTools,
+              draw: (x, y, w) => toolsZone(kit, x, y, w, metrics),
               status: {
                 dot: MUTED,
                 variants:
@@ -412,7 +273,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   const colX = (i: number) => 13 + i * (colW + 26)
   // Only Overview has the pace strip; the others start at the top.
   const yc = tab === 'overview' ? PACE_H : 0
-  let g = tab === 'overview' ? paceStrip() + hline(PACE_H) : ''
+  let g = tab === 'overview' ? paceStrip(kit, pace) + hline(PACE_H) : ''
   for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i].draw(colX(i), yc, colW)
   let H = yc + ROW
 

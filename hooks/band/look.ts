@@ -90,3 +90,62 @@ export const svgDoc = (w: number, h: number, body: string, font: boolean): strin
   '</style>' +
   body +
   '</svg>'
+
+// ---------- The drawing kit ----------
+export type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }
+
+/** The small drawing helpers the card's zones share, bound to the card's width and the cache's mode. */
+export type Kit = {
+  W: number
+  mode: Mode
+  /** The cache mode's colour. */
+  HUEM: string
+  esc: (s: string) => string
+  t: (x: number, y: number, str: string, o?: TextOpts) => string
+  vline: (x: number, y: number, h: number) => string
+  hline: (y: number) => string
+  /** The first of `variants` that fits `px` (a character is estimated at 0.56 em: the mod cannot measure text), else the last. */
+  pick: (variants: string[], px: number, size: number, em?: number) => string
+  /** A column caption: the card reserves CARD_COL_PX for 33 characters at 18 px, so 0.53 em a character here. */
+  capPick: (variants: string[], px: number, size: number) => string
+  /** A zone's big figure with its small unit after it. */
+  big: (x: number, yy: number, figure: string, bs: number, unit: string, ts: number, fill?: string) => string
+  /** Dots in `rows` rows of `cols`, each dot coloured by its index. */
+  dots: (gx: number, gy: number, cols: number, step: number, rows: number, fill: (i: number) => string) => string
+  /** A zone's caption size: a little smaller where the zone is narrow. */
+  capSize: (w: number) => number
+  /** The metric zones' shared pieces: a title, the caption on the row's last line, and a zone that says its figure is unknown. */
+  mhead: (x: number, y: number, title: string) => string
+  mwords: (x: number, y: number, w: number, str: string) => string
+  mdash: (x: number, y: number, w: number, title: string) => string
+  famName: (id: string) => string
+}
+
+/** The kit for a card `W` wide in the cache's `mode`. */
+export const kitOf = (W: number, mode: Mode): Kit => {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const t = (x: number, y: number, str: string, o: TextOpts = {}) =>
+    `<text x="${x}" y="${y}" font-size="${o.size || 11}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
+    ` letter-spacing="${o.ls ?? 0}" text-anchor="${o.anchor || 'start'}">${str}</text>`
+  const vline = (x: number, y: number, h: number) => `<rect x="${x}" y="${y}" width="1" height="${h}" fill="${LINE}"/>`
+  const hline = (y: number) => `<rect x="13" y="${y}" width="${W - 26}" height="1" fill="${LINE}"/>`
+  const pick = (variants: string[], px: number, size: number, em = 0.56) => variants.find(s => s.length * size * em <= px) ?? variants[variants.length - 1]
+  const capPick = (variants: string[], px: number, size: number) => pick(variants, px, size, 0.53)
+  const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number, fill = TEXT) =>
+    `<text x="${x}" y="${yy}" font-weight="600" fill="${fill}"><tspan font-size="${bs}">${figure}</tspan>` +
+    (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">${unit}</tspan>` : '') +
+    '</text>'
+  const dots = (gx: number, gy: number, cols: number, step: number, rows: number, fill: (i: number) => string) => {
+    let d = ''
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++) d += `<circle cx="${gx + 3 + c * step}" cy="${gy + r * 9}" r="3" fill="${fill(r * cols + c)}"/>`
+    return d
+  }
+  // Drawn at 12 px a column, shown at DESKTOP_COL_PX (8.6): about 70%. 18 shows as about 13 px, the band's own text size.
+  const capSize = (w: number) => (w < 230 ? 16 : 18)
+  const mhead = (x: number, y: number, title: string) => t(x, y + 24, title, { size: 14, ls: 1.4 })
+  const mwords = (x: number, y: number, w: number, str: string) => t(x, y + 108, esc(str), { size: capSize(w), w: 500 })
+  const mdash = (x: number, y: number, w: number, title: string) => mhead(x, y, title) + big(x, y + 62, '—', 38, '', 15) + mwords(x, y, w, 'after a few turns')
+  const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
+  return { W, mode, HUEM: HUE[mode], esc, t, vline, hline, pick, capPick, big, dots, capSize, mhead, mwords, mdash, famName }
+}

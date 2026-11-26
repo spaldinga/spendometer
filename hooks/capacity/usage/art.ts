@@ -6,7 +6,7 @@ import type { Pace } from './pace'
 
 // A copy of cost/cache/facts's fmtIdle: a domain imports no other domain.
 /** Idle time the way the card writes it: 18m, 2h 5m, 3d 9h. */
-const fmtIdle = (ms: number): string => {
+export const fmtIdle = (ms: number): string => {
   const mins = Math.max(0, Math.floor(ms / 60000))
   if (mins < 60) return `${mins}m`
   const hours = Math.floor(mins / 60)

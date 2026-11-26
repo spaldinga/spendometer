@@ -117,7 +117,13 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
   parameter, passed by `register.tsx`.
 - **Step 11:** `Kind` and `bandPx` went from the card to `layout.ts` (the band's layout, not the card); this also
   removes the card/layout import cycle.
-- **Copies so far:** `fmtIdle` in `capacity/usage/art.ts`; the window `NAMES` and `COLORS` in
+- **Step 12:** the zones' shared helpers are a `Kit` in `band/look.ts` (`kitOf(W, mode)`, including the metric zones'
+  `mhead`/`mwords`/`mdash` and `famName`); `cardSvg` builds it once and passes it to each zone function. A value both
+  a zone and the frame need (the runway line, also in the alt text) is computed by an exported function of the slice
+  (`runwayOf` in `capacity/context/card.ts`) that the frame calls. A zone takes plain fields or a structural type
+  declared in its own file, never `Metrics` (that lives in band).
+- **Copies so far:** `fmtIdle` in `capacity/usage/art.ts` (now exported, for `capacity/usage/card.ts`); `tok` in
+  `capacity/context/card.ts`; the window `NAMES` and `COLORS` in
   `capacity/usage/windows.ts` (the band keeps its own until step 17, which should pass one set as data).
 
 ## Steps
