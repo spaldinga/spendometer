@@ -6,8 +6,8 @@ still warm, how far the current request has come, and which subagents are runnin
 `git reset --hard` until you have seen what it would throw away.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The spendometer band with its card open: pies for the 5-hour and 7-day limits, the conversation's cost, the cache WARM with 32 minutes left, and a card led by the pace of each limit against its reset, then what delegating to subagents saved, the cache size with turns of context left, the spend over seven days, keep warm as a status line, the cache hit rate, cost per turn and cost by model" src="assets/card-b-1200-warm-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/band-capacity-1200-dark.svg">
+  <img alt="The spendometer band, one row: pies for the 5-hour limit (70% used, running out in about 2h 40m) and the 7-day limit (31% used, resets in 3d 3h), the conversation's cost of $16.61, Robo with the cache WARM and 32 minutes left, a green check for keep warm, and the Cost and Capacity tabs. The card is open on Capacity: the pace of each limit against its reset, the conversation size of 190k tokens as a stacked bar with a gauge of about 40 turns left, and 48k tokens of tool output with the files read again" src="assets/band-capacity-1200-light.svg">
 </picture>
 
 spendometer is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
@@ -41,32 +41,34 @@ instead of `&&`.
 
 ### Your limits, your cost and your cache, in one row
 
-The top row is always there: the 5-hour and 7-day limits, first as `/usage` lists them, each as a small pie of what is used with the percent used and when it resets (on a narrow band: `5h ◔ 10%  week ◔ 31%`, then the pies and percents alone; the terminal has no pies and keeps its dots and percent left),
-what this conversation has cost and what the last turn cost, and the prompt cache: `WARM` with the
-minutes left, or `COLD` with what the next message will cost to re-cache. Hover a limit for the
-details.
+The row is always there, and on the desktop it is one row at every width: the 5-hour and 7-day limits, first as `/usage` lists them, each as a small pie of what is used with the percent used (the 5-hour one with a small pace track and when it runs out, or a ✓ when it lasts to its reset; the 7-day one with when it resets; on a narrow band: `5h ◔ 70%  week ◔ 31%`, then the pies and percents alone; the terminal has no pies and keeps its dots and percent left),
+what this conversation has cost and what the last turn cost, and the prompt cache: Robo and `WARM` with the
+minutes left, or `COLD` with what the next message will cost to re-cache, then a green ✓ while keep warm is on.
+At the right end are the card's tabs and `+`/`−`. Hover a limit or the chip for the details.
 
 ### A card with the numbers behind it
 
-Press `+` on the band (or type `/spendometer fold`) to open the card. It shows one tab at a time, one per question: picked with the buttons before `−` (words on a wide band, a glyph each on a narrow one; the one in use is in brackets) or with `/spendometer tab cost|capacity`; the choice is kept, and the old names `overview` and `context` still work (they pick Cost and Capacity). **Cost** is the spend (this thread and the last seven days, with the commits and pull requests it made and what a result cost), delegation (what subagents saved), the cache discount, the cost per message (red when the last one cost three times the average or more) and the cost by model. **Capacity** is the pace of each usage window against its reset (the bar is how much of the limit is used, red when it runs out before the reset; the tick is how much of the window's time has gone), then the conversation size with the turns left, and the tool output (tokens by tool, with how many files were read again unchanged). What keeping the cache warm costs is the hover of the WARM/COLD chip, beside the keep warm checkbox. A zone with no column of its own becomes one status line below.
+Press a tab or `+` on the band (or type `/spendometer fold`) to open the card; press the tab in use again to close it. It shows one tab at a time, one per question: 💰 **Cost** and 🔋 **Capacity**, picked with the tab buttons before `−`, which are always shown (the emoji and the word on a wide band, the emoji alone on a narrow one; the one in use is the one not dimmed) or with `/spendometer tab cost|capacity`; the choice is kept, and the old names `overview` and `context` still work (they pick Cost and Capacity). **Cost** is the spend (this thread and the last seven days, with the commits and pull requests it made and what a result cost), delegation (what subagents saved), the cache discount (with a bar of what was read warm against written cold), the cost per message (red when the last one cost three times the average or more) and the cost by model. **Capacity** is the pace of each usage window against its reset (the bar is how much of the limit is used, red when it runs out before the reset; the tick is how much of the window's time has gone), then the conversation size as a stacked bar with a gauge of the turns left, and the tool output (tokens by tool, with the files that were read again unchanged). What keeping the cache warm costs is the hover of the WARM/COLD chip. A zone with no column of its own becomes one status line below.
 
-**Wide.** Overview in two columns.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-1200-warm-dark.svg">
-  <img alt="The open card, wide and warm: the pace of the 5-hour window running out in about 2h 40m and the 7-day window lasting past its reset, then columns for delegation (about $3.40 saved), 190k tokens in cache with about 40 turns of context left, and $16.61 spent in this thread with seven day bars, a status line for keep warm at $0.05 an hour with $4.20 saved, and a row with a 96% cache hit, $0.38 a turn and Opus at 78% of the cost" src="assets/card-b-1200-warm-light.svg">
-</picture>
-
-**Narrow.** One column and a status line each for the cache and the spend (the cache line reads re-cache, once the cache has gone cold). Keep warm is in the chip's hover.
+**Wide.** Cost: SPEND, DELEGATION and CACHE DISCOUNT as columns, per message and by model as lines. (Capacity, wide, is the picture at the top.)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-600-warm-dark.svg">
-  <img alt="The narrow card, warm: the pace strip, the delegation column, and status lines for the cache, the spend and keep warm $0.05 an hour with $4.20 saved" src="assets/card-b-600-warm-light.svg" width="49%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/band-cost-1200-dark.svg">
+  <img alt="The band with the card open on Cost, wide: $16.61 spent in this thread with seven day bars, $3.10 today and $16.50 this week, 4 commits and 1 pull request at about $3.32 a result; delegation saved about $3.40 with cost and time bars, 12 minutes of agent work in 5; a 96% cache discount with a warm against cold bar, $0.42 per million tokens; then lines for $0.38 a message with the last at $2.11, 5.6 times the average, and the cost by model: Opus $12.96, Sonnet $2.90, Haiku $0.75" src="assets/band-cost-1200-light.svg">
+</picture>
+
+**Narrow.** The compact row (the short names, the tabs as emoji), and one column: the rest of the tab becomes status lines.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/band-cost-600-dark.svg">
+  <img alt="The narrow band on Cost: the SPEND column, then lines for delegation, the cache discount, the cost per message and the cost by model" src="assets/band-cost-600-light.svg" width="49%">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-b-600-cold-dark.svg">
-  <img alt="The narrow card, cold: re-cache $1.52 on Opus, with Sonnet and Haiku cheaper" src="assets/card-b-600-cold-light.svg" width="49%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/band-capacity-600-dark.svg">
+  <img alt="The narrow band on Capacity: the pace strip, the conversation size with its stacked bar and turns-left gauge, and a line for the tool output" src="assets/band-capacity-600-light.svg" width="49%">
 </picture>
+
+The pictures are drawn from the mod's own card code with example numbers (`bash assets/mockups.sh assets`).
 
 ### Progress you can read at a glance, in six styles
 
@@ -139,7 +141,7 @@ press **Proceed**.
 | Part | What you see | Where it comes from |
 |---|---|---|
 | **Usage** | 5-hour and 7-day limits as small pies with percent used and reset time (the terminal: dot bars and percent left); `LOW` under 15% left | Claude Code's own rate-limit figures |
-| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. `+` opens a card with the context size and free room, what is spent (this conversation and the last seven days), keep-warm cost and savings, how fast each usage window is being used against its reset and, while cold, what re-caching costs on this model and the cheaper ones. On a wide band a second row shows the cache hit rate, the average and last turn's cost, how many turns of context are left at the current growth, and what subagents have cost. Hover a usage window or the compact chip for the limit and reset time or the minutes left | A clock from the last main-thread request, one hour long |
+| **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. The tabs open a card: Cost (what is spent in this conversation and the last seven days, what subagents saved, the cache discount, the cost per message and by model) and Capacity (how fast each usage window is being used against its reset, the context size and free room with the turns left and, while cold, what re-caching costs, and the tool output). Hover a usage window or the chip for the limit and reset time, the minutes left, and what keeping warm costs and has saved | A clock from the last main-thread request, one hour long |
 | **Progress** | Six styles to choose from (comet by default), with the count and the step in progress | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: each style's working animation and `working · 4 steps · 1m 12s` | Turn events |
 | **Subagents** | One small orange dot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |

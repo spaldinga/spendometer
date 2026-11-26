@@ -7,4 +7,4 @@ drawing: redraw them when a theme changes.
 
     bash assets/src/gallery.sh assets
 
-The card pictures come from `assets/mockups.sh`.
+The band and card pictures (`band-*.svg`) come from `assets/mockups.sh`, which draws the card from the mod's own code.
