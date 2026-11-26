@@ -5,6 +5,7 @@ import { DANGER, EMPTY, FABLE, HUE, MUTED, OK, ORANGE, TEXT, YELLOW } from '../.
 import type { Kit } from '../../band/look'
 import { fmtIdle } from '../cache/facts'
 import { usd } from '../prices'
+import { outlierMultiple } from './metrics'
 import type { Delegation } from './metrics'
 import { resultsText } from './results'
 
@@ -33,6 +34,8 @@ const DOTS_DY = 80
 /** Day bars: gap and width between and of the bars, height of the shortest bar with spend and of a day with none (px). */
 const DAY_GAP = 4
 const DAY_BAR_W = 12
+/** PER MESSAGE shows this many bars at most, so a bar is sized to leave room for all of them. */
+const RECENT_SLOTS = 10
 const DAY_MIN_H = 3
 const DAY_STUB_H = 2
 /** The dot chart: pitch of a dot (px), rows, and the fewest and most columns. */
@@ -159,6 +162,32 @@ export const spendZone = (k: Kit, x: number, y: number, w: number, f: SpendFigur
   return g + big(x, y + FIG_DY, fig, FIG_SIZE, 'this thread', FIG_UNIT_SIZE) + chart + (caption ? t(x, y + CAP_DY, caption, { size: capSize(w), w: 500 }) : '')
 }
 
+/**
+ * Two compare rows (label, track, fill as a share of the track) right of a zone's figure `figW` px wide, at the
+ * cost and time row heights; empty when the room left is under the minimum. Used by DELEGATION and CACHE DISCOUNT.
+ */
+export const compareRows = (k: Kit, x: number, y: number, w: number, figW: number, rows: [string, number | null, string][]): string => {
+  const rx = x + Math.max(Math.round(figW) + COMPARE_PAD, Math.round(w / 2))
+  const tx = rx + COMPARE_LABEL_W
+  const tw = x + w - tx
+  if (tw < COMPARE_MIN_W) return ''
+  return rows
+    .map(([label, ratio, fill], i) => {
+      const ty = y + (i === 0 ? COST_ROW_DY : TIME_ROW_DY)
+      const fw = ratio === null ? 0 : Math.min(tw, Math.max(ratio > 0 ? 3 : 0, Math.round(ratio * tw)))
+      return (
+        k.t(rx, ty + COMPARE_BAR_H, label, { size: COMPARE_LABEL_SIZE, w: 600 }) +
+        `<rect x="${tx}" y="${ty}" width="${tw}" height="${COMPARE_BAR_H}" rx="${COMPARE_BAR_H / 2}" fill="${EMPTY}"/>` +
+        (fw > 0 ? `<rect x="${tx}" y="${ty}" width="${fw}" height="${COMPARE_BAR_H}" rx="${COMPARE_BAR_H / 2}" fill="${fill}"/>` : '')
+      )
+    })
+    .join('')
+}
+
+/** The width of a figure with its unit beside it, as the zones estimate it (px): `unit` is '' for none. */
+export const figureWidth = (figure: string, unit: string): number =>
+  figure.length * FIG_SIZE * FIG_CHAR_W + (unit ? FIG_UNIT_GAP + unit.length * FIG_UNIT_SIZE * UNIT_CHAR_W : 0)
+
 // DELEGATION: what subagents saved, two compare rows (cost and time against doing it all on the main model, one
 // after another) beside the figure, and the work done against the time it took. While the figure is unknown it
 // shows a dash and says when it will not be.
@@ -172,22 +201,11 @@ export const delegZone = (k: Kit, x: number, y: number, w: number, metrics: { de
   const d = metrics.deleg
   if (!d) return g + dash + words(capPick(metrics.subs > 0 ? ['tracked from the next subagent', 'tracked from next subagent'] : ['no subagents this thread'], w, cap))
   const figure = `≈${usd(d.saved)}`
-  const figW = figure.length * FIG_SIZE * FIG_CHAR_W + FIG_UNIT_GAP + 'saved'.length * FIG_UNIT_SIZE * UNIT_CHAR_W
-  const rx = x + Math.max(Math.round(figW) + COMPARE_PAD, Math.round(w / 2))
-  const tx = rx + COMPARE_LABEL_W
-  const tw = x + w - tx
-  let rows = ''
-  if (tw >= COMPARE_MIN_W) {
-    const compare = (ty: number, label: string, ratio: number | null, fill: string) => {
-      const fw = ratio === null ? 0 : Math.min(tw, Math.max(ratio > 0 ? 3 : 0, Math.round(ratio * tw)))
-      return (
-        t(rx, ty + COMPARE_BAR_H, label, { size: COMPARE_LABEL_SIZE, w: 600 }) +
-        `<rect x="${tx}" y="${ty}" width="${tw}" height="${COMPARE_BAR_H}" rx="${COMPARE_BAR_H / 2}" fill="${EMPTY}"/>` +
-        (fw > 0 ? `<rect x="${tx}" y="${ty}" width="${fw}" height="${COMPARE_BAR_H}" rx="${COMPARE_BAR_H / 2}" fill="${fill}"/>` : '')
-      )
-    }
-    rows = compare(y + COST_ROW_DY, 'cost', d.costRatio, ORANGE) + compare(y + TIME_ROW_DY, 'time', d.workMs > 0 && d.wallMs > 0 ? Math.min(1, d.wallMs / d.workMs) : null, YELLOW)
-  }
+  const figW = figureWidth(figure, 'saved')
+  const rows = compareRows(k, x, y, w, figW, [
+    ['cost', d.costRatio, ORANGE],
+    ['time', d.workMs > 0 && d.wallMs > 0 ? Math.min(1, d.wallMs / d.workMs) : null, YELLOW],
+  ])
   const speed = d.workMs > 0 && d.wallMs > 0 ? (d.workMs / d.wallMs).toFixed(1) : null
   const variants =
     speed === null
@@ -201,7 +219,7 @@ export const delegZone = (k: Kit, x: number, y: number, w: number, metrics: { de
 }
 
 // PER MESSAGE: the average cost of a message; the last one is the caption, flagged in the danger colour when it is far above the average.
-export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg: number | null; last: number | null; multiple: number | null } | null): string => {
+export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg: number | null; last: number | null; multiple: number | null; recent?: number[] } | null): string => {
   const { big, capSize, mdash, mhead } = k
   if (!metrics || metrics.avg === null) return mdash(x, y, w, 'PER MESSAGE')
   const last =
@@ -210,7 +228,22 @@ export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg:
       : `<text x="${x}" y="${y + CAP_DY}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">last ${usd(metrics.last)}` +
         (metrics.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${metrics.multiple}× avg</tspan>` : '') +
         '</text>'
-  return mhead(x, y, 'PER MESSAGE') + big(x, y + FIG_DY, usd(metrics.avg), FIG_SIZE, 'avg', FIG_UNIT_SIZE) + last
+  return mhead(x, y, 'PER MESSAGE') + big(x, y + FIG_DY, usd(metrics.avg), FIG_SIZE, 'avg', FIG_UNIT_SIZE) + messageBars(metrics.recent ?? [], metrics.avg, x, y + BARS_DY, w) + last
+}
+
+/** One bar per recent message, oldest left, scaled to the dearest: an outlier in the danger colour, else the last in orange. */
+const messageBars = (recent: number[], avg: number, x: number, base: number, w: number): string => {
+  if (recent.length === 0) return ''
+  const bw = Math.min(DAY_BAR_W, Math.floor((w - (RECENT_SLOTS - 1) * DAY_GAP) / RECENT_SLOTS))
+  const top = Math.max(...recent)
+  return recent
+    .map((c, i) => {
+      const h = c > 0 ? Math.max(DAY_MIN_H, Math.round((c / top) * BARS_H)) : DAY_STUB_H
+      const outlier = outlierMultiple(c, avg, recent.length) !== null
+      const fill = c <= 0 ? EMPTY : outlier ? DANGER : i === recent.length - 1 ? ORANGE : MUTED
+      return `<rect x="${x + i * (bw + DAY_GAP)}" y="${base - h}" width="${bw}" height="${h}" rx="1" fill="${fill}"/>`
+    })
+    .join('')
 }
 
 // BY MODEL: the biggest share as the figure, a split bar of all shares and each model's cost as the caption.

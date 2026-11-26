@@ -37,6 +37,8 @@ export type Metrics = {
   /** The context size after the first main turn (an estimate of the setup), and the most recently re-read files with their counts, newest first. */
   ctxFirst: number | null
   rereadFiles: [string, number][]
+  /** The last main-turn costs, oldest first (up to 10); empty when unknown. */
+  recent: number[]
 }
 
 /** The metrics of a session record with `free` tokens of context left; null when the record knows none of them. */
@@ -66,5 +68,6 @@ export const metricsOf = (s: Spent | null, free: number): Metrics | null => {
     rereadTok: s.rereadTok ?? 0,
     ctxFirst: s.ctxFirst ?? null,
     rereadFiles: Object.entries(s.rereadFiles ?? {}).reverse(),
+    recent: [...(s.recent ?? [])],
   }
 }

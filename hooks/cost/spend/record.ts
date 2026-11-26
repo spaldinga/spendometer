@@ -14,6 +14,8 @@ import { isCommit, isPr, resultsSentence } from './results'
 
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
 export const SPEND_PREFIX = 'spend:'
+/** How many of the latest main-turn costs the record keeps in `recent`. */
+export const RECENT_KEEP = 10
 
 /** This session's saved cost, or null when there is none or the id or the store cannot be read. */
 export async function readSpend($: EngineInterface): Promise<Spent | null> {
@@ -34,6 +36,7 @@ export async function readSpend($: EngineInterface): Promise<Spent | null> {
         out[k] = by
       }
     }
+    if (Array.isArray(s.recent)) out.recent = s.recent.filter((x): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0).slice(-RECENT_KEEP)
     if (Array.isArray(s.spans)) {
       out.spans = s.spans
         .filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && Number.isFinite(x[0]) && Number.isFinite(x[1]))
@@ -52,6 +55,7 @@ export function recordOf(was: Spent | null, at: number): Spent {
   if (was?.byModel) next.byModel = { ...was.byModel }
   if (was?.byTool) next.byTool = { ...was.byTool }
   if (was?.rereadFiles) next.rereadFiles = { ...was.rereadFiles }
+  if (was?.recent) next.recent = [...was.recent]
   if (was?.spans) next.spans = was.spans.map(s => [s[0], s[1]] as [number, number])
   return next
 }
@@ -152,6 +156,7 @@ export async function addSpend(
       next.readTok = (next.readTok ?? 0) + cached
       next.inTok = (next.inTok ?? 0) + (usage?.input_tokens || 0) + cached + (usage?.cache_creation_input_tokens || 0)
       next.last = paid + (await read($, subsSince))
+      next.recent = [...(next.recent ?? []), next.last].slice(-RECENT_KEEP)
       await update($, subsSince, () => 0)
     } else {
       next.subs += paid

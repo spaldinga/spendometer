@@ -69,6 +69,8 @@ export type Spent = Spend & {
   /** Files the main thread read again unchanged, and the tokens those re-reads cost. */
   rereads?: number
   rereadTok?: number
+  /** The last 10 main-turn costs (each the same value as `last`), oldest first. */
+  recent?: number[]
   /** The context size after the first priced main turn: an estimate of the setup (system prompt, tools, memory). */
   ctxFirst?: number
   /** Re-reads per file basename, the 5 most recently re-read files, oldest first. */

@@ -102,7 +102,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
       ? [
           { draw: (x, y, w) => spendZone(kit, x, y, w, spendFigures), status: { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] } },
           { draw: (x, y, w) => delegZone(kit, x, y, w, metrics), status: { dot: MUTED, variants: delegStatus() } },
-          { draw: (x, y, w) => discountZone(kit, x, y, w, metrics), status: { dot: MUTED, variants: mm && mm.hit !== null ? [`cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : ''), `cache discount ${Math.round(mm.hit * 100)}%`] : ['cache discount: after a few turns'] } },
+          { draw: (x, y, w) => discountZone(kit, x, y, w, metrics, kw ? { warm: kw.perHour, cold: kw.cold } : null), status: { dot: MUTED, variants: mm && mm.hit !== null ? [...(kw ? [`cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : '') + ` · warm ${usd(kw.perHour)}/h, cold ${usd(kw.cold)}`] : []), `cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : ''), `cache discount ${Math.round(mm.hit * 100)}%`] : ['cache discount: after a few turns'] } },
           {
             draw: (x, y, w) => avgZone(kit, x, y, w, metrics),
             status: {
@@ -189,6 +189,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   const rereadAlt = m && m.rereadFiles.length ? ` Re-read files: ${m.rereadFiles.map(([n, c]) => `${n} ×${c}`).join(', ')}.` : ''
   const metricsAlt = m
     ? (m.perM !== null ? ` Effective price about ${usd(m.perM)} per million tokens.` : '') +
+      (m.recent.length ? ` Last ${m.recent.length} messages: ${m.recent.map(usd).join(', ')}.` : '') +
       (m.models.length ? ` Cost by model: ${m.models.map(([id, c]) => `${famName(id)} ${usd(c)}`).join(', ')}.` : '') +
       (m.subs > 0 ? ` Subagents cost ${usd(m.subs)}${m.top.length ? ` (${m.top.map(([k, c]) => `${k} ${usd(c)}`).join(', ')})` : ''}.` : '') +
       (m.toolTok > 0
