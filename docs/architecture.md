@@ -28,12 +28,15 @@ On this machine `classic.SessionStart` is skipped for user-installed mods; don't
 ## Modules
 
 Pure modules take data and return data or an SVG string; they never touch the engine (`$`), so they are tested
-directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and the stores under `cost/`.
+directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts` and the stores under `cost/`.
 
 | File | Role | Pure |
 |---|---|---|
 | `register.tsx` | All event wiring; the band's render; the settings command | no |
-| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message), the mark's state (follows the cache: cold stops the window; `/keepwarm on` on a cold cache warms it with one ping) and its hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
+| `cost/cache/keepwarm/pinger.ts` | The keep-warm pinger: window, deadline, timers, retries, the warm-now ping ([ADR 0004](adr/0004-keep-warm-built-in.md)) | no |
+| `cost/cache/keepwarm/state.ts` | The switch's state: the `Keep` record, the per-conversation records in the store, the constants (on by default, 24h after each message; [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
+| `cost/cache/keepwarm/lifecycle.ts` | The conversation lifecycle (seat, detect cache-tax, restore, the band's hooks) and the mark's state and hover (follows the cache: cold stops the window) | no |
+| `cost/cache/keepwarm/command.ts` | `/keepwarm` and its status line, the durations, and the cold-send warning | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store, and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/spend/record.ts` | The session's `Spent` record in the store (`readSpend`, `recordOf`, `addKeepWarm`) | no |
