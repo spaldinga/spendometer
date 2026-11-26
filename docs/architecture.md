@@ -15,7 +15,7 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 
 | Event | What it does |
 |---|---|
-| `session.start`, `session.end`, `classic.SessionStart`, `session.compact` | Reset or carry per-conversation state (cache facts, seen files, keep-warm window) |
+| `session.start`, `session.end`, `classic.SessionStart`, `session.compact` | Reset or carry per-conversation state: each owner exports its reset (`resetCache`, `resetFold`, `clearSeen`) and the handler calls them; keep-warm window; old saved state is pruned at start |
 | `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record |
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display and delegation figures |
@@ -32,7 +32,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 
 | File | Role | Pure |
 |---|---|---|
-| `register.tsx` | All event wiring: `on(...)` calls, the per-session resets (until step 19), the clean-up of old saved state, `countCall` and `afterShell`; the `ui.render` handler is one line calling `renderBand`, and `/spendometer` calls `settingsAnswer` | no |
+| `register.tsx` | All event wiring: `on(...)` calls, the clean-up of old saved state at session start, `countCall` and `afterShell`; the `ui.render` handler is one line calling `renderBand`, and `/spendometer` calls `settingsAnswer` | no |
 | `band/render.tsx` | `renderBand` (`ui.render`): reads the domains' views, measures, picks the layout, builds the band and the open card; `arm`, the 30 s redraw timer | no |
 | `band/row.tsx` | The row's pieces per layout: window blocks (pie, pace track and words), the cost box, the chip with Robo, the assembled rows (`RowCtx`, `Pieces`) | no |
 | `band/progress-row.tsx` | The progress row: bar, words and crew fitted to the room (`progressRowOf`) | no |
@@ -46,7 +46,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `safety/guard/guard.ts` | Recognises risky git commands and measures what they would lose (keeps the MIT and Blast Radius notices) | no |
 | `safety/guard/hold.ts` | The hold: `holdCommand`, `heldNow`, `SHELLS`, `resetHold`; the held call and the working wait are private module variables | no |
 | `safety/guard/band.tsx` | `heldBand`: the band drawn while a command is held | no |
-| `cost/cache/facts.ts` | The cache facts in atoms and the store, and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
+| `cost/cache/facts.ts` | The cache facts in atoms and the store (`resetCache` empties the atom on /clear), and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output (`addToolOut`), context size and growth (`addContext`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
@@ -106,5 +106,5 @@ no `toBeCloseTo`, no dynamic `import()`.
 
 ## Known debt
 
-`register.tsx` (about 330 lines) still holds the per-session resets and the clean-up of
+`register.tsx` (about 330 lines) still holds the clean-up of
 old saved state, and pixel and column figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).

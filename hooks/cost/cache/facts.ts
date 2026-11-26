@@ -48,6 +48,11 @@ export async function cacheFacts($: EngineInterface): Promise<CacheFacts | null>
   return (await read($, cache)) ?? (await readStoredCache($))
 }
 
+/** A /clear ends the conversation whose facts these are: the atom is emptied. The saved entry stays and is pruned after a month. */
+export async function resetCache($: EngineInterface): Promise<void> {
+  await update($, cache, () => null)
+}
+
 /** The prompt cache lives an hour after the last request that read or wrote it. */
 export const TTL_MIN = 60
 export const TTL_MS = TTL_MIN * 60 * 1000

@@ -8,7 +8,7 @@ import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew
 import { SHELLS, holdCommand } from './safety/guard/hold'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
-import { CACHE_PREFIX, TTL_MS, cacheFacts, putCache } from './cost/cache/facts'
+import { CACHE_PREFIX, TTL_MS, cacheFacts, putCache, resetCache } from './cost/cache/facts'
 import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, addToolOut, addContext } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
@@ -212,7 +212,7 @@ export const register: Register = on => {
     }
     if (e.reason === 'clear') {
       try {
-        await update($, { plugin: 'spendometer', key: 'cache' } as const, () => null)
+        await resetCache($)
         await resetFold($)
         await clearSeen($)
       } catch { /* the band redraws from the next turn */ }

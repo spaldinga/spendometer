@@ -221,3 +221,9 @@ all tests pass with only import lines changed (until step 21); the band looks th
   `themeList` and `settingsAnswer`. `TAB_KEY` and `tabOf` stayed in `band/buttons.tsx` (see step 17: `pressTab` reads
   `tabOf`, and `settings` imports `toggleFold` from `buttons`, so the other way round would be an import cycle);
   `settings` imports them. `switchOf` is also read by register's hold wiring (`switchOf($, HOLD_KEY, true)`).
+- **Step 19:** only three atoms are reset by any handler today (cache facts on `/clear`, the fold, the seen set), so
+  the resets are `resetCache` (new, `cost/cache/facts.ts`), `resetFold` (`band/buttons.tsx`, from step 17) and the
+  existing `clearSeen`. No `resetProgress` or `resetCrew` exists: no handler resets those, and adding writes would
+  change behaviour. `classic.SessionStart` keeps `putCache($, () => null)` (a different write from `resetCache`: it also
+  clears the saved entry). The store clean-up in `session.start` (about 35 lines over five key families of three
+  domains) stays inline in `register.tsx`; moving it needs a home outside the domains and is left as a follow-up.
