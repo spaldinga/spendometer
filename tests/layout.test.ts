@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { DANGER } from '../hooks/cache-art'
+import { DANGER } from '../hooks/band/look'
 import { dayKey } from '../hooks/cost/spend/days'
 import { BUTTON_GAP, CARD_COL_PX, FOLD_COLS, ROW_PX, buttonCols, cardColsOf, fitOpen, layoutOf, rowsOf, TIP_LIFT } from '../hooks/layout'
 

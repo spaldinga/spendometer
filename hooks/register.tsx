@@ -10,8 +10,9 @@ import { classify, measure as measureRisk, refusal } from './guard'
 import { isCommit, isPr, resultsSentence } from './cost/spend/results'
 import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
+import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
-  DANGER, EMPTY, HUE, INK, OK, ORANGE, PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, TEXT, TTL_MIN, TTL_MS, WORD, YELLOW,
+  PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, TTL_MIN, TTL_MS, WORD,
   MODELS, TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, coldCost, costOf, familyOf, fmtIdle, fmtReset, mineModel, paceTrackSvg, paceWords, pieSvg, roboSvg, turnCost, usd, warmCost,
 } from './cache-art'
 import type { CacheView, PaceMode, PaceRow, Tab, TurnUsage } from './cache-art'

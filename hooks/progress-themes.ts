@@ -1,4 +1,4 @@
-import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, MUTED, ORANGE, TEXT, svgDoc } from './cache-art'
+import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, MUTED, ORANGE, TEXT, svgDoc } from './band/look'
 import { BAR_CY, BAR_H, paceSvg, walkSvg } from './progress-art'
 import type { Progress } from '../types'
 

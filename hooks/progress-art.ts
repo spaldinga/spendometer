@@ -1,4 +1,4 @@
-import { EMPTY, ORANGE, svgDoc } from './cache-art'
+import { EMPTY, ORANGE, svgDoc } from './band/look'
 
 // The progress drawings: a row of rounded segments, one per step. Steps done are orange, the step
 // in progress is orange and pulses, the rest are empty. Above MAX_MARKS steps the segments would be

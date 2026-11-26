@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, MUTED, ORANGE, TEXT } from '../hooks/cache-art'
+import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, LIGHT, MUTED, ORANGE, TEXT } from '../hooks/band/look'
 import { BAR_CY, BAR_H, BAR_TOP } from '../hooks/progress-art'
 import { fromSteps } from '../hooks/progress'
 import { DEFAULT_THEME, THEMES, THEME_IDS, isThemeId, themeIdOf } from '../hooks/progress-themes'

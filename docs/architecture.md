@@ -36,14 +36,15 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message), the mark's state (follows the cache: cold stops the window; `/keepwarm on` on a cold cache warms it with one ping) and its hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cache-store.ts` | Reads and writes the cache facts and the session's `Spent` record in atoms and the store | no |
-| `cache-art.ts` | Prices and models; the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |
+| `cache-art.ts` | Prices and models (the palette is in `band/look.ts`); the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
 | `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
 | `toolout.ts` | Tool output tokens and the re-read keys | yes |
 | `pace.ts` | Pace of a usage window | yes |
 | `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
 | `progress.ts`, `progress-art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
-| `font.ts` | The embedded Outfit font for SVG text | data |
+| `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...) and `svgDoc`, the SVG wrapper; the one file domains may import | yes |
+| `band/font.ts` | The embedded Outfit font for SVG text | data |
 
 `types/index.d.ts` holds the shared types (`Spent`, `Fold`, plugin state). Host types are not on disk; the mod has
 never been type-checked.
