@@ -30,13 +30,13 @@ import { keepwarmCommand, keepwarmStatus, warnCold } from './cost/cache/keepwarm
 export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
 import { metricsOf } from './band/card-metrics'
+import { CELLS, LOW_AT, NAMES, SHORT, TIGHT_CELLS, fiveAtOf, needOf } from './band/widths'
 import { nextGrowth } from './capacity/context/runway'
 import { DAY_PREFIX, isOldDay } from './cost/spend/days'
 import { WINDOW_MS } from './capacity/usage/pace'
 import { keptWindows, liveWindows, paceFor, pull, setWindows, trackPace } from './capacity/usage/windows'
 import {
-  BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, KEEP_COMPACT_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
+  BUTTON_GAP, COMPACT_CHAR_COLS, COMPACT_MARGIN, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, TIP_LIFT,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -53,9 +53,6 @@ import {
 // that the button, the typed /keepwarm and the ping timer all read. A ping that really read the cache
 // starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
-const CELLS = 10
-const LOW_AT = 15
-const TIGHT_CELLS = 6
 /** How often the band redraws, so the countdown and the warm-to-cold flip stay current. */
 const TICK_MS = 30_000
 /** The mod's own settings command: one name, so a rename touches one line. */
@@ -193,10 +190,7 @@ const BAR_MIN_PX = 140
 /** A column is 12 px; the row's words are measured at COMPACT_CHAR_COLS of it a character. */
 const COL_PX_FULL = 12
 
-const NAMES: Record<string, string> = { seven_day: '7D', five_hour: '5H', spend_limit: 'SPEND' }
 const LONG: Record<string, string> = { seven_day: '7-day limit', five_hour: '5-hour limit', spend_limit: 'Spend limit' }
-/** The compact row's word for a window, after its percent: colour alone told them apart before. */
-const SHORT: Record<string, string> = { seven_day: 'week', five_hour: '5h', spend_limit: 'spend' }
 const COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
 
 const dots = (left: number, cells: number): { on: string; off: string } => {
@@ -631,120 +625,21 @@ export const register: Register = on => {
             </Box>
           ))
         : []
-    // The layout follows from what the row holds: each width below is counted in columns from the
-    // text the row will say, and layoutOf picks the first layout whose row fits.
-    // Columns a character of text takes: one in the terminal, about half on the desktop.
-    const k = Svg ? DESKTOP_CHAR_COLS : 1
-    const t = (s: string) => textCols(s, k)
+    // The layout follows from what the row holds: each width is counted in columns from the
+    // text the row will say (band/widths), and layoutOf picks the first layout whose row fits.
     const lefts = list.map(w => Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10))
     // The compact row writes what is used, as /usage does. On the desktop the wide and stacked rows do too, beside a pie;
     // the terminal keeps what is left beside its dots.
     const useds = lefts.map(l => Math.round((100 - l) * 10) / 10)
     const resets = list.map(w => fmtReset(w.resetsAt, now))
-    const lowText = (i: number) => (lefts[i] < LOW_AT ? ' LOW' : '')
-    const nameOf = (w: Window) => NAMES[w.kind] ?? w.kind.toUpperCase()
-    // The 5h pace beside its percent: a mini track on the desktop, then words (see paceWords).
     const paces = list.map(w => paceFor(w, now))
-    const paceLine = (i: number, mode: PaceMode, full = true) => {
-      const p = paces[i]
-      return p ? paceWords(p, mode, full).line : ''
-    }
-    // The track's columns, when the desktop draws one for window i.
-    const trackCols = (i: number, mode: PaceMode) => (Svg && paces[i] ? PACE_TRACK_COLS[mode] : 0)
-    // The wide row drops the reset time beside the track: the hover tip has it.
-    const resetText = (i: number) => (resets[i] && !(Svg && paces[i]) ? ` · ${resets[i]}` : '')
-    const windowCols = (isWideRow: boolean, cells: number) =>
-      list.length === 0
-        ? Math.ceil(WAITING_COLS * k) + BLOCK_MARGIN
-        : list.reduce(
-            (n, w, i) =>
-              n +
-              (Svg
-                ? // The pie replaces the dots, and the words say what is used.
-                  isWideRow
-                  ? t(`${nameOf(w)}  ${useds[i]}% used${lowText(i)}${resetText(i)}${paceLine(i, 'wide')}`) + PIE_COLS + trackCols(i, 'wide') + BLOCK_MARGIN
-                  : Math.max(t(`${nameOf(w)} `) + PIE_COLS + trackCols(i, 'tight') + t(paceLine(i, 'tight')), blockCols([`${useds[i]}% used${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], 0, k)) + BLOCK_MARGIN
-                : isWideRow
-                  ? t(`${nameOf(w)} ${'●'.repeat(cells)} ${lefts[i]}% left${lowText(i)}${resets[i] ? ` · ${resets[i]}` : ''}${paceLine(i, 'wide')}`) + BLOCK_MARGIN
-                  : blockCols([`${nameOf(w)} ${'●'.repeat(cells)}${paceLine(i, 'tight')}`, `${lefts[i]}% left${lowText(i)}`, resets[i] ? `resets ${resets[i]}` : ''], BLOCK_MARGIN, k)),
-            0,
-          )
-    const spendCols = (isWideRow: boolean) =>
-      total <= 0
-        ? 0
-        : isWideRow
-          ? t(`COST ≈${usd(total)}${lastText ? ` · last ${lastText}` : ''}`) + BLOCK_MARGIN
-          : blockCols(['COST', `≈${usd(total)}`, lastText ? `last ${lastText}` : ''], BLOCK_MARGIN, k)
-    const waitingOnly = list.length === 0 && !view
-    const rowCols = (isWideRow: boolean, cells: number, cacheCols: number) =>
-      ROW_PAD +
-      (waitingOnly ? Math.ceil(WAITING_ROW_COLS * k) + (total > 0 ? WAITING_SPEND_GAP : 0) : LABEL_COLS + (isWideRow ? WIDE_LABEL_MARGIN : BLOCK_MARGIN) + windowCols(isWideRow, cells)) +
-      spendCols(isWideRow) +
-      cacheCols
-    const badgeCols = Svg ? ROBO_CHIP_COLS : TEXT_CHIP_COLS
-    const minsLeft = view ? Math.max(0, TTL_MIN - view.idleMin) : 0
-    const priced = view ? mineModel(view) : undefined
-    const nextCost = view && priced ? usd(costOf(priced, view.mode, view.tokens)) : null
-    const summaryText = !view ? '' : view.mode === 'cold' ? ` ${view.idle}${nextCost ? ` · ${nextCost}` : ''}` : ` ${minsLeft}m left`
-    // The cache state shows in the row whether the card is open or not.
-    const hasCache = view !== null
-    // The keep button sits right after the chip, so its columns belong to the cache part, not to the buttons.
-    // ✓ and ✗ are one character, but a font may draw them two columns wide: measured as two, as the flame was.
-    // The mark is one ✓ and its gap; it takes the columns only while it shows (keep-warm on).
-    const keepMarkCols = keep === true ? KEEP_COMPACT_COLS : 0
-    const keepWideCols = keepMarkCols
-    const keepCompactCols = keepMarkCols
-    const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + keepWideCols + CACHE_MARGIN : 0
-    const cacheBlockCols =
-      hasCache && view
-        ? Math.max(badgeCols, blockCols([view.mode === 'cold' ? `${view.idle} idle` : `${minsLeft}m left`, nextCost ? `${nextCost} next` : ''], 0, k)) + CACHE_MARGIN
-        : 0
     // Before the first reply there is no chip to sit beside: the keep button stays among the buttons.
     const keepAlone = !view && keep === true
-    const buttonsWideCols =
-      (button ? FOLD_COLS : 0) +
-      (tabsShown ? TABS.reduce((n, id) => n + buttonCols(tabLabel(id, true), BUTTON_GAP, k), 0) : 0) +
-      (keepAlone ? keepMarkCols : 0)
-    // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
-    // The tabs: a glyph button each, and the one in use has its two brackets.
-    const buttonsCols = ((button ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (keepAlone ? keepMarkCols : 0)
-    // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
-    // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
-    // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
-    const k2 = Svg ? COMPACT_CHAR_COLS : 1
-    const t2 = (s: string) => textCols(s, k2)
-    const nextShown = (step: number) => nextCost !== null && (step === 0 || view?.mode === 'cold')
-    // The slimmer desktop variants of step 4 (layoutOf): 1 no 5h pace track or words, 2 also no keep box, 3 also
-    // only the 5h window (else the first one).
-    const fiveAt = Math.max(0, list.findIndex(w => w.kind === 'five_hour'))
-    const compactAt = (step: number, slim = 0) =>
-      ROW_PAD +
-      list.reduce(
-        (n, w, i) =>
-          slim >= 3 && i !== fiveAt
-            ? n
-            : n +
-              (Svg
-                ? t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${slim ? '' : paceLine(i, 'compact', step < 2)}`) + PIE_COLS + (slim ? 0 : trackCols(i, 'compact'))
-                : t2(`${step < 4 && SHORT[w.kind] ? `${SHORT[w.kind]} ` : ''}${useds[i]}%${lowText(i)}${paceLine(i, 'compact', step < 2)}`)) +
-              COMPACT_MARGIN,
-        0,
-      ) +
-      (total > 0 && step < 2 ? t2(`≈${usd(total)}`) + COMPACT_MARGIN : 0) +
-      (hasCache ? (step < 3 ? (Svg ? CHIP_COLS : TEXT_CHIP_COLS) : ROBO_COLS) + (nextShown(step) ? t2(` ${nextCost} next`) : 0) + (slim >= 2 ? 0 : keepCompactCols) + COMPACT_MARGIN : 0)
-    // The minimal row: the 5h pie and its percent, Robo and the fold button. No next cost, keep box, tabs or cost.
-    const minimalCols = ROW_PAD + PIE_COLS + t2(`${useds[fiveAt] ?? 0}%${list[fiveAt] ? lowText(fiveAt) : ''}`) + COMPACT_MARGIN + ROBO_COLS + COMPACT_MARGIN + COMPACT_BUTTON_COLS
-    // From the first reply on the desktop the band is one row at every width (tabs shown); the terminal keeps its layouts.
-    const slimNeed = Svg && tabsShown && !waitingOnly ? { slim: [1, 2, 3].map(s => compactAt(4, s)), minimal: minimalCols } : {}
-    const need = {
-      wide: rowCols(true, CELLS, cacheInlineCols),
-      compact: Array.from({ length: COMPACT_STEPS }, (_, s) => (waitingOnly ? rowCols(false, CELLS, 0) : compactAt(s))),
-      tight: view ? ROW_PAD + badgeCols + t(summaryText) + keepCompactCols : rowCols(false, TIGHT_CELLS, 0),
-      buttons: buttonsCols,
-      buttonsWide: buttonsWideCols,
-      fold: button && tabsShown ? COMPACT_BUTTON_COLS : 0,
-      ...slimNeed,
-    }
+    const fiveAt = fiveAtOf(list)
+    const need = needOf({
+      svg: Svg !== null, list, lefts, useds, resets, paces, total, lastText, view, keep,
+      hasFold: !!button, tabsShown, tabLabels: TABS.map(id => tabLabel(id, true)),
+    })
     const { kind, buttonsRow, compactStep, fold: foldShown, slim = 0 } = layoutOf(columns, need)
     const minimal = kind === 'minimal'
     const foldEl = foldShown ? button : null

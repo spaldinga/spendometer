@@ -49,6 +49,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `capacity/context/card.ts` | CONVERSATION SIZE / RE-CACHE (`sizeZone`), TOOL OUTPUT (`toolsZone`), `runwayOf` | yes |
 | `cost/spend/card.ts` | SPEND (`spendZone`, with `spendFiguresOf` and the `CardSpend` type), DELEGATION (`delegZone`), PER MESSAGE (`avgZone`), BY MODEL (`modelsZone`, `MODEL_COLOR`) | yes |
 | `cost/cache/card.ts` | CACHE DISCOUNT (`discountZone`) | yes |
+| `band/widths.ts` | The row's width in columns for each layout (`needOf`, `WidthIn`), from plain data; the window names and cell counts (`NAMES`, `SHORT`, `CELLS`, `LOW_AT`, `TIGHT_CELLS`) | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen`; `Kind`, `bandPx` | yes |
 | `cost/spend/metrics.ts` | Cost-side figures from the `Spent` record: hit rate, outliers, top types and models, delegation | yes |
 | `capacity/context/runway.ts` | Context growth (`nextGrowth`) and runway turns | yes |
@@ -82,7 +83,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 ## The band's render
 
 1. Read the cache view, usage windows, spend and keep-warm state.
-2. Estimate each layout's width in columns from the text it will show (`textCols`; about half a column a character
+2. Estimate each layout's width in columns from the text it will show (`needOf` in `band/widths.ts`, over `textCols`; about half a column a character
    on the desktop) and let `layoutOf` pick the layout. From the first reply on the desktop the band is one row at every width: wide, compact (5 steps, tabs and + inline), step 4 without + (the tabs open and close the card), then slimmer variants (no 5h pace track, no keep box, the 5h window only), and last the minimal row (5h pie and percent, Robo, +; no tabs), chosen even when it does not fit. There is no buttons row and no tight layout there. The terminal, and the desktop before the first reply, keep compact, tight and a row of their own for buttons that do not fit.
 3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm mark (a green ✓ only while on), then the
    tab buttons (desktop, once there is a cache view, card open or closed: a press opens the card on that tab, or closes it on the tab in use; `pressTab` over `toggleFold`), and fold (not from compact step 4 down, until the minimal row, see 2).
