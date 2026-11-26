@@ -13,6 +13,8 @@ export const SHELLS = ['Bash', 'PowerShell'] as const
 const HOLD_LIMIT_MS = 10 * 60 * 1000
 /** A wait that came back sooner than this did not wait, so it is not used to hold. */
 const WAIT_FLOOR_MS = 100
+/** How long one try of a wait command may run (ms). */
+const WAIT_TIMEOUT_MS = 5000
 /**
  * A hook has seconds of its own time, but time inside a `$` call is free, so a hold
  * waits in a short process: `sleep` where there is one, and on Windows, where there
@@ -36,7 +38,7 @@ async function waitTick($: EngineInterface): Promise<boolean> {
   for (let i = waitAt ?? 0; i < WAITS.length && waitAt !== -1; i++) {
     try {
       const before = await $.clock.now()
-      const r = await $.process.run([...WAITS[i]], { timeoutMs: 5000 })
+      const r = await $.process.run([...WAITS[i]], { timeoutMs: WAIT_TIMEOUT_MS })
       if (r.exitCode === 0 && (await $.clock.now()) - before >= WAIT_FLOOR_MS) {
         waitAt = i
         return true

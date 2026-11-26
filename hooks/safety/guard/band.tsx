@@ -7,12 +7,15 @@ import type { Held } from './hold'
 
 type Ui = Pick<ReturnType<EngineInterface['ui']['resolve']>, 'Box' | 'Button' | 'Text'>
 
+/** The longest command the held band shows, in characters; a longer one is cut with an ellipsis. */
+const SHOWN_MAX = 90
+
 /** The held band for a held call, once it has its report; null before that. */
 export function heldBand(holding: Held, ui: Ui) {
   const { Box, Button, Text } = ui
   const rep = holding.report
   if (!rep) return null
-  const shown = holding.command.length > 90 ? holding.command.slice(0, 89) + '…' : holding.command
+  const shown = holding.command.length > SHOWN_MAX ? holding.command.slice(0, SHOWN_MAX - 1) + '…' : holding.command
   return (
     <Box key="held" flexDirection="column" paddingX={1}>
       <Box flexDirection="row" alignItems="center">

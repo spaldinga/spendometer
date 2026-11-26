@@ -25,6 +25,12 @@ export type Risk = { kind: RiskKind; args: string[]; dir: string | null; label: 
 export type Report = { summary: string; lines: string[]; more: number; note: string }
 
 export const LIST_MAX = 6
+/** How long a git call may run (ms), and how many characters of its stderr a note keeps. */
+const GIT_TIMEOUT_MS = 15000
+const NOTE_MAX = 200
+/** What git clean's dry run puts before each path, and where a path starts in a porcelain status line (characters). */
+const WOULD_REMOVE = 'Would remove '
+const STATUS_PATH_AT = 3
 
 /** Words of one command, quotes taken off. Enough for the commands held here; not a shell parser. */
 const wordsOf = (segment: string): string[] =>
@@ -90,7 +96,7 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
 
 /** Runs git where the command would run. Paths go as arguments, so nothing in them runs as shell. */
 async function git($: EngineInterface, risk: Risk, cwd: string, args: string[]) {
-  return $.process.run(['git', ...(risk.dir ? ['-C', risk.dir] : []), ...args], { cwd, timeoutMs: 15000 })
+  return $.process.run(['git', ...(risk.dir ? ['-C', risk.dir] : []), ...args], { cwd, timeoutMs: GIT_TIMEOUT_MS })
 }
 
 const listed = (items: string[]): Pick<Report, 'lines' | 'more'> => ({ lines: items.slice(0, LIST_MAX), more: Math.max(0, items.length - LIST_MAX) })
@@ -99,8 +105,8 @@ async function measureClean($: EngineInterface, risk: Risk, cwd: string): Promis
   const flags = risk.args.filter(a => a.startsWith('-') && a !== '--')
   const paths = risk.args.filter(a => !a.startsWith('-'))
   const run = await git($, risk, cwd, ['clean', '-n', ...flags, '--', ...paths])
-  if (run.exitCode !== 0) return { summary: 'git clean (could not dry-run it)', lines: [], more: 0, note: run.stderr.trim().slice(0, 200) }
-  const gone = run.stdout.split('\n').map(l => l.trim()).filter(l => l.startsWith('Would remove ')).map(l => l.slice(13))
+  if (run.exitCode !== 0) return { summary: 'git clean (could not dry-run it)', lines: [], more: 0, note: run.stderr.trim().slice(0, NOTE_MAX) }
+  const gone = run.stdout.split('\n').map(l => l.trim()).filter(l => l.startsWith(WOULD_REMOVE)).map(l => l.slice(WOULD_REMOVE.length))
   return {
     summary: gone.length ? `remove ${plural(gone.length, 'untracked path', 'untracked paths')}` : 'remove nothing: no untracked files match',
     ...listed(gone),
@@ -110,15 +116,15 @@ async function measureClean($: EngineInterface, risk: Risk, cwd: string): Promis
 
 async function measureDiscard($: EngineInterface, risk: Risk, cwd: string): Promise<Report> {
   const status = await git($, risk, cwd, ['status', '--porcelain'])
-  if (status.exitCode !== 0) return { summary: `${risk.label} (not a git repo here?)`, lines: [], more: 0, note: status.stderr.trim().slice(0, 200) }
-  const rows = status.stdout.split('\n').filter(l => l.length > 3 && !l.startsWith('??'))
+  if (status.exitCode !== 0) return { summary: `${risk.label} (not a git repo here?)`, lines: [], more: 0, note: status.stderr.trim().slice(0, NOTE_MAX) }
+  const rows = status.stdout.split('\n').filter(l => l.length > STATUS_PATH_AT && !l.startsWith('??'))
   // reset --hard drops staged and unstaged changes; checkout and restore drop unstaged ones.
   const lost = risk.kind === 'reset' ? rows : rows.filter(l => l[1] !== ' ')
   const stat = await git($, risk, cwd, ['diff', '--shortstat', ...(risk.kind === 'reset' ? ['HEAD'] : [])])
   const shortstat = stat.exitCode === 0 ? stat.stdout.trim() : ''
   return {
     summary: lost.length ? `discard uncommitted changes in ${plural(lost.length, 'file', 'files')}` : 'discard nothing: no uncommitted changes',
-    ...listed(lost.map(l => `${l.slice(0, 2)} ${l.slice(3)}`)),
+    ...listed(lost.map(l => `${l.slice(0, 2)} ${l.slice(STATUS_PATH_AT)}`)),
     note: shortstat ? `${shortstat}. Uncommitted changes can't be recovered.` : 'From git status --porcelain.',
   }
 }
