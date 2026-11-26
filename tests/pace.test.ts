@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PACE_MIN_MS, WINDOW_MS, paceOf } from '../hooks/pace'
+import { PACE_MIN_MS, WINDOW_MS, paceOf } from '../hooks/capacity/usage/pace'
 
 const MIN = 60_000
 const HOUR = 60 * MIN

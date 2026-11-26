@@ -11,10 +11,11 @@ import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
-  PACE_TIP, PACE_TRACK_PX, PIE_SIZE,
-  TABS, TAB_NAMES, bandPx, cardSvg, fmtReset, paceTrackSvg, paceWords, pieSvg,
+  TABS, TAB_NAMES, bandPx, cardSvg,
 } from './cache-art'
-import type { PaceMode, PaceRow, Tab } from './cache-art'
+import type { Tab } from './cache-art'
+import { PACE_TIP, PACE_TRACK_PX, PIE_SIZE, fmtReset, paceTrackSvg, paceWords, pieSvg } from './capacity/usage/art'
+import type { PaceMode } from './capacity/usage/art'
 import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'
 import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
 import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
@@ -29,7 +30,8 @@ export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
 import { metricsOf, nextGrowth } from './metrics'
 import { DAY_PREFIX, isOldDay } from './cost/spend/days'
-import { WINDOW_MS, paceOf } from './pace'
+import { WINDOW_MS } from './capacity/usage/pace'
+import { keptWindows, liveWindows, paceFor, pull, setWindows, trackPace } from './capacity/usage/windows'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
   CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, KEEP_COMPACT_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
@@ -62,7 +64,6 @@ const THEME_KEY = 'progressTheme'
 /** The card's tab in the store: overview, context or cost. */
 const TAB_KEY = 'cardTab'
 
-const windows = atom({ plugin: 'spendometer', key: 'windows' } as const, [] as Window[])
 const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
 const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
 const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
@@ -263,43 +264,11 @@ const NAMES: Record<string, string> = { seven_day: '7D', five_hour: '5H', spend_
 const LONG: Record<string, string> = { seven_day: '7-day limit', five_hour: '5-hour limit', spend_limit: 'Spend limit' }
 /** The compact row's word for a window, after its percent: colour alone told them apart before. */
 const SHORT: Record<string, string> = { seven_day: 'week', five_hour: '5h', spend_limit: 'spend' }
-/** The 5-hour window first, as /usage lists it: it is the one that runs out within a working session. */
-const ORDER: Record<string, number> = { five_hour: 0, seven_day: 1 }
 const COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
-
-const clean = (list: readonly Window[]): Window[] =>
-  list
-    .map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt }))
-    .sort((a, b) => (ORDER[a.kind] ?? 9) - (ORDER[b.kind] ?? 9))
-
-
-/** The rows the card draws: each window with a colour, its time to reset and its pace over the window so far. */
-const trackPace = (list: readonly Window[], now: number): PaceRow[] => {
-  const rows: PaceRow[] = []
-  for (const w of list) {
-    if (!COLORS[w.kind]) continue
-    rows.push({
-      label: NAMES[w.kind],
-      color: COLORS[w.kind],
-      used: w.percentUsed,
-      windowMs: WINDOW_MS[w.kind] ?? null,
-      untilResetMs: w.resetsAt ? Date.parse(w.resetsAt) - now : null,
-      pace: WINDOW_MS[w.kind] ? paceOf(w, WINDOW_MS[w.kind], now) : null,
-    })
-  }
-  return rows
-}
-/** The pace of the 5-hour window only: the top row shows no pace for 7D. Null while it is unknown. */
-const paceFor = (w: Window, now: number) => (w.kind === 'five_hour' ? paceOf(w, WINDOW_MS.five_hour, now) : null)
 
 const dots = (left: number, cells: number): { on: string; off: string } => {
   const n = Math.max(0, Math.min(cells, Math.round((left / 100) * cells)))
   return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
-}
-
-const pull = async ($: EngineInterface): Promise<void> => {
-  const u = await $.session.usage()
-  await update($, windows, () => clean(u.rateLimits))
 }
 
 /**
@@ -331,15 +300,6 @@ const pressTab = async ($: EngineInterface, id: Tab): Promise<void> => {
   if (!open || !same) await $.store.set(TAB_KEY, id)
   if (!open || same) await toggleFold($)
   else $.ui.invalidate('ui.render')
-}
-
-/** The usage windows straight from the engine, or none when it cannot say. */
-const liveWindows = async ($: EngineInterface): Promise<Window[]> => {
-  try {
-    return clean((await $.session.usage()).rateLimits)
-  } catch {
-    return []
-  }
 }
 
 
@@ -624,7 +584,7 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     if (e.changed.includes('rateLimits')) {
-      await update($, windows, () => clean(e.rateLimits))
+      await setWindows($, e.rateLimits)
     }
     if (e.changed.includes('context') && e.context.tokens && e.context.tokens > 0) {
       const tokens = e.context.tokens
@@ -772,7 +732,7 @@ export const register: Register = on => {
     }
     // The atom is cleared by a resume and refilled only by events that may not come: an empty one asks the engine.
     arm($)
-    const kept = await read($, windows)
+    const kept = await keptWindows($)
     const now = await $.clock.now()
     // A window whose reset time has passed is a new window: the stored share used is from the old one.
     // Shown as 100% left with no reset time until the next reply brings the real figures.

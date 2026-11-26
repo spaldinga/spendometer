@@ -42,11 +42,13 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
-| `cache-art.ts` | The pie, 5h pace track and card SVGs (palette in `band/look.ts`); the 5h pace words | yes |
+| `cache-art.ts` | The card SVG (palette in `band/look.ts`) | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
 | `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
 | `toolout.ts` | Tool output tokens and the re-read keys | yes |
-| `pace.ts` | Pace of a usage window | yes |
+| `capacity/usage/pace.ts` | Pace of a usage window | yes |
+| `capacity/usage/windows.ts` | The `windows` atom, `clean`, `trackPace`, `paceFor`, `liveWindows`, `pull`, `setWindows`, `keptWindows` | no |
+| `capacity/usage/art.ts` | The pie, 5h pace track, `paceWords`, `fmtReset`, `fmtSpan`, `PACE_TIP`, `PaceRow` | yes |
 | `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
 | `progress.ts`, `progress-art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
 | `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...) and `svgDoc`, the SVG wrapper; the one file domains may import | yes |
@@ -59,7 +61,7 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files, subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files, usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command), timers |
 
