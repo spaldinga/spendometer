@@ -45,6 +45,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `band/card.ts` | The card frame (`cardSvg`): the tab, the columns, where each zone goes, status lines, alt text; its tabs and spend type | yes |
 | `capacity/usage/card.ts` | The pace strip (`paceStrip`) | yes |
 | `capacity/context/card.ts` | CONVERSATION SIZE / RE-CACHE (`sizeZone`), TOOL OUTPUT (`toolsZone`), `runwayOf` | yes |
+| `cost/spend/card.ts` | SPEND (`spendZone`, with `spendFiguresOf` and the `CardSpend` type), DELEGATION (`delegZone`), PER MESSAGE (`avgZone`), BY MODEL (`modelsZone`, `MODEL_COLOR`) | yes |
+| `cost/cache/card.ts` | CACHE DISCOUNT (`discountZone`) | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen`; `Kind`, `bandPx` | yes |
 | `cost/spend/metrics.ts` | Cost-side figures from the `Spent` record: hit rate, outliers, top types and models, delegation | yes |
 | `capacity/context/runway.ts` | Context growth (`nextGrowth`) and runway turns | yes |
@@ -90,5 +92,5 @@ no `toBeCloseTo`, no dynamic `import()`.
 
 ## Known debt
 
-`register.tsx` (about 1,450 lines) and `band/card.ts` (about 460) carry several roles each, and pixel and column
+`register.tsx` (about 1,450 lines) carries several roles, and pixel and column
 figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).

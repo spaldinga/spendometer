@@ -122,7 +122,11 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
   a zone and the frame need (the runway line, also in the alt text) is computed by an exported function of the slice
   (`runwayOf` in `capacity/context/card.ts`) that the frame calls. A zone takes plain fields or a structural type
   declared in its own file, never `Metrics` (that lives in band).
-- **Copies so far:** `fmtIdle` in `capacity/usage/art.ts` (now exported, for `capacity/usage/card.ts`); `tok` in
+- **Step 13:** `CardSpend` and `MODEL_COLOR` moved to `cost/spend/card.ts` and `band/card.ts` re-exports them. The
+  spend figures the frame also reads (total, days, captions, results) come from `spendFiguresOf` in that file, so the
+  zone and the frame share one computation. `card.ts` no longer has the old "cache-art" role; nothing was left to delete.
+- **Copies so far:** `fmtSpan` in `cost/spend/card.ts` (from `capacity/usage/art.ts`, built on `cost/cache/facts`'s
+  `fmtIdle`); `fmtIdle` in `capacity/usage/art.ts` (now exported, for `capacity/usage/card.ts`); `tok` in
   `capacity/context/card.ts`; the window `NAMES` and `COLORS` in
   `capacity/usage/windows.ts` (the band keeps its own until step 17, which should pass one set as data).
 
