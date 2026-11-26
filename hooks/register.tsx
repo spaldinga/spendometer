@@ -37,6 +37,9 @@ import { pull, setWindows } from './capacity/usage/windows'
 // starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
 
+/** Milliseconds in a second: the host reports the idle time of a resumed session in seconds. */
+const MS_PER_SECOND = 1000
+
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
 
@@ -225,7 +228,7 @@ export const register: Register = on => {
       await clearSeen($)
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
-      const lastAt = now - e.seconds_since_last_response * 1000
+      const lastAt = now - e.seconds_since_last_response * MS_PER_SECOND
       const window = (await $.session.usage()).context.window
       const model = typeof e.model === 'string' ? e.model : await $.session.model()
       const tokens = typeof e.context_tokens === 'number' ? e.context_tokens : 0

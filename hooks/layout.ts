@@ -155,6 +155,9 @@ export const ROW_PX = 18
  * has always taken for each of its four columns.
  */
 export const CARD_COL_PX = 315
+/** The most columns the card takes, and the gap between columns and the margin at both sides together (px). */
+const CARD_MAX_COLS = 4
+const CARD_GAP_PX = 26
 
 /**
  * How many columns the card takes at a drawn width of `drawnPx`: as many as fit at CARD_COL_PX each plus
@@ -162,7 +165,7 @@ export const CARD_COL_PX = 315
  * (W - 26 + 26) / (CARD_COL_PX + 26)), at least one and at most four. The card draws at most three
  * (DELEGATION, IN CACHE, SPEND), wider at four; the zones left without a column become status lines.
  */
-export const cardColsOf = (drawnPx: number): number => Math.min(4, Math.max(1, Math.floor((drawnPx - 26 + 26) / (CARD_COL_PX + 26))))
+export const cardColsOf = (drawnPx: number): number => Math.min(CARD_MAX_COLS, Math.max(1, Math.floor((drawnPx - CARD_GAP_PX + CARD_GAP_PX) / (CARD_COL_PX + CARD_GAP_PX))))
 
 /** A drawing's height in rows. */
 export const rowsOf = (px: number): number => Math.ceil(px / ROW_PX)
@@ -196,9 +199,13 @@ export const PIE_COLS = 2
  */
 export const PACE_TRACK_COLS = { wide: 8 + 1, compact: 5, tight: 4 + 1 } as const
 
+/** The cells the engine keeps for its [-], and a cell's width (px). */
+const RESERVED_CELLS = 5
+const CELL_PX = 12
+
 /**
  * The band's width in CSS pixels for a column count: the engine keeps 5 cells
  * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
  * so the card never runs past the slot; the few pixels left are band colour.
  */
-export const bandPx = (columns: number): number => (columns + 5) * 12
+export const bandPx = (columns: number): number => (columns + RESERVED_CELLS) * CELL_PX
