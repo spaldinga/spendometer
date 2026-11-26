@@ -54,6 +54,13 @@ export const pieSvg = (pct: number, color: string): string => svgDoc(PIE_SIZE, P
 // ---------- Pace track: the 5h window's pace beside its percent in the band's top row ----------
 /** The track's width in px a layout draws: wide, compact (stacked row) and tight. Their columns are PACE_TRACK_COLS in layout.ts. */
 export const PACE_TRACK_PX = { wide: 64, compact: 44, tight: 30 } as const
+/** The mini track: the bar's top and height, its shortest filled part, and the tick's top, width and height (px; the track is PIE_SIZE tall). */
+const BAR_TOP = 5
+const BAR_H = 6
+const BAR_MIN_FILL = 3
+const TICK_TOP = 1
+const TICK_W = 2
+const TICK_H = 14
 export type PaceMode = keyof typeof PACE_TRACK_PX
 
 /**
@@ -64,10 +71,10 @@ export type PaceMode = keyof typeof PACE_TRACK_PX
 export const paceTrackSvg = (used: number, gone: number, color: string, ok: boolean, w: number): { source: string; w: number; h: number } => {
   const h = PIE_SIZE
   const u = Math.max(0, Math.min(100, used))
-  let s = `<rect x="0" y="5" width="${w}" height="6" rx="3" fill="${EMPTY}"/>`
-  if (u > 0) s += `<rect x="0" y="5" width="${Math.min(w, Math.max(3, Math.round((u / 100) * w)))}" height="6" rx="3" fill="${ok ? color : DANGER}"/>`
-  const tx = Math.min(w - 2, Math.max(0, Math.round(Math.max(0, Math.min(1, gone)) * w) - 1))
-  s += `<rect x="${tx}" y="1" width="2" height="14" fill="${TEXT}"/>`
+  let s = `<rect x="0" y="${BAR_TOP}" width="${w}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${EMPTY}"/>`
+  if (u > 0) s += `<rect x="0" y="${BAR_TOP}" width="${Math.min(w, Math.max(BAR_MIN_FILL, Math.round((u / 100) * w)))}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${ok ? color : DANGER}"/>`
+  const tx = Math.min(w - TICK_W, Math.max(0, Math.round(Math.max(0, Math.min(1, gone)) * w) - 1))
+  s += `<rect x="${tx}" y="${TICK_TOP}" width="${TICK_W}" height="${TICK_H}" fill="${TEXT}"/>`
   return { source: svgDoc(w, h, s, false), w, h }
 }
 
