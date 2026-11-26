@@ -147,9 +147,9 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
 
 ## Open, not part of this refactor
 
-- **Should the card tabs follow the domains?** Overview mixes capacity (the pace strip) with cost (delegation, spend);
-  Context is capacity and Cost is cost. Changing the tabs is a behaviour change, so it is decided with the user and
-  done as its own item (with or after 90 and 100), not in these steps.
+- **The card tabs follow the domains** (user, 2026-11-26). That changes what the user sees, so it is its own item,
+  [85 tabs-by-domain](../backlog/tabs-by-domain.md), after these steps. The refactor keeps today's tabs; the slice
+  `card.ts` files already split the zones by domain, so item 85 only changes which zones a tab draws.
 
 ## Done when
 

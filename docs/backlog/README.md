@@ -13,6 +13,7 @@ What is next for spendometer, one file per item, so each item ships and is seen 
 | 65 | [Keep warm follows the cache's WARM/COLD state](keep-warm-follows-cold.md) | change | S |
 | 70 | [The 5-hour pace in the top bar](pace-in-top-bar.md) | design | M |
 | 80 | [Architecture: smaller files, clear roles, named numbers](refactor-architecture.md) | refactor | L |
+| 85 | [Card tabs follow the domains](tabs-by-domain.md) | design | M |
 | 90 | [Context tab pictures](context-pictures.md) | feature | M |
 | 100 | [Cost tab pictures](cost-pictures.md) | feature | M |
 | 110 | [README images and mockups for the tabs](readme-mockups.md) | change | S |
