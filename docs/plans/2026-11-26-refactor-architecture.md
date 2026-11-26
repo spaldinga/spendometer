@@ -1,6 +1,6 @@
 # Refactor: code by domain, small files, named numbers (backlog 80)
 
-Status: approved by the user on 2026-11-26. Steps 1-5 done (step 1 checked in the app).
+Status: approved by the user on 2026-11-26. Steps 1-8 done (step 1 checked in the app).
 
 ## Purpose
 
@@ -104,6 +104,16 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
 - Who does it: a `sonnet-coder` subagent per step with a self-contained brief (the step text, the rules above, the
   verify commands, the machine gotchas from `AGENTS.md`); Opus reviews the diff before the commit.
 - After steps marked **app check**, the user runs `/reload-plugins --force` and looks at the band before the next step.
+
+## Learned while building
+
+- **An atom stays private to its file.** The validator's state scan accepts `read`/`update($, atom, …)` only on an
+  atom declared as a const in the same file; an exported atom used elsewhere made the module fail to load (step 8).
+  A slice exports small functions around its atom (`setWindows`, `keptWindows`) instead.
+- **Exported functions that take `$` are function declarations** (`export async function f($, …)`), not arrow
+  consts: the validator follows `$` calls across an import into function declarations (its `calls: … (via f)` list).
+- **Copies so far:** `fmtIdle` in `capacity/usage/art.ts`; the window `NAMES` and `COLORS` in
+  `capacity/usage/windows.ts` (the band keeps its own until step 17, which should pass one set as data).
 
 ## Steps
 
