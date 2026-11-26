@@ -12,10 +12,11 @@ import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
-  PACE_TIP, PACE_TRACK_PX, PIE_SIZE, ROBO_SIZE, WORD,
-  TABS, TAB_NAMES, bandPx, cardSvg, chipSvg, chipTip, fmtReset, paceTrackSvg, paceWords, pieSvg, roboSvg,
+  PACE_TIP, PACE_TRACK_PX, PIE_SIZE,
+  TABS, TAB_NAMES, bandPx, cardSvg, fmtReset, paceTrackSvg, paceWords, pieSvg,
 } from './cache-art'
 import type { PaceMode, PaceRow, Tab } from './cache-art'
+import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'
 import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
 import type { TurnUsage } from './cost/prices'
 import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
