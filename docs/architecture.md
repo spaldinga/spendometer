@@ -40,7 +40,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store, and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
-| `cost/spend/record.ts` | The session's `Spent` record in the store (`readSpend`, `recordOf`, `addKeepWarm`) | no |
+| `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
 | `cache-art.ts` | The pie, 5h pace track and card SVGs (palette in `band/look.ts`); the 5h pace words | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
@@ -59,7 +59,7 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files, subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command), timers |
 

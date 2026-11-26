@@ -4,7 +4,8 @@ import type { On } from 'claude-code'
 import { cardSvg } from '../hooks/cache-art'
 import type { CacheView } from '../hooks/cost/cache/facts'
 import { isCommit, isPr, resultsSentence, resultsText } from '../hooks/cost/spend/results'
-import { resetHold, spendLine } from '../hooks/register'
+import { resetHold } from '../hooks/register'
+import { spendLine } from '../hooks/cost/spend/record'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
 const WARM: CacheView = { mode: 'warm', idle: '18m', idleMin: 18, tokens: 240000, window: 1000000, mine: 'opus' }

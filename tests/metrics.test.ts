@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { delegationOf, hitRate, metricsOf, modelsOf, nextGrowth, outlierMultiple, putSpan, runwayTurns, topTypes, unionMs, workMs } from '../hooks/metrics'
+import { delegationOf, hitRate, metricsOf, modelsOf, nextGrowth, outlierMultiple, runwayTurns, topTypes, unionMs, workMs } from '../hooks/metrics'
+import { putSpan } from '../hooks/cost/spend/record'
 import type { Spent } from '../types'
 
 const near = (a: number | null | undefined, b: number) => expect(Math.abs((a ?? NaN) - b)).toBeLessThan(1e-9)

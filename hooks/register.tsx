@@ -1,13 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { CacheFacts, Fold, Progress, Spend, Spent, Turn, Window, Worker } from '../types'
+import type { CacheFacts, Fold, Progress, Spent, Turn, Window, Worker } from '../types'
 import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, fmtElapsed, labelOf, pulseText } from './progress'
 import { BAR_H, crewSvg } from './progress-art'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
-import { isCommit, isPr, resultsSentence } from './cost/spend/results'
 import { dropPath, noteRead, readKey, tokOf } from './toolout'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
@@ -18,10 +17,9 @@ import {
 import type { PaceMode, PaceRow, Tab } from './cache-art'
 import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'
 import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
-import type { TurnUsage } from './cost/prices'
 import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
 import type { CacheView } from './cost/cache/facts'
-import { SPEND_PREFIX, addKeepWarm, readSpend, recordOf } from './cost/spend/record'
+import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readDays, readSpend, recordOf, spendLine } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
@@ -29,8 +27,8 @@ import { afterTurn, endConversation, keepOf, keepTip, noteCompact, noteRequest, 
 import { keepwarmCommand, keepwarmStatus, warnCold } from './cost/cache/keepwarm/command'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
-import { metricsOf, nextGrowth, putSpan } from './metrics'
-import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './cost/spend/days'
+import { metricsOf, nextGrowth } from './metrics'
+import { DAY_PREFIX, isOldDay } from './cost/spend/days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
@@ -63,45 +61,16 @@ const HOLD_KEY = 'hold'
 const THEME_KEY = 'progressTheme'
 /** The card's tab in the store: overview, context or cost. */
 const TAB_KEY = 'cardTab'
-/** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
-const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
-/** Pace records an older version kept per window kind; no longer used, deleted at session start. */
-const OLD_PACE_PREFIX = 'pace:'
-/** Daily totals (`day:YYYY-MM-DD`) older than this are dropped at session start. */
-const DAY_KEEP_DAYS = 30
 
 const windows = atom({ plugin: 'spendometer', key: 'windows' } as const, [] as Window[])
 const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
 const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
 const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
 const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[])
-/** Subagent cost since the last main turn finished: it joins the next main turn's `last`. */
-const subsSince = atom({ plugin: 'spendometer', key: 'subsSince' } as const, 0)
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
 /** Read keys (path and range) the main thread read and has not edited since: a second read of one is a re-read. Lost on a reload. */
 const seen = atom({ plugin: 'spendometer', key: 'seen' } as const, [] as string[])
-
-/** The conversation's cost as one line for the transcript. */
-export const spendLine = (s: Spend & { commits?: number; prs?: number }): string =>
-  `this conversation has cost about ${usd(s.main + s.subs)} so far (main session ${usd(s.main)}, subagents ${usd(s.subs)}). ` +
-  'An estimate from token counts at list prices; not a bill.' +
-  resultsSentence(s.commits ?? 0, s.prs ?? 0, (s.commits ?? 0) + (s.prs ?? 0) > 0 && s.main + s.subs > 0 ? usd((s.main + s.subs) / ((s.commits ?? 0) + (s.prs ?? 0))) : null)
-
-/** Adds the commits and pull requests a shell command made to this session's record. A command that made none writes nothing. */
-const addResults = async ($: EngineInterface, command: string): Promise<void> => {
-  const commit = isCommit(command)
-  const pr = isPr(command)
-  if (!commit && !pr) return
-  try {
-    const key = SPEND_PREFIX + (await $.session.id())
-    const next = recordOf(await readSpend($), await $.clock.now())
-    if (commit) next.commits = (next.commits ?? 0) + 1
-    if (pr) next.prs = (next.prs ?? 0) + 1
-    await $.store.set(key, next)
-    $.ui.invalidate('ui.render')
-  } catch { /* the card shows no results; the command went on */ }
-}
 
 /** Adds a tool call's output tokens (and a re-read of an unchanged file) to this session's record. Nothing to add writes nothing. */
 const addToolOut = async ($: EngineInterface, tool: string, tokens: number, reread: boolean): Promise<void> => {
@@ -154,72 +123,6 @@ const forgetPath = async ($: EngineInterface, e: unknown, r: unknown): Promise<v
     // A subagent's edit changes the file for the main thread too, so it counts here, unlike its output.
     if (path !== null && !isDeny(r)) await update($, seen, s => dropPath(s, path))
   } catch { /* a re-read may then be counted that was not one */ }
-}
-
-/** The last seven days' totals, oldest first, 0 for a day with none (or an unreadable one). */
-const readDays = async ($: EngineInterface, now: number): Promise<number[]> => {
-  const out: number[] = []
-  for (const key of lastDays(now)) {
-    try {
-      const v = await $.store.get(key)
-      out.push(typeof v === 'number' && v > 0 ? v : 0)
-    } catch {
-      out.push(0)
-    }
-  }
-  return out
-}
-
-/** Adds a finished turn's cost to this session's saved figures. A failing store or id loses the figure, never the turn. */
-const addSpend = async (
-  $: EngineInterface,
-  paid: number,
-  isMain: boolean,
-  usage?: TurnUsage | null,
-  type = 'agent',
-  span?: { start: number; end: number; prevEnd?: number },
-): Promise<void> => {
-  try {
-    const key = SPEND_PREFIX + (await $.session.id())
-    const was = await readSpend($)
-    const now = await $.clock.now()
-    const next = recordOf(was, now)
-    // Today's total across sessions. Read-modify-write: when two sessions write at the same moment one
-    // of the two additions is lost, which is acceptable for a figure that is an estimate anyway.
-    try {
-      const dk = dayKey(now)
-      const today = await $.store.get(dk)
-      await $.store.set(dk, (typeof today === 'number' ? today : 0) + paid)
-    } catch { /* the day's total misses this turn */ }
-    // Per model family, and all tokens: the card's split by model and the effective price per million tokens.
-    const family = familyOf(usage?.model)
-    if (family) next.byModel = { ...next.byModel, [family]: (next.byModel?.[family] ?? 0) + paid }
-    next.totTok =
-      (next.totTok ?? 0) + (usage?.input_tokens || 0) + (usage?.output_tokens || 0) + (usage?.cache_read_input_tokens || 0) + (usage?.cache_creation_input_tokens || 0)
-    if (isMain) {
-      next.main += paid
-      // The metric row's figures: the priced main turns, what they cost and the input they read.
-      next.turns = (next.turns ?? 0) + 1
-      next.paidTurns = (next.paidTurns ?? 0) + paid
-      const cached = usage?.cache_read_input_tokens || 0
-      next.readTok = (next.readTok ?? 0) + cached
-      next.inTok = (next.inTok ?? 0) + (usage?.input_tokens || 0) + cached + (usage?.cache_creation_input_tokens || 0)
-      next.last = paid + (await read($, subsSince))
-      await update($, subsSince, () => 0)
-    } else {
-      next.subs += paid
-      next.byType = { ...next.byType, [type]: (next.byType?.[type] ?? 0) + paid }
-      // The same tokens at the main session's model; never below what they cost (a same-model or dearer subagent saves 0).
-      const mainModel = (await cacheFacts($))?.model ?? null
-      const atMain = mainModel && usage ? (turnCost({ ...usage, model: mainModel }) ?? paid) : paid
-      next.subsAtMain = (next.subsAtMain ?? 0) + Math.max(atMain, paid)
-      next.subsPaid = (next.subsPaid ?? 0) + paid
-      if (span) next.spans = putSpan(next.spans, span.start, span.end, span.prevEnd)
-      await update($, subsSince, n => n + paid)
-    }
-    await $.store.set(key, next)
-    $.ui.invalidate('ui.render')
-  } catch { /* the band shows no cost; the turn goes on */ }
 }
 
 /** Notes the context size at the end of a main turn, and how fast it grows: the moving average of its increases. */

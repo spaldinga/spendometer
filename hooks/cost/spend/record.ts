@@ -2,9 +2,15 @@
 // added to it. Shared by the band (register.tsx) and the keep-warm pinger (keepwarm.ts). Written as function
 // declarations: a hook's `$` is followed past an import only into those.
 
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { Spent } from '../../../types'
+import type { Spend, Spent } from '../../../types'
+import { cacheFacts } from '../cache/facts'
+import { familyOf, turnCost, usd } from '../prices'
+import type { TurnUsage } from '../prices'
+import { dayKey, lastDays } from './days'
+import { isCommit, isPr, resultsSentence } from './results'
 
 /** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
 export const SPEND_PREFIX = 'spend:'
@@ -61,3 +67,119 @@ export async function addKeepWarm($: EngineInterface, add: { pings?: number; sav
   } catch { /* the card shows no savings; the ping goes on */ }
 }
 
+
+/** The cost per session lives in the store under this prefix; entries not written for this long are dropped at session start. */
+export const SPEND_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+/** Pace records an older version kept per window kind; no longer used, deleted at session start. */
+export const OLD_PACE_PREFIX = 'pace:'
+/** Daily totals (`day:YYYY-MM-DD`) older than this are dropped at session start. */
+export const DAY_KEEP_DAYS = 30
+
+/** Subagent cost since the last main turn finished: it joins the next main turn's `last`. */
+const subsSince = atom({ plugin: 'spendometer', key: 'subsSince' } as const, 0)
+
+/** The conversation's cost as one line for the transcript. */
+export function spendLine(s: Spend & { commits?: number; prs?: number }): string {
+  return (
+  `this conversation has cost about ${usd(s.main + s.subs)} so far (main session ${usd(s.main)}, subagents ${usd(s.subs)}). ` +
+  'An estimate from token counts at list prices; not a bill.' +
+  resultsSentence(s.commits ?? 0, s.prs ?? 0, (s.commits ?? 0) + (s.prs ?? 0) > 0 && s.main + s.subs > 0 ? usd((s.main + s.subs) / ((s.commits ?? 0) + (s.prs ?? 0))) : null)
+  )
+}
+
+/** Adds the commits and pull requests a shell command made to this session's record. A command that made none writes nothing. */
+export async function addResults($: EngineInterface, command: string): Promise<void> {
+  const commit = isCommit(command)
+  const pr = isPr(command)
+  if (!commit && !pr) return
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const next = recordOf(await readSpend($), await $.clock.now())
+    if (commit) next.commits = (next.commits ?? 0) + 1
+    if (pr) next.prs = (next.prs ?? 0) + 1
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the card shows no results; the command went on */ }
+}
+
+/** The last seven days' totals, oldest first, 0 for a day with none (or an unreadable one). */
+export async function readDays($: EngineInterface, now: number): Promise<number[]> {
+  const out: number[] = []
+  for (const key of lastDays(now)) {
+    try {
+      const v = await $.store.get(key)
+      out.push(typeof v === 'number' && v > 0 ? v : 0)
+    } catch {
+      out.push(0)
+    }
+  }
+  return out
+}
+
+/** Adds a finished turn's cost to this session's saved figures. A failing store or id loses the figure, never the turn. */
+export async function addSpend(
+  $: EngineInterface,
+  paid: number,
+  isMain: boolean,
+  usage?: TurnUsage | null,
+  type = 'agent',
+  span?: { start: number; end: number; prevEnd?: number },
+): Promise<void> {
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const was = await readSpend($)
+    const now = await $.clock.now()
+    const next = recordOf(was, now)
+    // Today's total across sessions. Read-modify-write: when two sessions write at the same moment one
+    // of the two additions is lost, which is acceptable for a figure that is an estimate anyway.
+    try {
+      const dk = dayKey(now)
+      const today = await $.store.get(dk)
+      await $.store.set(dk, (typeof today === 'number' ? today : 0) + paid)
+    } catch { /* the day's total misses this turn */ }
+    // Per model family, and all tokens: the card's split by model and the effective price per million tokens.
+    const family = familyOf(usage?.model)
+    if (family) next.byModel = { ...next.byModel, [family]: (next.byModel?.[family] ?? 0) + paid }
+    next.totTok =
+      (next.totTok ?? 0) + (usage?.input_tokens || 0) + (usage?.output_tokens || 0) + (usage?.cache_read_input_tokens || 0) + (usage?.cache_creation_input_tokens || 0)
+    if (isMain) {
+      next.main += paid
+      // The metric row's figures: the priced main turns, what they cost and the input they read.
+      next.turns = (next.turns ?? 0) + 1
+      next.paidTurns = (next.paidTurns ?? 0) + paid
+      const cached = usage?.cache_read_input_tokens || 0
+      next.readTok = (next.readTok ?? 0) + cached
+      next.inTok = (next.inTok ?? 0) + (usage?.input_tokens || 0) + cached + (usage?.cache_creation_input_tokens || 0)
+      next.last = paid + (await read($, subsSince))
+      await update($, subsSince, () => 0)
+    } else {
+      next.subs += paid
+      next.byType = { ...next.byType, [type]: (next.byType?.[type] ?? 0) + paid }
+      // The same tokens at the main session's model; never below what they cost (a same-model or dearer subagent saves 0).
+      const mainModel = (await cacheFacts($))?.model ?? null
+      const atMain = mainModel && usage ? (turnCost({ ...usage, model: mainModel }) ?? paid) : paid
+      next.subsAtMain = (next.subsAtMain ?? 0) + Math.max(atMain, paid)
+      next.subsPaid = (next.subsPaid ?? 0) + paid
+      if (span) next.spans = putSpan(next.spans, span.start, span.end, span.prevEnd)
+      await update($, subsSince, n => n + paid)
+    }
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the band shows no cost; the turn goes on */ }
+}
+
+/** How many subagent run intervals the record keeps. */
+export const SPAN_KEEP = 200
+
+/**
+ * `spans` with a subagent's run interval added. A subagent's interval grows with each turn it completes: the one
+ * written for its previous end (`prevEnd`, same start) is replaced; a new one is added otherwise. Keeps the last SPAN_KEEP.
+ */
+export const putSpan = (spans: readonly [number, number][] | undefined, start: number, end: number, prevEnd?: number): [number, number][] => {
+  const list = (spans ?? []).map(s => [s[0], s[1]] as [number, number])
+  let at = -1
+  if (prevEnd !== undefined) for (let i = list.length - 1; i >= 0 && at < 0; i--) if (list[i][0] === start && list[i][1] === prevEnd) at = i
+  if (at >= 0) list[at] = [start, Math.max(end, prevEnd!)]
+  else list.push([start, Math.max(end, start)])
+  return list.slice(-SPAN_KEEP)
+}

@@ -41,22 +41,6 @@ export const topTypes = (byType: Record<string, number> | undefined, n: number):
     .sort((a, b) => b[1] - a[1])
     .slice(0, n)
 
-/** How many subagent run intervals the record keeps. */
-export const SPAN_KEEP = 200
-
-/**
- * `spans` with a subagent's run interval added. A subagent's interval grows with each turn it completes: the one
- * written for its previous end (`prevEnd`, same start) is replaced; a new one is added otherwise. Keeps the last SPAN_KEEP.
- */
-export const putSpan = (spans: readonly [number, number][] | undefined, start: number, end: number, prevEnd?: number): [number, number][] => {
-  const list = (spans ?? []).map(s => [s[0], s[1]] as [number, number])
-  let at = -1
-  if (prevEnd !== undefined) for (let i = list.length - 1; i >= 0 && at < 0; i--) if (list[i][0] === start && list[i][1] === prevEnd) at = i
-  if (at >= 0) list[at] = [start, Math.max(end, prevEnd!)]
-  else list.push([start, Math.max(end, start)])
-  return list.slice(-SPAN_KEEP)
-}
-
 /** The sum of the intervals' lengths (ms): the agent work done. */
 export const workMs = (spans: readonly (readonly [number, number])[]): number => spans.reduce((a, s) => a + Math.max(0, s[1] - s[0]), 0)
 
