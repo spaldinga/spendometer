@@ -9,9 +9,14 @@ const COMET_OP = [1, 0.7, 0.5, 0.35, 0.2, 0.1]
 const comet = (x: number): string =>
   COMET_OP.map((o, i) => `<circle cx="${num(x - i * 7)}" cy="${CY}" r="${4 - Math.floor(i / 2)}" fill="${ORANGE}" opacity="${o}"/>`).join('')
 const DUR = '1.6s'
+/** Room before a step's name (px) and the fewest px between nodes. */
+const NAME_OFF = 12
+const NODE_MIN_SP = 18
+/** The pacing comet's trip along the line, in seconds. */
+const TRAVEL_S = 2.2
 export const cometWalk = (p: Progress, W: number): string => {
   const { n, d, fin, isCur } = stateOf(p)
-  const g = nodesOf(p, W, 12, 18)
+  const g = nodesOf(p, W, NAME_OFF, NODE_MIN_SP)
   const cur = g.at(Math.min(d, n - 1))
   let body = ''
   if (fin) body += bar(0, W, ORANGE)
@@ -26,7 +31,7 @@ export const cometWalk = (p: Progress, W: number): string => {
       body += `<circle cx="${cx}" cy="${CY}" r="5" fill="none" stroke="${ORANGE}" stroke-width="2"/>`
       body += `<circle cx="${cx}" cy="${CY}" r="5" fill="${ORANGE}" opacity="0">${anim('opacity', '0;1;0;0', DUR, 'keyTimes="0;.6;.75;1"')}</circle>`
       body += `<circle cx="${cx}" cy="${CY}" r="5" fill="none" stroke="${ORANGE}" stroke-width="1.8" opacity="0">${anim('r', '5;5;11', DUR, 'keyTimes="0;.6;1"')}${anim('opacity', '0;0;1;0', DUR, 'keyTimes="0;.59;.6;1"')}</circle>`
-      if (g.label) body += text(g.at(i) + 12, FONT, 700, TEXT, g.label)
+      if (g.label) body += text(g.at(i) + NAME_OFF, FONT, 700, TEXT, g.label)
     } else body += `<circle cx="${cx}" cy="${CY}" r="4" fill="none" stroke="${EMPTY}" stroke-width="2"/>`
   }
   if (isCur) {
@@ -43,8 +48,8 @@ export const cometPace = (W: number): string =>
   doc(
     W,
     bar(0, W, EMPTY) +
-      `<g opacity="0"><animateTransform attributeName="transform" type="translate" values="0 0;${num(Math.max(0, W - 8))} 0" dur="2.2s" repeatCount="indefinite"/>` +
-      anim('opacity', '0;1;1;0', '2.2s', 'keyTimes="0;.08;.85;1"') +
+      `<g opacity="0"><animateTransform attributeName="transform" type="translate" values="0 0;${num(Math.max(0, W - 8))} 0" dur="${TRAVEL_S}s" repeatCount="indefinite"/>` +
+      anim('opacity', '0;1;1;0', `${TRAVEL_S}s`, 'keyTimes="0;.08;.85;1"') +
       comet(0) +
       '</g>',
   )

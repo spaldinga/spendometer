@@ -6,6 +6,9 @@ import { CY, FONT, anim, bar, doc, nodesOf, num, stateOf, text } from './kit'
 
 const PIE_R = 7.5
 const IDLE_SP = 52
+/** Room before a step's name (px) and the fewest px between nodes. */
+const NAME_OFF = 13
+const NODE_MIN_SP = 18
 const PIE_FULL = 17.3
 /** A node: a ring with a disc (done), a clock sweeping (current), nothing (ahead); `idle` fills and clears on a timer. */
 const pie = (cx: number, state: 'done' | 'cur' | 'todo' | 'idle', at = 0): string => {
@@ -23,7 +26,7 @@ const pie = (cx: number, state: 'done' | 'cur' | 'todo' | 'idle', at = 0): strin
 }
 export const dialWalk = (p: Progress, W: number): string => {
   const { d, isCur } = stateOf(p)
-  const g = nodesOf(p, W, 13, 18)
+  const g = nodesOf(p, W, NAME_OFF, NODE_MIN_SP)
   let body = ''
   for (let i = g.lo; i < g.hi - 1; i++) {
     const from = isCur && i === d ? g.at(i) + g.L : g.at(i) + PIE_R + 2
@@ -32,7 +35,7 @@ export const dialWalk = (p: Progress, W: number): string => {
   for (let i = g.lo; i < g.hi; i++) {
     const cx = g.at(i)
     if (i < d) body += pie(cx, 'done')
-    else if (isCur && i === d) body += pie(cx, 'cur') + (g.label ? text(cx + 13, FONT, 700, TEXT, g.label) : '')
+    else if (isCur && i === d) body += pie(cx, 'cur') + (g.label ? text(cx + NAME_OFF, FONT, 700, TEXT, g.label) : '')
     else body += pie(cx, 'todo')
   }
   return doc(W, body)

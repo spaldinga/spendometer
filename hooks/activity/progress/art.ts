@@ -27,7 +27,11 @@ const HEAD_W = 8
 const DOT_R = 3.5
 const DOT_STEP = 10
 
-const PULSE = '<animate attributeName="opacity" values="1;.3;1" dur="1.4s" repeatCount="indefinite"/>'
+/** Periods in seconds: the in-progress segment's pulse, and the pacing row's sweep end to end and back. */
+const PULSE_S = 1.4
+const SWEEP_S = 2.4
+
+const PULSE = `<animate attributeName="opacity" values="1;.3;1" dur="${PULSE_S}s" repeatCount="indefinite"/>`
 
 const seg = (x: number, w: number, fill: string, inner = ''): string =>
   `<rect x="${x}" y="${SEG_Y}" width="${w}" height="${SEG_H}" rx="${SEG_RX}" fill="${fill}"` + (inner ? `>${inner}</rect>` : '/>')
@@ -73,7 +77,7 @@ export const paceSvg = (W: number): string => {
     0,
     w,
     ORANGE,
-    `<animate attributeName="x" values="0;${span};0" keyTimes="0;0.5;1" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1" dur="2.4s" repeatCount="indefinite"/>`,
+    `<animate attributeName="x" values="0;${span};0" keyTimes="0;0.5;1" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1" dur="${SWEEP_S}s" repeatCount="indefinite"/>`,
   )
   return svgDoc(W, BAR_H, g, false)
 }

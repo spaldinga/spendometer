@@ -8,6 +8,9 @@ import { CY, FONT, anim, doc, nodesOf, num, stateOf, text } from './kit'
 /** The ECG's height in tenths of its full size: its tallest spike stays 8 px below the top of the drawing. */
 const ECG_M = 6.5
 const ECGW = 29
+/** Room before a step's name (px) and the fewest px between nodes. */
+const NAME_OFF = 14
+const NODE_MIN_SP = 10
 /** One ECG complex as relative path commands: P wave, Q dip, R spike, S, T hump. `m` tenths of height, `sx` of width. */
 const ecg = (m: number, sx: number): string => {
   const s = (v: number) => num((v * m) / 10)
@@ -53,13 +56,13 @@ export const vitalsWalk = (p: Progress, W: number): string => {
   const trail = (to: number): string =>
     to > 4 && d > 0 ? `<path d="${trace(0, to, to / d, ECG_M)}" fill="none" stroke="${ORANGE}" stroke-width="2.2" stroke-linejoin="round"/>` : ''
   if (fin) return doc(W, trail(W - 16) + heart(W - 9, false))
-  const g = nodesOf(p, W, 14, 10)
+  const g = nodesOf(p, W, NAME_OFF, NODE_MIN_SP)
   const hx = g.at(Math.min(d, n - 1))
   let body = ''
   if (isCur) {
     body += d > 0 ? pen(0, hx - 14, (hx - 14) / d, '2.4s') : ''
     body += heart(hx, true)
-    if (g.label) body += text(hx + 14, FONT, 700, TEXT, g.label)
+    if (g.label) body += text(hx + NAME_OFF, FONT, 700, TEXT, g.label)
   } else {
     body += trail(hx)
   }

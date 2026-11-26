@@ -27,8 +27,10 @@ export const cut = (s: string, px: number, size: number, k = CHAR): string => {
 }
 export const text = (x: number, size: number, weight: number, fill: string, s: string, anchor?: 'end', dy = 4): string =>
   `<text x="${num(x)}" y="${CY + dy}" font-size="${size}" font-weight="${weight}" fill="${fill}"${anchor ? ` text-anchor="${anchor}"` : ''}>${esc(s)}</text>`
+/** The shortest line bar() draws (px). */
+const BAR_MIN_W = 0.5
 export const bar = (x1: number, x2: number, fill: string): string =>
-  x2 - x1 > 0.5 ? `<rect x="${num(x1)}" y="${CY - 1}" width="${num(x2 - x1)}" height="2" rx="1" fill="${fill}"/>` : ''
+  x2 - x1 > BAR_MIN_W ? `<rect x="${num(x1)}" y="${CY - 1}" width="${num(x2 - x1)}" height="2" rx="1" fill="${fill}"/>` : ''
 export const anim = (attr: string, values: string, dur: string, extra = ''): string =>
   `<animate attributeName="${attr}" values="${values}"${extra ? ' ' + extra : ''} dur="${dur}" repeatCount="indefinite"/>`
 export const doc = (W: number, body: string): string => svgDoc(W, BAR_H, body, body.includes('<text'))
@@ -53,6 +55,12 @@ const windowOf = (n: number, focus: number, max: number): [number, number] => {
 
 // ---------- Nodes on a line (heartbeat, pie, comet) ----------
 
+/** Nodes: the first one's x (px), the room kept at the right edge (px), the share of the width a step's name may take, and the gap before the name (px). */
+const NODE_START = 8
+const NODE_END_PAD = 16
+const NAME_SHARE = 0.4
+const NAME_GAP = 4
+
 type Nodes = { lo: number; hi: number; label: string; L: number; at: (i: number) => number }
 /**
  * Where the nodes of steps lo..hi-1 sit across `W` pixels, spaced evenly with room after the current one for
@@ -60,10 +68,10 @@ type Nodes = { lo: number; hi: number; label: string; L: number; at: (i: number)
  */
 export const nodesOf = (p: Progress, W: number, off: number, minSp: number): Nodes => {
   const { n, d, isCur } = stateOf(p)
-  const label = isCur ? cut(nameAt(p, d, d, true), W * 0.4, FONT) : ''
-  const L = label ? off + textPx(label, FONT) + 4 : 0
-  const room = Math.max(0, W - 16 - L)
+  const label = isCur ? cut(nameAt(p, d, d, true), W * NAME_SHARE, FONT) : ''
+  const L = label ? off + textPx(label, FONT) + NAME_GAP : 0
+  const room = Math.max(0, W - NODE_END_PAD - L)
   const [lo, hi] = windowOf(n, Math.min(d, n - 1), Math.max(2, Math.floor(room / minSp) + 1))
   const sp = hi - lo > 1 ? room / (hi - lo - 1) : 0
-  return { lo, hi, label, L, at: i => 8 + (i - lo) * sp + (isCur && i > d ? L : 0) }
+  return { lo, hi, label, L, at: i => NODE_START + (i - lo) * sp + (isCur && i > d ? L : 0) }
 }
