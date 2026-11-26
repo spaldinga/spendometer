@@ -10,8 +10,8 @@ still warm, how far the current request has come, and which subagents are runnin
   <img alt="The spendometer band, one row: pies for the 5-hour limit (70% used, running out in about 2h 40m) and the 7-day limit (31% used, resets in 3d 3h), the conversation's cost of $16.61, Robo with the cache WARM and 32 minutes left, a green check for keep warm, and the Cost and Capacity tabs. The card is open on Capacity: the pace of each limit against its reset, the conversation size of 190k tokens as a stacked bar with a gauge of about 40 turns left, and 48k tokens of tool output with the files read again" src="assets/band-capacity-1200-light.svg">
 </picture>
 
-spendometer is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and never calls a
-model by itself. No setup, no keys, no account. Pictures in this README are mockups with example
+spendometer is a [Claude Code mod](https://code.claude.com/docs): it draws and listens, and calls no
+model unless you turn on keep warm's pings or the brief coach. No setup, no keys, no account. Pictures in this README are mockups with example
 numbers, shown in your GitHub theme.
 
 ## Install
@@ -172,6 +172,12 @@ press **Proceed**.
   PowerShell tool, spendometer holds the call and shows what it would lose (files, untracked paths,
   or the commits a force push would drop) with **Cancel** and **Proceed**.
 - **A `progress` tool** Claude can call to report steps on a request it keeps no task list for.
+- **Brief coach** (a trial, off by default). Turned on with `/spendometer coach on`, the first prompt of each
+  conversation (and the first after `/clear` or a compaction) is scored by a small Haiku call: which of goal, why,
+  constraints, done when and what to reuse it covers, with a question for each part that is missing. The answer is
+  one line in the transcript, a hint for next time: the prompt is sent at once and never held, and a call that fails
+  shows nothing. **Turning it on costs one small model call per first prompt** (about a tenth of a cent), billed to
+  your plan or API key; `/spendometer coach status` shows the total.
 
 ## Requirements
 
@@ -205,6 +211,8 @@ Remove it with `/plugin uninstall spendometer@spendometer`.
 /spendometer progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
 /spendometer progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
 /spendometer hold off       stop holding risky git commands (default: on)
+/spendometer coach on       score the first prompt of each conversation (default: off; one Haiku call each)
+/spendometer coach status   briefs scored, how the share covered moved, and what the calls cost
 /spendometer                show the settings and the width the band was drawn at
 ```
 
@@ -213,8 +221,9 @@ Keep warm shows in the band as a green ✓ while on, saved per conversation (on 
 ## How it works
 
 - **No model calls.** Everything is read from events Claude Code already raises: rate limits,
-  turn and subagent events, tool calls. The exception is yours to trigger: the Keep warm mark
-  (its pings cost a few cents each).
+  turn and subagent events, tool calls. The exceptions are yours to trigger: the Keep warm mark
+  (its pings cost a few cents each) and the brief coach, off until you turn it on (one small Haiku call per first
+  prompt; the prompt goes in the call fenced as data to score, nothing else from the conversation).
 - **Progress without tokens.** The bar follows the task-list tool calls Claude makes
   (`TodoWrite`, the Task tools, the desktop app's plan). The text bar counts a step in progress as half; the drawn bar
   pulses the step in progress and turns it solid when it lands.

@@ -13,6 +13,7 @@ import { TTL_MS, cacheFacts, cleanOldCache, putCache, resetCache } from './cost/
 import { SPEND_KEEP_MS, addKeepWarm, addResults, addSpend, addToolOut, addContext, cleanOldDays, cleanOldPace, cleanOldSpend } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { cleanOldKeep, freshKeep } from './cost/cache/keepwarm/state'
+import { coachFirst, markNextFirst } from './cost/coach/coach'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
 import { afterTurn, endConversation, keepOf, noteCompact, noteRequest, noteSeeded, startKeep } from './cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, warnCold } from './cost/cache/keepwarm/command'
@@ -108,7 +109,7 @@ export const register: Register = on => {
       await $.command.register({
         name: SETTINGS,
         description: "Settings for the band above the prompt: the progress row's look and the hold for risky git commands",
-        argumentHint: 'fold | cost | progress [id] | hold on|off',
+        argumentHint: 'fold | cost | progress [id] | hold on|off | coach on|off|status',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
@@ -176,13 +177,18 @@ export const register: Register = on => {
   // A prompt that would re-write a cold cache: one line with the price, then it goes on. Never dropped.
   on('prompt.submit', async ($, e, next) => {
     try { await warnCold($, kw, e as never) } catch { /* a missing warning is only that */ }
+    // The brief coach is a hint: fired, never awaited, so the prompt goes on at once.
+    void coachFirst($, e as never).catch(() => {})
     return next(e)
   })
 
   // After a compaction nothing pings until the next turn.
   on('session.compact', async ($, e, next) => {
     const r = await next(e)
-    if (!e.agentId) { try { await noteCompact($, kw) } catch { /* the next turn re-arms */ } }
+    if (!e.agentId) {
+      markNextFirst()
+      try { await noteCompact($, kw) } catch { /* the next turn re-arms */ }
+    }
     return r
   })
 
@@ -196,6 +202,7 @@ export const register: Register = on => {
       try { await endConversation($, kw, e.sessionId) } catch { /* the next turn seats the new conversation */ }
     }
     if (e.reason === 'clear') {
+      markNextFirst()
       try {
         await resetCache($)
         await resetFold($)

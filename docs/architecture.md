@@ -16,11 +16,11 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 | Event | What it does |
 |---|---|
 | `session.start`, `session.end`, `classic.SessionStart`, `session.compact` | Reset or carry per-conversation state: each owner exports its reset (`resetCache`, `resetFold`, `clearSeen`, `resetOutput`) and the handler calls them; keep-warm window; old saved state is pruned at start by each owner's `cleanOld…` (one `$.store.keys()` read in register) |
-| `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record |
+| `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record; on `prompt.submit` also the cold-send warning and the brief coach (`coachFirst`, fired and never awaited) |
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display, the output pane's recent list and delegation figures |
 | `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
-| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
+| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme, `coach on|off|status`; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
 | `ui.render` (Pane), `ui.close` | The subagent output pane (`activity/output/pane.tsx`), opened by pressing a subagent in the band and refreshed on that subagent's steps and turn end; its close stops the reading |
 
@@ -50,6 +50,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `cost/cache/facts.ts` | The cache facts in atoms and the store (`cleanOldCache`; `resetCache` empties the atom on /clear), and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom, `putSpan` and the last 10 main-turn costs, `recent`), commits and PRs (`addResults`), tool output and the most recent re-read files (`addToolOut`, `putReread`), context size, growth and the first turn's size, an estimate of the setup (`addContext`), keep-warm figures; `readDays`, `spendLine`, `cleanOldSpend`, `cleanOldPace`, `cleanOldDays`, the clean-up ages | no |
+| `cost/coach/coach.ts` | The brief coach (backlog 150, a POC, off by default): which prompt is a first prompt, the one `$.model.complete` call on Haiku, the transcript line, `coachHistory`/`coachFails` in the store, `/spendometer coach on\|off\|status` | no |
+| `cost/coach/rubric.ts` | The coach's rubric, the fence around the prompt, `parseScore`, the hint line and the status figures | yes |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
 | `band/card.ts` | The card frame (`cardSvg`): the tab, the columns, where each zone goes, status lines, alt text; its tabs (Cost, Capacity: the domains) with `tabFrom`, which maps the old names, and the spend type | yes |
 | `capacity/usage/card.ts` | The pace strip (`paceStrip`) | yes |

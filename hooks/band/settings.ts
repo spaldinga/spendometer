@@ -5,6 +5,7 @@ import type { EngineInterface } from 'claude-code'
 
 import { DEFAULT_THEME, THEME_IDS, THEME_NAMES, themeIdOf } from '../activity/progress/themes'
 import type { ThemeId } from '../activity/progress/themes'
+import { coachCommand, coachStatus } from '../cost/coach/coach'
 import { keepOf } from '../cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, keepwarmStatus } from '../cost/cache/keepwarm/command'
 import type { Keep } from '../cost/cache/keepwarm/state'
@@ -56,11 +57,14 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 export async function settingsAnswer($: EngineInterface, kw: Keep, args: string): Promise<string> {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | keepwarm [on|off|status|90m|always]. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | keepwarm [on|off|status|90m|always] | coach on|off|status. With no argument it shows the settings.`
   // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
   if (name === 'keepwarm') {
     if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
     return keepwarmCommand($, kw, args.trim().slice('keepwarm'.length))
+  }
+  if (name === 'coach' && rest.length === 0 && (value === undefined || value === 'on' || value === 'off' || value === 'status')) {
+    return coachCommand($, value)
   }
   const key = name === 'hold' ? HOLD_KEY : null
   if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
@@ -103,6 +107,7 @@ export async function settingsAnswer($: EngineInterface, kw: Keep, args: string)
     `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
     `tab: ${await tabOf($)} - the card shows one tab at a time: cost or capacity\n` +
     `progress: ${await themeOf($)}\n` +
+    `${await coachStatus($)}\n` +
     widthLine()
   )
 }
