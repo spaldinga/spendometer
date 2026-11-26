@@ -217,3 +217,7 @@ all tests pass with only import lines changed (until step 21); the band looks th
   reads `themeOf` from `settings`. The `turn` atom moved to `activity/progress/state.ts` (`readTurn`, `startTurn`,
   `countStep`) because the render and `turn.step` both use it. `tip` lost its unused key parameter; the unused
   `keepModel`/`keepColdUsd` and `cacheBlockCols` were dropped.
+- **Step 18:** `band/settings.ts` has `SETTINGS`, `HOLD_KEY`, `THEME_KEY`, `switchOf`, `themeOf`, `TAB_WHAT`, `tabList`,
+  `themeList` and `settingsAnswer`. `TAB_KEY` and `tabOf` stayed in `band/buttons.tsx` (see step 17: `pressTab` reads
+  `tabOf`, and `settings` imports `toggleFold` from `buttons`, so the other way round would be an import cycle);
+  `settings` imports them. `switchOf` is also read by register's hold wiring (`switchOf($, HOLD_KEY, true)`).

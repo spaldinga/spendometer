@@ -5,26 +5,21 @@ import type { CacheFacts, Spent } from '../types'
 import { LIST_TOOLS, REPORT_TOOL, labelOf } from './activity/progress/progress'
 import { countStep, dropFinished, noteListCall, noteReport, startTurn } from './activity/progress/state'
 import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew'
-import { DEFAULT_THEME, THEME_IDS, THEME_NAMES, themeIdOf } from './activity/progress/themes'
-import type { ThemeId } from './activity/progress/themes'
 import { SHELLS, holdCommand } from './safety/guard/hold'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
-import { TABS } from './band/card'
-import type { Tab } from './band/card'
 import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
 import { CACHE_PREFIX, TTL_MS, cacheFacts, putCache } from './cost/cache/facts'
-import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readSpend, spendLine, addToolOut, addContext } from './cost/spend/record'
+import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, addToolOut, addContext } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
 import { afterTurn, endConversation, keepOf, noteCompact, noteRequest, noteSeeded, startKeep } from './cost/cache/keepwarm/lifecycle'
-import { keepwarmCommand, keepwarmStatus, warnCold } from './cost/cache/keepwarm/command'
+import { keepwarmCommand, warnCold } from './cost/cache/keepwarm/command'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
 import { arm, renderBand } from './band/render'
-import { TAB_KEY, resetFold, tabOf, toggleFold } from './band/buttons'
-import { THEME_KEY, themeOf } from './band/settings'
-import { widthLine } from './band/width-note'
+import { resetFold } from './band/buttons'
+import { HOLD_KEY, SETTINGS, settingsAnswer, switchOf } from './band/settings'
 import { nextGrowth } from './capacity/context/runway'
 import { DAY_PREFIX, isOldDay } from './cost/spend/days'
 import { pull, setWindows } from './capacity/usage/windows'
@@ -43,9 +38,6 @@ import { pull, setWindows } from './capacity/usage/windows'
 // that the button, the typed /keepwarm and the ping timer all read. A ping that really read the cache
 // starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
-/** The mod's own settings command: one name, so a rename touches one line. */
-const SETTINGS = 'spendometer'
-const HOLD_KEY = 'hold'
 
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
@@ -56,83 +48,6 @@ const countCall = async ($: EngineInterface, tool: string, e: unknown, r: unknow
   if (m) await addToolOut($, m.tool, m.tokens, m.reread)
 }
 
-/** A switch kept in the store: its saved value, or `fallback` when none was saved or the store cannot be read. */
-const switchOf = async ($: EngineInterface, key: string, fallback: boolean): Promise<boolean> => {
-  try {
-    const v = await $.store.get(key)
-    return typeof v === 'boolean' ? v : fallback
-  } catch {
-    return fallback
-  }
-}
-
-
-const TAB_WHAT: Record<Tab, string> = { overview: 'pace, delegation and spend', context: 'conversation size and tool output', cost: 'cache discount, cost per message and by model' }
-const tabList = (now: Tab): string =>
-  `Card tabs, pick one with /${SETTINGS} tab <name>:\n` + TABS.map(id => `- ${id === now ? `**${id}**` : id}${id === now ? ' (in use)' : ''}: ${TAB_WHAT[id]}`).join('\n')
-
-// The answer is shown as markdown: a plain list, the theme in use in bold. A leading * marked it before, and
-// markdown read that one line as a bullet with the lines after it folded into it.
-const themeList = (now: ThemeId): string =>
-  `Progress themes, pick one with /${SETTINGS} progress <id>:\n` +
-  THEME_IDS.map(id => {
-    const tags = [id === now ? 'in use' : '', id === DEFAULT_THEME ? 'default' : ''].filter(Boolean).join(', ')
-    return `- ${id === now ? `**${id}**` : id}${tags ? ` (${tags})` : ''}: ${THEME_NAMES[id].replace(/^[^:]+: /, '')}`
-  }).join('\n')
-
-/** The settings command's answer to `args`; a change is saved and the band redrawn. */
-const settingsAnswer = async ($: EngineInterface, kw: Keep, args: string): Promise<string> => {
-  const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | keepwarm [on|off|status|90m|always]. With no argument it shows the settings.`
-  // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
-  if (name === 'keepwarm') {
-    if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
-    return keepwarmCommand($, kw, args.trim().slice('keepwarm'.length))
-  }
-  const key = name === 'hold' ? HOLD_KEY : null
-  if (key !== null && rest.length === 0 && (value === 'on' || value === 'off')) {
-    await $.store.set(key, value === 'on')
-    $.ui.invalidate('ui.render')
-    return `${name}: ${value}`
-  }
-  // A command's answer is text the model reads, which a log line is not.
-  if (name === 'cost' && value === undefined) {
-    const s = await readSpend($)
-    return s && s.main + s.subs > 0 ? spendLine(s) : 'no cost recorded for this conversation yet'
-  }
-  // The same toggle as the band's fold button, for the keyboard: a mod cannot catch a key typed in the prompt.
-  if (name === 'fold' && value === undefined) {
-    const now = await toggleFold($)
-    return now === null ? 'no cache card yet: it comes with the first reply' : `cache card: ${now ? 'open' : 'closed'}`
-  }
-  if (name === 'tab' && rest.length === 0) {
-    const picked = TABS.find(id => id === value)
-    if (picked) {
-      await $.store.set(TAB_KEY, picked)
-      $.ui.invalidate('ui.render')
-      return `tab: ${picked}`
-    }
-    return tabList(await tabOf($))
-  }
-  if (name === 'progress' && rest.length === 0) {
-    const picked = value === undefined ? null : themeIdOf(value)
-    if (picked) {
-      await $.store.set(THEME_KEY, picked)
-      $.ui.invalidate('ui.render')
-      return `progress: ${picked}`
-    }
-    return themeList(await themeOf($))
-  }
-  if (name !== '' && name !== 'status') return usage
-  const hold = await switchOf($, HOLD_KEY, true)
-  return (
-    `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
-    `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
-    `tab: ${await tabOf($)} - the card shows one tab at a time: overview, context or cost\n` +
-    `progress: ${await themeOf($)}\n` +
-    widthLine()
-  )
-}
 
 /** Fresh context figures from the engine onto the cache facts, when it has them. */
 const measure = async ($: EngineInterface, lastAt: number | null, model: string | null): Promise<void> => {

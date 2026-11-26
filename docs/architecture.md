@@ -32,13 +32,13 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 
 | File | Role | Pure |
 |---|---|---|
-| `register.tsx` | All event wiring; the settings command (until it moves to `band/settings.ts`); the `ui.render` handler is one line calling `renderBand` | no |
+| `register.tsx` | All event wiring: `on(...)` calls, the per-session resets (until step 19), the clean-up of old saved state, `countCall` and `afterShell`; the `ui.render` handler is one line calling `renderBand`, and `/spendometer` calls `settingsAnswer` | no |
 | `band/render.tsx` | `renderBand` (`ui.render`): reads the domains' views, measures, picks the layout, builds the band and the open card; `arm`, the 30 s redraw timer | no |
 | `band/row.tsx` | The row's pieces per layout: window blocks (pie, pace track and words), the cost box, the chip with Robo, the assembled rows (`RowCtx`, `Pieces`) | no |
 | `band/progress-row.tsx` | The progress row: bar, words and crew fitted to the room (`progressRowOf`) | no |
 | `band/buttons.tsx` | The fold button, the tabs and the keep-warm mark, the hover box (`tip`), `toggleFold`, `pressTab`, `tabOf`; the `fold` atom and the card tab in the store | no |
 | `band/width-note.ts` | The width the band was last drawn at (`noteWidth`, `noteFit`, `widthLine`), for the status command | no |
-| `band/settings.ts` | The band's settings in the store: `THEME_KEY`, `themeOf` | no |
+| `band/settings.ts` | `/spendometer`: `settingsAnswer` parses the keyword and asks the owner (the `keepwarm` keyword goes to the keepwarm command); `SETTINGS`, `HOLD_KEY`, `THEME_KEY`, `switchOf`, `themeOf`, the theme and tab lists | no |
 | `cost/cache/keepwarm/pinger.ts` | The keep-warm pinger: window, deadline, timers, retries, the warm-now ping ([ADR 0004](adr/0004-keep-warm-built-in.md)) | no |
 | `cost/cache/keepwarm/state.ts` | The switch's state: the `Keep` record, the per-conversation records in the store, the constants (on by default, 24h after each message; [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `cost/cache/keepwarm/lifecycle.ts` | The conversation lifecycle (seat, detect cache-tax, restore, the band's hooks) and the mark's state and hover (follows the cache: cold stops the window) | no |
@@ -104,7 +104,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 rendering through the kit and reading the visible text (`tests/visible.ts` leaves hover boxes out). No `Bun` global,
 no `toBeCloseTo`, no dynamic `import()`.
 
-`register.tsx` (about 400 lines) still holds the settings command, the per-session resets and the clean-up of
+## Known debt
+
+`register.tsx` (about 330 lines) still holds the per-session resets and the clean-up of
 old saved state, and pixel and column figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).
-`register.tsx` (about 1,450 lines) carries several roles, and pixel and column
-figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).
