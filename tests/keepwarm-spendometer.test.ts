@@ -36,29 +36,43 @@ test('/spendometer registers itself, reports status, and answers anything else w
   expect(usage.includes('\n')).toBe(false)
 })
 
-test('/spendometer tab: the card tab is overview until chosen, is set and read through the command and the store, and an unknown one reads as overview', async ($, on) => {
+test('/spendometer tab: the card tab is cost until chosen, is set and read through the command and the store, the old names map to the new ones, and an unknown one reads as cost', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { store } = engine(on, { keep: true })
   await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
   const text = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
-  // Default: overview, in bold in the list and in the status; nothing stored yet.
-  expect(await text('tab')).toContain('- **overview** (in use): ')
-  expect(await text('status')).toContain('tab: overview')
+  // Default: cost, in bold in the list and in the status; nothing stored yet. The list has the two domains only.
+  const first = await text('tab')
+  expect(first).toContain('- **cost** (in use): ')
+  expect(first).toContain('- capacity: ')
+  expect(first).not.toContain('overview')
+  expect(first).not.toContain('context')
+  expect(await text('status')).toContain('tab: cost - the card shows one tab at a time: cost or capacity')
   expect(store.has('cardTab')).toBe(false)
+  expect(await text('tab capacity')).toBe('tab: capacity')
+  expect(store.get('cardTab')).toBe('capacity')
+  const list = await text('tab')
+  expect(list).toContain('- **capacity** (in use): ')
+  expect(list).toContain('- cost: ')
+  expect(await text('status')).toContain('tab: capacity')
   expect(await text('tab cost')).toBe('tab: cost')
   expect(store.get('cardTab')).toBe('cost')
-  const list = await text('tab')
-  expect(list).toContain('- **cost** (in use): ')
-  expect(list).toContain('- overview: ')
-  expect(list).toContain('- context: ')
-  expect(await text('status')).toContain('tab: cost')
-  expect(await text('tab context')).toBe('tab: context')
-  expect(store.get('cardTab')).toBe('context')
-  // An unknown name changes nothing and shows the list; an unknown stored value reads as overview.
-  expect(await text('tab nonsense')).toContain('- **context** (in use): ')
-  expect(store.get('cardTab')).toBe('context')
+  // The old names still work, and the answer and the store carry the new name.
+  expect(await text('tab context')).toBe('tab: capacity')
+  expect(store.get('cardTab')).toBe('capacity')
+  expect(await text('tab overview')).toBe('tab: cost')
+  expect(store.get('cardTab')).toBe('cost')
+  // An unknown name changes nothing and shows the list.
+  await text('tab capacity')
+  expect(await text('tab nonsense')).toContain('- **capacity** (in use): ')
+  expect(store.get('cardTab')).toBe('capacity')
+  // A stored old name reads as its domain; an unknown stored value reads as cost.
+  store.set('cardTab', 'context')
+  expect(await text('tab')).toContain('- **capacity** (in use): ')
+  store.set('cardTab', 'overview')
+  expect(await text('tab')).toContain('- **cost** (in use): ')
   store.set('cardTab', 'bogus')
-  expect(await text('tab')).toContain('- **overview** (in use): ')
+  expect(await text('tab')).toContain('- **cost** (in use): ')
   expect((await text('nonsense')).includes('tab [name]')).toBe(true)
 })
 

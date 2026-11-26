@@ -222,20 +222,22 @@ test('a record from before the metric figures is read as it is and gains them as
   expect(m.ctxPrev).toBe(200000)
 })
 
-test('the open wide card shows the Cost tab figures once the record has them, and Overview its delegation', async ($, on) => {
+test('the open wide card shows the Cost tab figures once the record has them, and Capacity the pace and size', async ($, on) => {
   mock.clock(on, { now: NOW })
   engine(on, { keep: true, prefill: { 'spend:S1': { ...FRESH(2, 1, 0.5), turns: 4, paidTurns: 2, readTok: 90, inTok: 100, ctxPrev: 100000, growth: 5000, byType: { Explore: 1 } } } })
   await seed($, 18)
   await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...PROPS, bodyColumns: 160, maxRows: 30 } }).then(async band => {
+    // The card opens on Cost, the first tab: four columns at this width, BY MODEL as the one status line.
     await band.press({ key: 'cache-fold' })
-    const overview = JSON.stringify(await band.findAll({ type: 'Svg' }))
-    expect(overview).toContain('DELEGATION')
-    expect(overview).not.toContain('CACHE DISCOUNT')
-    await band.press({ key: 'tab-cost-button' })
     const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
-    for (const t of ['CACHE DISCOUNT', 'PER MESSAGE', 'BY MODEL']) expect(svgs).toContain(t)
+    for (const t of ['>SPEND<', 'DELEGATION', 'CACHE DISCOUNT', 'PER MESSAGE', 'by model']) expect(svgs).toContain(t)
     expect(svgs).toContain('90%')
-    expect(svgs).not.toContain('DELEGATION')
+    expect(svgs).not.toContain('PACE VS RESET')
+    await band.press({ key: 'tab-capacity-button' })
+    const capacity = JSON.stringify(await band.findAll({ type: 'Svg' }))
+    expect(capacity).toContain('PACE VS RESET')
+    expect(capacity).not.toContain('CACHE DISCOUNT')
+    expect(capacity).not.toContain('DELEGATION')
     await band.unmount()
   })
 })

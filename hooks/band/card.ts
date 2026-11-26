@@ -24,10 +24,12 @@ export type { CardSpend } from '../cost/spend/card'
 
 // ---------- The card, laid out for the band's width ----------
 
-/** The card's tabs, and how they are named. */
-export type Tab = 'overview' | 'context' | 'cost'
-export const TABS: readonly Tab[] = ['overview', 'context', 'cost']
-export const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', context: 'Context', cost: 'Cost' }
+/** The card's tabs, and how they are named: one per domain that has figures (ADR 0008). */
+export type Tab = 'cost' | 'capacity'
+export const TABS: readonly Tab[] = ['cost', 'capacity']
+export const TAB_NAMES: Record<Tab, string> = { cost: 'Cost', capacity: 'Capacity' }
+/** A tab name from the store or the command, old names included (overview and context, from before the tabs were the domains); null when unknown. */
+export const tabFrom = (v: unknown): Tab | null => (v === 'overview' ? 'cost' : v === 'context' ? 'capacity' : (TABS.find(id => id === v) ?? null))
 
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
@@ -58,12 +60,12 @@ const DOT_R = 4
 const DOT_RISE = 0.36
 const STATUS_TEXT_X = 27
 
-// The card shows one tab at a time (Overview, Context or Cost). Overview is the pace strip across the top and
-// under it DELEGATION and SPEND; Context is CONVERSATION SIZE (RE-CACHE once cold) and TOOL OUTPUT; Cost is
-// CACHE DISCOUNT, PER MESSAGE and BY MODEL. Each takes as many columns as it has zones and fit (cardColsOf);
-// a zone with no column of its own is a status line below. Keep warm is the chip's hover and the alt text,
-// not a zone. The height depends on the width and the tab only, never on the data.
-export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, tab: Tab = 'overview'): { source: string; w: number; h: number; alt: string; cols: number } => {
+// The card shows one tab at a time, one per domain (Cost or Capacity). Cost is SPEND, DELEGATION, CACHE DISCOUNT,
+// PER MESSAGE and BY MODEL; Capacity is the pace strip across the top and under it CONVERSATION SIZE (RE-CACHE
+// once cold) and TOOL OUTPUT. Each takes as many columns as it has zones and fit (cardColsOf); a zone with no
+// column of its own is a status line below. Keep warm is the chip's hover and the alt text, not a zone. The
+// height depends on the width and the tab only, never on the data.
+export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null, pace: readonly PaceRow[] = [], metrics: Metrics | null = null, tab: Tab = 'cost'): { source: string; w: number; h: number; alt: string; cols: number } => {
   const mode = v.mode
   const cold = mode === 'cold'
   const kit = kitOf(W, mode)
@@ -88,56 +90,60 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   const spendHead = `≈${usd(total)} this thread`
   const mm = metrics
   const modelsLine = mm && mm.models.length ? mm.models.map(([id, c]) => `${famName(id)} ${usd(c)}`) : []
+  const delegStatus = (): string[] => {
+    if (!mm) return ['delegation: after a few turns']
+    const d = mm.deleg
+    if (!d) return ['delegation: when subagents run']
+    const head = `delegation ≈${usd(d.saved)} saved`
+    return d.workMs > 0 && d.wallMs > 0 ? [`${head} · ${fmtSpan(d.workMs)} of work in ${fmtSpan(d.wallMs)}`, head] : [head]
+  }
   const zonesOf = (which: Tab): Zone[] =>
-    which === 'overview'
+    which === 'cost'
       ? [
-          { draw: (x, y, w) => delegZone(kit, x, y, w, metrics) },
           { draw: (x, y, w) => spendZone(kit, x, y, w, spendFigures), status: { dot: MUTED, variants: [...(resultCaptions.length ? resultCaptions.map(c => `${spendHead} · ${c}`) : []), ...spendCaptions.map(c => `${spendHead} · ${c}`), spendHead, `≈${usd(total)}`] } },
+          { draw: (x, y, w) => delegZone(kit, x, y, w, metrics), status: { dot: MUTED, variants: delegStatus() } },
+          { draw: (x, y, w) => discountZone(kit, x, y, w, metrics), status: { dot: MUTED, variants: mm && mm.hit !== null ? [`cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : ''), `cache discount ${Math.round(mm.hit * 100)}%`] : ['cache discount: after a few turns'] } },
+          {
+            draw: (x, y, w) => avgZone(kit, x, y, w, metrics),
+            status: {
+              dot: MUTED,
+              variants:
+                mm && mm.avg !== null
+                  ? [
+                      `per message ${usd(mm.avg)} avg` + (mm.last !== null ? ` · last ${usd(mm.last)}` : '') + (mm.multiple !== null ? ` · ${mm.multiple}× avg` : ''),
+                      `per message ${usd(mm.avg)} avg`,
+                    ]
+                  : ['per message: after a few turns'],
+            },
+          },
+          { draw: (x, y, w) => modelsZone(kit, x, y, w, metrics?.models ?? []), status: { dot: MUTED, variants: modelsLine.length ? [`by model ${modelsLine.join(' · ')}`, `by model ${modelsLine.slice(0, 2).join(' · ')}`, `by model ${modelsLine[0]}`] : ['by model: after a few turns'] } },
         ]
-      : which === 'context'
-        ? [
-            { draw: (x, y, w) => sizeZone(kit, x, y, w, { tokens: v.tokens, window: v.window, cold, runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }) },
-            {
-              draw: (x, y, w) => toolsZone(kit, x, y, w, metrics),
-              status: {
-                dot: MUTED,
-                variants:
-                  mm && mm.toolTok > 0
-                    ? [
-                        `tool output ${tok(mm.toolTok)} tokens` + (mm.tools.length ? ` · ${mm.tools.map(([k, n]) => `${k} ${tok(n)}`).join(' · ')}` : '') + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
-                        `tool output ${tok(mm.toolTok)} tokens` + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
-                        `tool output ${tok(mm.toolTok)} tokens`,
-                      ]
-                    : ['tool output: after a few turns'],
-              },
+      : [
+          { draw: (x, y, w) => sizeZone(kit, x, y, w, { tokens: v.tokens, window: v.window, cold, runway: runwayLine ? [runwayLine, `${runwayTurns} turns left`] : [] }) },
+          {
+            draw: (x, y, w) => toolsZone(kit, x, y, w, metrics),
+            status: {
+              dot: MUTED,
+              variants:
+                mm && mm.toolTok > 0
+                  ? [
+                      `tool output ${tok(mm.toolTok)} tokens` + (mm.tools.length ? ` · ${mm.tools.map(([k, n]) => `${k} ${tok(n)}`).join(' · ')}` : '') + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
+                      `tool output ${tok(mm.toolTok)} tokens` + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
+                      `tool output ${tok(mm.toolTok)} tokens`,
+                    ]
+                  : ['tool output: after a few turns'],
             },
-          ]
-        : [
-            { draw: (x, y, w) => discountZone(kit, x, y, w, metrics), status: { dot: MUTED, variants: mm && mm.hit !== null ? [`cache discount ${Math.round(mm.hit * 100)}%` + (mm.perM !== null ? ` · ${usd(mm.perM)} per 1M tokens` : ''), `cache discount ${Math.round(mm.hit * 100)}%`] : ['cache discount: after a few turns'] } },
-            {
-              draw: (x, y, w) => avgZone(kit, x, y, w, metrics),
-              status: {
-                dot: MUTED,
-                variants:
-                  mm && mm.avg !== null
-                    ? [
-                        `per message ${usd(mm.avg)} avg` + (mm.last !== null ? ` · last ${usd(mm.last)}` : '') + (mm.multiple !== null ? ` · ${mm.multiple}× avg` : ''),
-                        `per message ${usd(mm.avg)} avg`,
-                      ]
-                    : ['per message: after a few turns'],
-              },
-            },
-            { draw: (x, y, w) => modelsZone(kit, x, y, w, metrics?.models ?? []), status: { dot: MUTED, variants: modelsLine.length ? [`by model ${modelsLine.join(' · ')}`, `by model ${modelsLine.slice(0, 2).join(' · ')}`, `by model ${modelsLine[0]}`] : ['by model: after a few turns'] } },
-          ]
+          },
+        ]
   const zones = zonesOf(tab)
 
   // The columns: as many as fit, at most one a zone, 26 px between them, 13 px at the sides.
   const n = Math.min(zones.length, cardColsOf(W))
   const colW = Math.floor((W - 2 * SIDE - (n - 1) * COL_GAP) / n)
   const colX = (i: number) => SIDE + i * (colW + COL_GAP)
-  // Only Overview has the pace strip; the others start at the top.
-  const yc = tab === 'overview' ? PACE_H : 0
-  let g = tab === 'overview' ? paceStrip(kit, pace) + hline(PACE_H) : ''
+  // Only Capacity has the pace strip; Cost starts at the top.
+  const yc = tab === 'capacity' ? PACE_H : 0
+  let g = tab === 'capacity' ? paceStrip(kit, pace) + hline(PACE_H) : ''
   for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - SIDE, yc + VLINE_DY, VLINE_H) : '') + zones[i].draw(colX(i), yc, colW)
   let H = yc + ROW
 
@@ -186,6 +192,6 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
     (saved > 0 ? ` Keep-warm pings have saved about ${usd(saved)}.` : '') +
     (kw ? ` Keeping the cache warm costs about ${usd(kw.perHour)} an hour; ${cold ? `re-caching now costs ${usd(kw.cold)} on ${name(own!)}${cheaper.length ? ` (cheaper: ${cheaper.join(', ')})` : ''}` : `going cold costs ${usd(kw.cold)}`}.` : '') +
     metricsAlt +
-    (tab === 'overview' && pace.length > 0 ? ` ${PACE_TIP}` : '')
+    (tab === 'capacity' && pace.length > 0 ? ` ${PACE_TIP}` : '')
   return { source: svgDoc(W, h, body, true), w: W, h, alt, cols: n }
 }

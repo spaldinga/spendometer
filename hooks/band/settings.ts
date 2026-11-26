@@ -10,7 +10,7 @@ import { keepwarmCommand, keepwarmStatus } from '../cost/cache/keepwarm/command'
 import type { Keep } from '../cost/cache/keepwarm/state'
 import { readSpend, spendLine } from '../cost/spend/record'
 import { TAB_KEY, tabOf, toggleFold } from './buttons'
-import { TABS } from './card'
+import { TABS, tabFrom } from './card'
 import type { Tab } from './card'
 import { widthLine } from './width-note'
 
@@ -40,7 +40,7 @@ export async function themeOf($: EngineInterface): Promise<ThemeId> {
   }
 }
 
-const TAB_WHAT: Record<Tab, string> = { overview: 'pace, delegation and spend', context: 'conversation size and tool output', cost: 'cache discount, cost per message and by model' }
+const TAB_WHAT: Record<Tab, string> = { cost: 'spend, delegation, cache discount, cost per message and by model', capacity: 'pace, conversation size and tool output' }
 const tabList = (now: Tab): string =>
   `Card tabs, pick one with /${SETTINGS} tab <name>:\n` + TABS.map(id => `- ${id === now ? `**${id}**` : id}${id === now ? ' (in use)' : ''}: ${TAB_WHAT[id]}`).join('\n')
 
@@ -79,7 +79,7 @@ export async function settingsAnswer($: EngineInterface, kw: Keep, args: string)
     return now === null ? 'no cache card yet: it comes with the first reply' : `cache card: ${now ? 'open' : 'closed'}`
   }
   if (name === 'tab' && rest.length === 0) {
-    const picked = TABS.find(id => id === value)
+    const picked = tabFrom(value)
     if (picked) {
       await $.store.set(TAB_KEY, picked)
       $.ui.invalidate('ui.render')
@@ -101,7 +101,7 @@ export async function settingsAnswer($: EngineInterface, kw: Keep, args: string)
   return (
     `hold: ${hold ? 'on' : 'off'} - holds risky git commands (hard reset, clean, force push) until you answer in the band\n` +
     `keepwarm: ${(await keepOf($, kw)) === null ? 'cache-tax is in charge' : (await keepwarmStatus($, kw)).replace(/^keepwarm (is )?/, '')}\n` +
-    `tab: ${await tabOf($)} - the card shows one tab at a time: overview, context or cost\n` +
+    `tab: ${await tabOf($)} - the card shows one tab at a time: cost or capacity\n` +
     `progress: ${await themeOf($)}\n` +
     widthLine()
   )

@@ -64,8 +64,8 @@ test('the open wide card has no limits strip and no IDLE zone', async ($, on) =>
   expect(w).toContain('SPEND')
   expect(w).not.toContain('800k free')
   for (const gone of ['LIMIT', 'IDLE']) expect(w.slice(w.lastIndexOf('</style>'))).not.toContain(gone)
-  // The size is on the Context tab.
-  await band.press({ key: 'tab-context-button' })
+  // The size is on the Capacity tab.
+  await band.press({ key: 'tab-capacity-button' })
   expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('800k free')
   await band.unmount()
 })
@@ -79,12 +79,13 @@ test('the open card at 68 columns shows the conversation cost in the SPEND colum
   await band.unmount()
 })
 
-test('the open card on one column shows the conversation cost as a status line', async ($, on) => {
+test('the open card on one column has the SPEND column and the other Cost zones as status lines', async ($, on) => {
   const band = await mountAt($, on, 45)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  expect(c).not.toContain('>SPEND<')
-  expect(c).toContain('≈$0.49 this thread')
+  expect(c).toContain('>SPEND<')
+  expect(c).toContain('≈$0.49')
+  for (const line of ['delegation', 'cache discount', 'per message', 'by model']) expect(c).toContain(line)
   await band.unmount()
 })
 
@@ -111,7 +112,7 @@ test('the card element is sized to the band on screen, so the shrunk drawing lea
 
 test('the open wide card shows the pace from the first reading, with the forecast under each bar, and no keep warm column', async ($, on) => {
   const band = await mountAt($, on, 160, true, 22, 'desktop', 40, NOW, WINDOWS)
-  await band.press({ key: 'cache-fold' })
+  await band.press({ key: 'tab-capacity-button' })
   const w = JSON.stringify(await band.find({ key: 'card' }))
   for (const z of ['PACE VS RESET', ' · resets 1h 29m']) expect(w).toContain(z)
   expect(w).not.toContain('KEEP WARM')
@@ -131,7 +132,7 @@ test('the open wide card draws the last seven days of spend from the store, toda
 
 test('the open card at 68 columns has no keep warm status line and has the pace strip', async ($, on) => {
   const band = await mountAt($, on, 68, true, 22, 'desktop', 40, NOW, WINDOWS)
-  await band.press({ key: 'cache-fold' })
+  await band.press({ key: 'tab-capacity-button' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
   expect(c).not.toContain('keep warm $')
   expect(c).toContain('PACE VS RESET')
@@ -148,26 +149,28 @@ test('cardColsOf: as many columns as fit at CARD_COL_PX each plus the 26 px gap,
   expect([1364, 1400, 1800, 5000].map(cardColsOf)).toEqual([4, 4, 4, 4])
 })
 
-test('at 120 columns the open card is the Overview with its two wide columns, and the metric cells are on the other tabs', async ($, on) => {
+test('at 120 columns the open card is the Cost tab with its wide columns, and the pace and size are on Capacity', async ($, on) => {
   const band = await mountAt($, on, 120)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['PACE VS RESET', '>DELEGATION<', '>SPEND<']) expect(c).toContain(z)
-  for (const gone of ['KEEP WARM', 'CACHE HIT', 'TOOL OUTPUT']) expect(c).not.toContain(gone)
-  await band.press({ key: 'tab-context-button' })
-  const ctx = JSON.stringify(await band.find({ key: 'card' }))
-  for (const z of ['CONVERSATION SIZE', 'TOOL OUTPUT']) expect(ctx).toContain(z)
-  expect(ctx).not.toContain('PACE VS RESET')
+  for (const z of ['>SPEND<', '>DELEGATION<']) expect(c).toContain(z)
+  for (const gone of ['KEEP WARM', 'CACHE HIT', 'TOOL OUTPUT', 'PACE VS RESET']) expect(c).not.toContain(gone)
+  await band.press({ key: 'tab-capacity-button' })
+  const capacity = JSON.stringify(await band.find({ key: 'card' }))
+  for (const z of ['PACE VS RESET', 'CONVERSATION SIZE', 'TOOL OUTPUT']) expect(capacity).toContain(z)
+  expect(capacity).not.toContain('>SPEND<')
   await band.unmount()
 })
 
-test('at 68 columns the open card has the pace strip and two columns, and no keep warm line', async ($, on) => {
+test('at 68 columns the open card is the Cost tab on one column, and Capacity has the pace strip, with no keep warm line', async ($, on) => {
   const band = await mountAt($, on, 68)
   await band.press({ key: 'cache-fold' })
   const c = JSON.stringify(await band.find({ key: 'card' }))
-  expect(c).toContain('PACE VS RESET')
   expect(c).toContain('>SPEND<')
+  expect(c).not.toContain('PACE VS RESET')
   expect(c).not.toContain('keep warm $')
+  await band.press({ key: 'tab-capacity-button' })
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('PACE VS RESET')
   await band.unmount()
 })
 

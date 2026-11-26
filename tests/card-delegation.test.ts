@@ -2,20 +2,23 @@ import { expect, test } from 'claude-code/testing'
 
 import { EMPTY, OK, ORANGE, YELLOW } from '../hooks/band/look'
 import { cardSvg } from '../hooks/band/card'
+import { cardColsOf } from '../hooks/layout'
 import type { Metrics } from '../hooks/band/card-metrics'
-import { WARM, SPEND, WIDTHS, DELEG, METRICS, YC, ROW, colWOf, colXOf, body, plainText, PACE_OK, TAB_IDS, TAB_LABEL, ctx, cost, NONE } from './card-kit'
+import { WARM, SPEND, WIDTHS, DELEG, METRICS, YC, ROW, colWOf, colXOf, body, plainText, PACE_OK, TAB_IDS, TAB_LABEL, cap, cost, NONE } from './card-kit'
 // ---------- DELEGATION ----------
-/** The DELEGATION column of the 1400 card, up to the next zone. */
+/** The DELEGATION column of the Cost card at width w (800 and up: it has no column on one), up to the next zone. */
 const delegZone = (m: Metrics | null, w = 1400) => {
-  const s = body(cardSvg(WARM, w, SPEND, [PACE_OK], m).source)
-  return s.slice(s.indexOf('>DELEGATION<') - 40, s.indexOf('>SPEND<'))
+  const s = body(cardSvg(WARM, w, SPEND, [PACE_OK], m, 'cost').source)
+  const end = s.indexOf('>CACHE DISCOUNT<')
+  return s.slice(s.indexOf('>DELEGATION<') - 40, end < 0 ? undefined : end - 40)
 }
 
 test('delegation: the saving in the OK colour, a cost row and a time row on EMPTY tracks, and the work against the time', () => {
-  const colW = colWOf(1400, 2)
+  const colW = colWOf(1400, 4)
+  const x1 = colXOf(1400, 4, 1)
   const s = delegZone(METRICS)
   expect(s).toContain('<tspan font-size="38">≈$3.10</tspan><tspan font-size="15" font-weight="500" fill="#8d8775" dx="7">saved</tspan>')
-  expect(s).toContain(`<text x="13" y="${YC + 62}" font-weight="600" fill="${OK}">`)
+  expect(s).toContain(`<text x="${x1}" y="62" font-weight="600" fill="${OK}">`)
   expect(plainText(s)).toContain('cost')
   expect(plainText(s)).toContain('time')
   const tracks = [...s.matchAll(/<rect x="([\d.]+)" y="(\d+)" width="([\d.]+)" height="6" rx="3" fill="#4a463b"\/>/g)].map(m => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]) }))
@@ -28,29 +31,32 @@ test('delegation: the saving in the OK colour, a cost row and a time row on EMPT
   expect(Number(time[3])).toBe(Math.round((5 / 12) * tracks[1].w))
   expect(tracks[0].x).toBe(tracks[1].x)
   expect(tracks[0].w).toBe(tracks[1].w)
-  expect(tracks[0].x + tracks[0].w).toBe(13 + colW)
+  expect(tracks[0].x + tracks[0].w).toBe(x1 + colW)
   expect(tracks[1].y).toBeGreaterThan(tracks[0].y)
 })
 
-test('delegation is a column at every width, with its figure and caption on the other zones\' baselines', () => {
-  for (const w of WIDTHS) {
-    const s = body(cardSvg(WARM, w, SPEND, [PACE_OK], METRICS).source)
-    expect(s).toContain(`<text x="13" y="${YC + 24}" font-size="14" font-weight="700" fill="#8d8775" letter-spacing="1.4" text-anchor="start">DELEGATION<`)
-    expect(s).toContain(`<text x="13" y="${YC + 62}" font-weight="600" fill="${OK}">`)
-    expect(s).toContain(`<text x="13" y="${YC + 108}" font-size="18" font-weight="500"`)
+test('delegation is a column from two columns up, with its figure and caption on the other zones\' baselines', () => {
+  for (const w of WIDTHS.slice(1)) {
+    const x = colXOf(w, Math.min(5, cardColsOf(w)), 1)
+    const s = body(cardSvg(WARM, w, SPEND, [PACE_OK], METRICS, 'cost').source)
+    expect(s).toContain(`<text x="${x}" y="24" font-size="14" font-weight="700" fill="#8d8775" letter-spacing="1.4" text-anchor="start">DELEGATION<`)
+    expect(s).toContain(`<text x="${x}" y="62" font-weight="600" fill="${OK}">`)
+    expect(s).toContain(`<text x="${x}" y="108" font-size="18" font-weight="500"`)
     expect(plainText(s)).toContain('≈$3.10')
   }
+  // On one column it is a status line.
+  expect(plainText(body(cardSvg(WARM, 300, SPEND, [PACE_OK], METRICS, 'cost').source))).not.toContain('DELEGATION')
 })
 
 test('the delegation caption gives work, wall time and the speed-up, shortened to fit the column', () => {
   const at = (w: number, m: Metrics) => plainText(delegZone(m, w))
-  expect(at(1700, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
-  expect(at(1400, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
-  expect(at(1100, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
-  expect(at(300, METRICS)).toContain('12m work in 5m · 2.4× faster')
+  expect(at(2400, METRICS)).toContain('12m of agent work in 5m · 2.4× faster')
+  expect(at(1400, METRICS)).toContain('12m work in 5m · 2.4× faster')
+  expect(at(1100, METRICS)).toContain('12m work in 5m · 2.4× faster')
+  expect(at(1023, METRICS)).toContain('12m work in 5m · 2.4× faster')
   // Never overlapped: 1.0x, said honestly; a sub-minute run is written in seconds.
-  expect(at(1700, { ...METRICS, deleg: { ...DELEG, workMs: 90_000, wallMs: 90_000 } })).toContain('1m of agent work in 1m · 1.0× faster')
-  expect(at(1700, { ...METRICS, deleg: { ...DELEG, workMs: 45_000, wallMs: 30_000 } })).toContain('45s of agent work in 30s · 1.5× faster')
+  expect(at(2400, { ...METRICS, deleg: { ...DELEG, workMs: 90_000, wallMs: 90_000 } })).toContain('1m of agent work in 1m · 1.0× faster')
+  expect(at(2400, { ...METRICS, deleg: { ...DELEG, workMs: 45_000, wallMs: 30_000 } })).toContain('45s of agent work in 30s · 1.5× faster')
 })
 
 test('delegation before any subagent: a dash and the plain words; with old subagent spend only, it waits for the next one; with no metrics, a dash', () => {
@@ -59,7 +65,7 @@ test('delegation before any subagent: a dash and the plain words; with old subag
   expect(none).not.toContain('saved')
   expect(plainText(delegZone({ ...METRICS, deleg: null }))).toContain('DELEGATION—tracked from the next subagent')
   expect(plainText(delegZone(null))).toContain('DELEGATION—after a few turns')
-  expect(plainText(delegZone(null, 300))).toContain('DELEGATION—after a few turns')
+  expect(plainText(delegZone(null, 800))).toContain('DELEGATION—after a few turns')
   // A subagent of the main model's own kind saves nothing: shown as $0.00, never negative.
   expect(delegZone({ ...METRICS, deleg: { ...DELEG, saved: 0, costRatio: 1 } })).toContain('<tspan font-size="38">≈$0.00</tspan>')
 })
@@ -94,8 +100,8 @@ test('no outlier flag while the last message is near the average', () => {
 })
 
 test('the runway is a second caption under CONVERSATION SIZE, with the rows and the card heights unchanged', () => {
-  const c = ctx(1400, METRICS)
-  expect(c.h).toBe(6 + ROW)
+  const c = cap(1400, METRICS)
+  expect(c.h).toBe(6 + YC + ROW)
   const s = body(c.source)
   expect(s).toContain('>~40 turns left at +6k a turn<')
   expect(s).toContain('>24% of the 1M context · 760k free<')
@@ -105,19 +111,19 @@ test('the runway is a second caption under CONVERSATION SIZE, with the rows and 
   const second = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>~40 turns left`))
   const first = ys(new RegExp(`<text x="${x}" y="(\\d+)"[^>]*>24% of the`))
   expect(first).toBeLessThan(second)
-  expect(second + 4).toBeLessThanOrEqual(ROW)
+  expect(second + 4).toBeLessThanOrEqual(YC + ROW)
   const dotYs = [...s.matchAll(/<circle cx="[\d.]+" cy="(\d+)" r="3"/g)].map(m => Number(m[1])).slice(0, 50)
   expect(Math.max(...dotYs) + 3).toBeLessThan(first - 12)
   // At every width, the long form where it fits the column and the short one where it does not; not while the growth is unknown.
-  for (const w of [800, 300]) expect(body(ctx(w, METRICS).source)).toContain('turns left')
-  expect(body(ctx(300, METRICS).source)).toContain('>~40 turns left at +6k a turn<')
-  for (const w of WIDTHS) expect(body(ctx(w, { ...METRICS, runway: null, growth: null }).source)).not.toContain('turns left')
-  // Only the Context tab draws it.
-  for (const tab of ['overview', 'cost'] as const) expect(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS, tab).source)).not.toContain('turns left')
+  for (const w of [800, 300]) expect(body(cap(w, METRICS).source)).toContain('turns left')
+  expect(body(cap(300, METRICS).source)).toContain('>~40 turns left at +6k a turn<')
+  for (const w of WIDTHS) expect(body(cap(w, { ...METRICS, runway: null, growth: null }).source)).not.toContain('turns left')
+  // Only the Capacity tab draws it.
+  expect(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], METRICS, 'cost').source)).not.toContain('turns left')
 })
 
 test('the runway shows >99 past the cap, escaped, and small growth is written in tokens', () => {
-  const s = body(ctx(1400, { ...METRICS, runway: 250, growth: 640 }).source)
+  const s = body(cap(1400, { ...METRICS, runway: 250, growth: 640 }).source)
   expect(s).toContain('>&gt;99 turns left at +640 a turn<')
 })
 
@@ -131,7 +137,7 @@ test('an unknown metric shows its title, a dash and when it will be known', () =
   const s = body(cost(1400, { ...NONE, hit: 0.5 }).source)
   expect(s).toContain('<tspan font-size="38">50%</tspan>')
   expect(s.split('<tspan font-size="38">—</tspan>').length - 1).toBe(2)
-  expect(s.split('>after a few turns<').length - 1).toBe(2)
+  expect(s.split('>after a few turns<').length - 1).toBe(1)
   expect(s).toContain('>of input read from cache<')
   expect(body(cardSvg(WARM, 1400, SPEND, [PACE_OK], { ...NONE, hit: 0.5 }).source)).toContain('>no subagents this thread<')
 })

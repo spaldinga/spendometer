@@ -103,12 +103,12 @@ test('FOLD_COLS counts the fold button the way buttonCols counts every other but
 
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
 // step 0: 53, 1: 43 warm, 2: 35, 3: 30, 4: 23 (a pie, 2 columns, in each window; the keep box 3 columns, measured 2026-11-26). The buttons
-// are the fold and three tabs, 4 columns each (16), and the fold is 4 of those. With 2 columns of slack:
-// step 0 from 72 columns, 1 from 62, 2 from 54, 3 from 49, 4 from 42 (with +); from 38 step 4 still inline but without +;
-// then slimmer variants of step 4: no pace track (23, same here as no pace shows), no keep box 20 (from 35), the 5h window
-// alone 14 (from 29); at 28 columns and under the minimal row (18: 5h pie and percent, Robo, +). Never a buttons row (desktop).
+// are the fold and two tabs, 4 columns each (12), and the fold is 4 of those. With 2 columns of slack the ladder (probed 2026-11-26 for item 85,
+// two tabs in place of three) is: step 0 (the next cost) from 67 columns; step 4 inline with + from 37, without + from 33; then slimmer
+// variants of step 4: no keep box from 30, the 5h window alone from 24; at 23 columns and under the minimal row (5h pie and percent,
+// Robo, +). Steps 1 to 3 sit between; their widths were not re-probed. Never a buttons row (desktop).
 
-test('the ladder: warm shows the next cost at step 0 (from 73 columns)', async ($, on) => {
+test('the ladder: warm shows the next cost at step 0 (from 67 columns)', async ($, on) => {
   const band = await mountAt($, on, 75)
   expect(await row(band)).toContain('next')
   await band.unmount()
@@ -140,8 +140,8 @@ test('the ladder: at 56 columns the cost total is gone', async ($, on) => {
   await band.unmount()
 })
 
-test('the ladder: at 50 columns Robo stands in for the chip', async ($, on) => {
-  const band = await mountAt($, on, 50)
+test('the ladder: at 46 columns Robo stands in for the chip', async ($, on) => {
+  const band = await mountAt($, on, 46)
   const svgs = JSON.stringify(await band.findAll({ type: 'Svg' }))
   expect(svgs).toContain('Robo, bobbing')
   expect(svgs).not.toContain('WARM')
@@ -165,12 +165,12 @@ const PLAN = [
 const planOn = ($: Parameters<Parameters<typeof test>[1]>[0]) => {
   return $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: PLAN } as never)
 }
-const TABS_ON = ['tab-overview-button', 'tab-context-button', 'tab-cost-button']
+const TABS_ON = ['tab-cost-button', 'tab-capacity-button']
 
-// The desktop band is one row at every width. Probed 2026-11-26 from the band's debug line, at the plain content
-// (no pace shown): step 4 inline with + from 42 columns, without + from 38, no keep box from 35, the 5h window alone
-// from 29, the minimal row below that. With the 5h pace shown (ON_PACE) step 4 is 7 columns wider (30 against 23):
-// with + from 49, without + from 45, no pace track and words from 38.
+// The desktop band is one row at every width. Probed 2026-11-26 from the band's debug line, at the plain content (no pace shown;
+// two tabs in place of three, so about 5 columns less than before): step 4 inline with + from 37 columns, without + from 33, no keep box
+// from 30, the 5h window alone from 24, the minimal row below that. With the 5h pace shown (ON_PACE) step 4 is wider:
+// with + from 44, without + from 40 (the pace track and its words go below that).
 test('narrow ladder: at 44 columns the buttons are inline with the + button', async ($, on) => {
   const band = await mountAt($, on, 44)
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
@@ -178,8 +178,8 @@ test('narrow ladder: at 44 columns the buttons are inline with the + button', as
   await band.unmount()
 })
 
-test('narrow ladder: at 38 columns the tabs are inline without the + button, the tabs open and close the card', async ($, on) => {
-  const band = await mountAt($, on, 38)
+test('narrow ladder: at 35 columns the tabs are inline without the + button, the tabs open and close the card', async ($, on) => {
+  const band = await mountAt($, on, 35)
   expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
   expect(await band.find({ key: 'keep' })).toBeDefined()
@@ -193,8 +193,8 @@ test('narrow ladder: with the 5h pace shown, 46 columns keep the track', async (
   await keeps.unmount()
 })
 
-test('narrow ladder: with the 5h pace shown, 40 columns drop the track and its words, keeping the tabs and the keep box', async ($, on) => {
-  const band = await paced($, on, 40, ON_PACE)
+test('narrow ladder: with the 5h pace shown, 38 columns drop the track and its words, keeping the tabs and the keep box', async ($, on) => {
+  const band = await paced($, on, 38, ON_PACE)
   expect(await tracks(band)).toEqual([])
   expect(await band.find({ key: 'keep' })).toBeDefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
@@ -202,8 +202,8 @@ test('narrow ladder: with the 5h pace shown, 40 columns drop the track and its w
   await band.unmount()
 })
 
-test('narrow ladder: at 36 columns the keep box goes, the tabs and both windows stay', async ($, on) => {
-  const band = await mountAt($, on, 36)
+test('narrow ladder: at 32 columns the keep box goes, the tabs and both windows stay', async ($, on) => {
+  const band = await mountAt($, on, 32)
   expect(await band.find({ key: 'keep' })).toBeUndefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeDefined()
@@ -211,8 +211,8 @@ test('narrow ladder: at 36 columns the keep box goes, the tabs and both windows 
   await band.unmount()
 })
 
-test('narrow ladder: at 30 columns only the 5h window is left, with the tabs', async ($, on) => {
-  const band = await mountAt($, on, 30)
+test('narrow ladder: at 26 columns only the 5h window is left, with the tabs', async ($, on) => {
+  const band = await mountAt($, on, 26)
   expect(await band.find({ text: '82%' })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeUndefined()
   expect(await band.find({ key: 'keep' })).toBeUndefined()
@@ -220,7 +220,7 @@ test('narrow ladder: at 30 columns only the 5h window is left, with the tabs', a
   await band.unmount()
 })
 
-test('minimal (28 columns and under): the 5h pie and percent, Robo and +, nothing else; + opens the card on the stored tab', async ($, on) => {
+test('minimal (23 columns and under): the 5h pie and percent, Robo and +, nothing else; + opens the card on the stored tab', async ($, on) => {
   const band = await mountAt($, on, 20)
   for (const key of TABS_ON) expect(await band.find({ key })).toBeUndefined()
   expect(await band.find({ key: 'keep' })).toBeUndefined()
@@ -234,7 +234,7 @@ test('minimal (28 columns and under): the 5h pie and percent, Robo and +, nothin
   lastKv.set('cardTab', 'cost')
   expect(await band.find({ key: 'card' })).toBeUndefined()
   await band.press({ key: 'cache-fold' })
-  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('SPEND')
   await band.press({ key: 'cache-fold' })
   expect(await band.find({ key: 'card' })).toBeUndefined()
   await band.unmount()
@@ -255,7 +255,7 @@ for (const columns of [160, 100, 70, 50, 44, 40, 36, 30, 26, 20, 10]) {
       const band = await mountAt($, on, columns)
       if (plan) await planOn($)
       for (const open of [false, true]) {
-        if (open) await band.press({ key: (await band.find({ key: 'cache-fold' })) ? 'cache-fold' : 'tab-overview-button' })
+        if (open) await band.press({ key: (await band.find({ key: 'cache-fold' })) ? 'cache-fold' : 'tab-cost-button' })
         expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
         expect(await band.find({ key: 'progress-buttons' })).toBeUndefined()
       }

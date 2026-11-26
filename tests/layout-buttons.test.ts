@@ -5,7 +5,7 @@ import { shown } from './visible'
 import { lastKv, mountAt, setLegacyWrap } from './layout-kit'
 test('at 90 columns the compact row holds only the essentials, buttons inline as icons', async ($, on) => {
   const band = await mountAt($, on, 90)
-  // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: with the tabs (3 more icon buttons) 85 is the least width for step 0 with the buttons inline.
+  // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: with the tabs (2 more icon buttons) 85 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
   expect(await band.find({ key: 'keep' })).toBeDefined()
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
@@ -21,12 +21,12 @@ test('at 90 columns the compact row holds only the essentials, buttons inline as
   await band.unmount()
 })
 
-test('the compact buttons: fold and three tabs are 4 × 4 columns = 16 (the emoji width is not yet measured in the app)', async ($, on) => {
+test('the compact buttons: fold and two tabs are 3 × 4 columns = 12 (the emoji width is not yet measured in the app)', async ($, on) => {
   // At 6 columns a button the band sent them to a row of their own at 58 columns with half the row empty.
   const band = await mountAt($, on, 64)
   const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
   const text = ((await $.command.run({ command: 'spendometer', args: '', ...RUN })) as { text: string }).text
-  expect(text).toMatch(/compact [\d/]+\+16\b/)
+  expect(text).toMatch(/compact [\d/]+\+12\b/)
   await band.unmount()
 })
 
@@ -48,7 +48,7 @@ test('with keep-warm off the label is the bare ✗, at the wide width too', asyn
 const gapsAt = async ($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], columns: number) => {
   const band = await mountAt($, on, columns)
   await band.press({ key: 'cache-fold' })
-  for (const key of ['tab-overview', 'tab-context', 'tab-cost', 'fold']) {
+  for (const key of ['tab-cost', 'tab-capacity', 'fold']) {
     const box = await band.find({ key })
     expect(box).toBeDefined()
     expect([key, box?.props.marginLeft]).toEqual([key, BUTTON_GAP])
@@ -89,35 +89,35 @@ test('compact: the keep button sits in the chip block after the next cost', asyn
 })
 
 const tabLabelsOf = async (band: Awaited<ReturnType<typeof mountAt>>) =>
-  Promise.all(['overview', 'context', 'cost'].map(async id => (await band.find({ key: `tab-${id}-button` }))?.props.label))
+  Promise.all(['cost', 'capacity'].map(async id => (await band.find({ key: `tab-${id}-button` }))?.props.label))
 
 test('tab buttons: there with the card closed, words on the wide row, one press opens the card on that tab, the others dimmed, each before the fold button', async ($, on) => {
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'card' })).toBeUndefined()
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['💰 Cost', '🔋 Capacity'])
   const keys = keysOf(await band.find({ key: 'row' }))
-  expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
+  expect(keys.slice(keys.indexOf('tab-cost'), keys.indexOf('fold') + 1)).toEqual(['tab-cost', 'tab-capacity', 'fold'])
   // Each carries hover text.
-  for (const text of [/^Overview: /, /^Context: /, /^Cost: /]) expect(await band.find({ type: 'Text', text })).toBeDefined()
+  for (const text of [/^Cost: /, /^Capacity: /]) expect(await band.find({ type: 'Text', text })).toBeDefined()
   // Closed: a tab opens the card and is stored, in one press.
   await band.press({ key: 'tab-cost-button' })
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['💰 Cost', '🔋 Capacity'])
   expect(lastKv.get('cardTab')).toBe('cost')
   expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
   // Open: another tab switches, the card stays.
-  await band.press({ key: 'tab-context-button' })
+  await band.press({ key: 'tab-capacity-button' })
   expect(await band.find({ key: 'card' })).toBeDefined()
-  expect(lastKv.get('cardTab')).toBe('context')
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
+  expect(lastKv.get('cardTab')).toBe('capacity')
+  expect(await tabLabelsOf(band)).toEqual(['💰 Cost', '🔋 Capacity'])
   // Open: the tab in use closes the card; the tabs stay, the tab stays chosen.
-  await band.press({ key: 'tab-context-button' })
+  await band.press({ key: 'tab-capacity-button' })
   expect(await band.find({ key: 'card' })).toBeUndefined()
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
-  expect(lastKv.get('cardTab')).toBe('context')
+  expect(await tabLabelsOf(band)).toEqual(['💰 Cost', '🔋 Capacity'])
+  expect(lastKv.get('cardTab')).toBe('capacity')
   // The fold button opens it again on that tab.
   await band.press({ key: 'cache-fold' })
   expect(await band.find({ key: 'card' })).toBeDefined()
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['💰 Cost', '🔋 Capacity'])
   await band.unmount()
 })
 
@@ -145,7 +145,7 @@ for (const columns of [160, 90, 70, 58, 40, 36, 30, 20]) {
   test(`the layout is the same with the card open and closed (${columns} columns)`, async ($, on) => {
     const band = await mountAt($, on, columns)
     const closed = await layoutSignature(band)
-    await band.press({ key: (await band.find({ key: 'tab-overview-button' })) ? 'tab-overview-button' : 'cache-fold' })
+    await band.press({ key: (await band.find({ key: 'tab-cost-button' })) ? 'tab-cost-button' : 'cache-fold' })
     expect(await band.find({ key: 'card' })).toBeDefined()
     expect(await layoutSignature(band)).toBe(closed)
     await band.unmount()
@@ -154,25 +154,32 @@ for (const columns of [160, 90, 70, 58, 40, 36, 30, 20]) {
 
 test('the terminal has no tab buttons, open or closed, and no card to open', async ($, on) => {
   const band = await mountAt($, on, 160, true, 22, 'terminal')
-  expect(await tabLabelsOf(band)).toEqual([undefined, undefined, undefined])
+  expect(await tabLabelsOf(band)).toEqual([undefined, undefined])
   expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
   await band.unmount()
 })
 
 test('tab buttons: one glyph each on the compact row, the others dimmed', async ($, on) => {
   const band = await mountAt($, on, 70, true, 70)
-  expect(await tabLabelsOf(band)).toEqual(['📊', '🧠', '💰'])
+  expect(await tabLabelsOf(band)).toEqual(['💰', '🔋'])
   await band.unmount()
 })
 
-test('a stored tab is the one shown, and an unknown stored value reads as Overview', async ($, on) => {
+test('a stored tab is the one shown: the old names read as their domains, and an unknown stored value as Cost', async ($, on) => {
   const band = await mountAt($, on, 160, true, 70)
-  lastKv.set('cardTab', 'context')
-  await band.press({ key: 'tab-context-button' })
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
-  lastKv.set('cardTab', 'bogus')
-  await band.press({ key: 'tab-overview-button' })
-  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
+  // Close the card, store a value, open it again: it is drawn on the tab the value reads as.
+  const opened = async (stored: string) => {
+    if (await band.find({ key: 'card' })) await band.press({ key: 'cache-fold' })
+    lastKv.set('cardTab', stored)
+    await band.press({ key: 'cache-fold' })
+    return JSON.stringify(await band.find({ key: 'card' }))
+  }
+  for (const stored of ['context', 'capacity']) expect(await opened(stored)).toContain('PACE VS RESET')
+  for (const stored of ['overview', 'cost', 'bogus']) {
+    const card = await opened(stored)
+    expect(card).toContain('SPEND')
+    expect(card).not.toContain('PACE VS RESET')
+  }
   await band.unmount()
 })
 

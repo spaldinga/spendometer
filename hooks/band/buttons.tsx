@@ -10,13 +10,13 @@ import { cacheFacts, viewOf } from '../cost/cache/facts'
 import { keepTip } from '../cost/cache/keepwarm/lifecycle'
 import type { KeepView } from '../cost/cache/keepwarm/lifecycle'
 import { BUTTON_GAP, TIP_LIFT } from '../layout'
-import { TABS, TAB_NAMES } from './card'
+import { TABS, TAB_NAMES, tabFrom } from './card'
 import type { Tab } from './card'
 import { OK } from './look'
 
 const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
 
-/** The card's tab in the store: overview, context or cost. */
+/** The card's tab in the store: cost or capacity (overview and context from older versions still read). */
 export const TAB_KEY = 'cardTab'
 
 /** How wide a button's hover text is, in columns. */
@@ -30,13 +30,13 @@ export type BandUi = Pick<Resolved, 'Box' | 'Button' | 'Text'> & { Svg: Extract<
 /** What a hover box needs: the components, and the band's width, which caps how far a tip may grow to the left. */
 export type TipCtx = { ui: BandUi; columns: number }
 
-/** The card's tab in the store: one it knows, else Overview. */
+/** The card's tab in the store: one it knows (an old name mapped), else Cost. */
 export async function tabOf($: EngineInterface): Promise<Tab> {
   try {
     const v = await $.store.get(TAB_KEY)
-    return TABS.find(id => id === v) ?? 'overview'
+    return tabFrom(v) ?? 'cost'
   } catch {
-    return 'overview'
+    return 'cost'
   }
 }
 
@@ -130,16 +130,15 @@ export function foldButtonOf($: EngineInterface, c: TipCtx, open: boolean) {
   return (
     <Box key="fold" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
       <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-      {tip(c, open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the tabs.')}
+      {tip(c, open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the Cost and Capacity tabs.')}
     </Box>
   )
 }
 
-const TAB_GLYPH: Record<Tab, string> = { overview: '📊', context: '🧠', cost: '💰' }
+const TAB_GLYPH: Record<Tab, string> = { cost: '💰', capacity: '🔋' }
 const TAB_TIPS: Record<Tab, string> = {
-  overview: 'Overview: the pace of each usage window against its reset, what delegating to subagents saved, and what this thread has cost.',
-  context: 'Context: how big the conversation is, how many turns are left, and what tool output filled it.',
-  cost: 'Cost: the cache discount, the cost of a message and what each model cost.',
+  cost: 'Cost: what this thread has cost, what delegating to subagents saved, the cache discount, the cost of a message and what each model cost.',
+  capacity: 'Capacity: the pace of each usage window against its reset, how big the conversation is, how many turns are left, and what tool output filled it.',
 }
 /** Wide row: the emoji and the word; elsewhere the emoji alone. The tab in use is marked by dimming the others (dimColor). */
 export const tabLabel = (id: Tab, isWide: boolean) => (isWide ? `${TAB_GLYPH[id]} ${TAB_NAMES[id]}` : TAB_GLYPH[id])

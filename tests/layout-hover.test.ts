@@ -9,7 +9,7 @@ test('each button carries hover text on the desktop, and none in the terminal', 
   }
   // Hidden until hovered: the box around each text. (The kit does not expose the hover style itself.)
   const hidden = (await band.findAll({ type: 'Box' })).filter(b => b.props.display === 'none')
-  expect(hidden.length).toBe(8)
+  expect(hidden.length).toBe(7)
   await band.unmount()
 })
 

@@ -89,7 +89,7 @@ test('without pace the same 145 columns are one wide row', async ($, on) => {
 })
 
 test('compact row, over pace, squeezed: the ladder drops "out" and keeps the time', async ($, on) => {
-  const band = await paced($, on, 70, OVER_PACE)
+  const band = await paced($, on, 65, OVER_PACE)
   expect(await rowOf(band)).toContain('5h 60% 1h')
   await band.unmount()
 })

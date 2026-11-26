@@ -1,4 +1,6 @@
 import { cardSvg } from '../hooks/band/card'
+import { kitOf } from '../hooks/band/look'
+import { modelsZone } from '../hooks/cost/spend/card'
 import type { PaceRow } from '../hooks/capacity/usage/art'
 import type { CacheView } from '../hooks/cost/cache/facts'
 import type { Metrics } from '../hooks/band/card-metrics'
@@ -41,12 +43,16 @@ export const dotsOf = (s: string) => (s.match(/<circle [^>]*r="4" fill="[^"]+"/g
 
 export const WITH_DAYS = { ...SPEND, days: [0, 1, 2, 0, 4, 1, 3] }
 
-export const TAB_IDS = ['overview', 'context', 'cost'] as const
-export const TAB_LABEL = { overview: 'Overview', context: 'Context', cost: 'Cost' } as const
-export const ctx = (w: number, m: Metrics | null = METRICS, v: CacheView = WARM, sp = SPEND) => cardSvg(v, w, sp, [PACE_OK], m, 'context')
+export const TAB_IDS = ['cost', 'capacity'] as const
+export const TAB_LABEL = { cost: 'Cost', capacity: 'Capacity' } as const
+export const cap = (w: number, m: Metrics | null = METRICS, v: CacheView = WARM, sp = SPEND) => cardSvg(v, w, sp, [PACE_OK], m, 'capacity')
 export const cost = (w: number, m: Metrics | null = METRICS, v: CacheView = WARM, sp = SPEND) => cardSvg(v, w, sp, [PACE_OK], m, 'cost')
 /** The drawing from a zone's title on. */
 export const after = (s: string, title: string) => s.slice(s.indexOf(`>${title}<`) - 40)
+/** The x of a title that sits at baseline y. */
+export const titleAt = (s: string, title: string, y: number) => Number(new RegExp(`<text x="([0-9.]+)" y="${y}"[^>]*>${title}<`).exec(s)![1])
 export const titleOf = (s: string, title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="[0-9.]+"[^>]*>${title}<`).exec(s)![1])
 export const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [], tools: [], toolTok: 0, rereads: 0, rereadTok: 0 }
 export const COST_TITLES = ['CACHE DISCOUNT', 'PER MESSAGE', 'BY MODEL']
+/** The BY MODEL zone as drawn in the third of three columns of a card W px wide. Cost's tab never gets a column wide enough for it (the card draws four columns at most), so its drawing is tested on its own. */
+export const byModel = (W: number, models: [string, number][]) => modelsZone(kitOf(W, 'warm'), colXOf(W, 3, 2), 0, colWOf(W, 3), models)

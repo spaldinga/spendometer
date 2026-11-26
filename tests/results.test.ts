@@ -42,14 +42,14 @@ test('the results text leaves out a zero part and counts one in the singular', (
   expect(resultsSentence(4, 1, '$12.66')).toBe(' This conversation made 4 commits and 1 pull request, about $12.66 a result.')
 })
 
-test('the SPEND column has the results line at 1100 and 1400, and the card is no taller for it', () => {
-  // Both widths draw three columns now, and the longest wording fits.
-  for (const [w, line] of [[1400, '4 commits · 1 PR · ≈$12.65 a result'], [1100, '4 commits · 1 PR · ≈$12.65 a result']] as const) {
+test('the SPEND column has the results line at 1100, 1400 and 2400, and the card is no taller for it', () => {
+  // Three columns at 1100 are wider than four at 1400: the longest wording fits the first, the shorter one the second.
+  for (const [w, line] of [[2400, '4 commits · 1 PR · ≈$12.65 a result'], [1100, '4 commits · 1 PR · ≈$12.65 a result'], [1400, '4 commits · 1 PR · $12.65 each']] as const) {
     const s = cardSvg(WARM, w, WITH)
     expect(plainText(body(s.source))).toContain(line)
   }
   for (const w of WIDTHS) expect(cardSvg(WARM, w, WITH).h).toBe(cardSvg(WARM, w, WITHOUT).h)
-  expect(plainText(body(cardSvg(WARM, 1400, { ...WITH, commits: 3, prs: 0 }).source))).toContain('3 commits · ≈$21.08 a result')
+  expect(plainText(body(cardSvg(WARM, 2400, { ...WITH, commits: 3, prs: 0 }).source))).toContain('3 commits · ≈$21.08 a result')
 })
 
 test('no results, no line', () => {
@@ -63,10 +63,10 @@ test('no results, no line', () => {
   }
 })
 
-test('with a status line for SPEND (600), the results come first in it', () => {
+test('on a narrow card (600) the SPEND column keeps the results line', () => {
   const s = plainText(body(cardSvg(WARM, 600, WITH).source))
   expect(s).toContain('commits')
-  expect(s).toContain('≈$63.25 this thread · 4 commits · 1 PR')
+  expect(s).toContain('4 commits · 1 PR · ≈$12.65 a result')
 })
 
 test('the alt text and the cost answer say what the conversation made', () => {
