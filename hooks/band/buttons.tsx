@@ -21,6 +21,8 @@ export const TAB_KEY = 'cardTab'
 
 /** How wide a button's hover text is, in columns. */
 const TIP_COLS = 44
+/** Columns a tip keeps clear of the band's left edge, and the narrowest it is drawn. */
+const TIP_EDGE = 16
 
 type Resolved = ReturnType<EngineInterface['ui']['resolve']>
 /** What the band draws with: the components, and Svg only where the surface draws (null in the terminal). */
@@ -88,7 +90,7 @@ export async function pressTab($: EngineInterface, id: Tab): Promise<void> {
  */
 export function tip(c: TipCtx, text: string, side: 'left' | 'right' = 'right') {
   const { Box, Text, Svg } = c.ui
-  const rightTipCols = Math.max(16, Math.min(TIP_COLS, c.columns - 16))
+  const rightTipCols = Math.max(TIP_EDGE, Math.min(TIP_COLS, c.columns - TIP_EDGE))
   return Svg ? (
     <Box
       position="absolute"

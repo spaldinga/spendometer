@@ -40,6 +40,24 @@ const ROW = 124
 const STATUS_PITCH = 27
 const statusH = (lines: number): number => STATUS_PITCH * lines + 4
 
+/** The columns: the margin at each side and the gap between columns (px). */
+const SIDE = 13
+const COL_GAP = 26
+/** The divider between columns: its top below the row's top and its height (px). */
+const VLINE_DY = 18
+const VLINE_H = 88
+/** The status lines: the width under which the text is 16 px instead of 18, the two sizes, the room kept beside the line (px), and the first baseline below the rule (px). */
+const NARROW_W = 560
+const STATUS_SIZE_NARROW = 16
+const STATUS_SIZE = 18
+const STATUS_ROOM_PAD = 14
+const STATUS_BASE_DY = 24
+/** A status line's dot: its centre x, radius, rise above the baseline as a share of the font size, and the text's x (px). */
+const DOT_CX = 17
+const DOT_R = 4
+const DOT_RISE = 0.36
+const STATUS_TEXT_X = 27
+
 // The card shows one tab at a time (Overview, Context or Cost). Overview is the pace strip across the top and
 // under it DELEGATION and SPEND; Context is CONVERSATION SIZE (RE-CACHE once cold) and TOOL OUTPUT; Cost is
 // CACHE DISCOUNT, PER MESSAGE and BY MODEL. Each takes as many columns as it has zones and fit (cardColsOf);
@@ -115,24 +133,24 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
 
   // The columns: as many as fit, at most one a zone, 26 px between them, 13 px at the sides.
   const n = Math.min(zones.length, cardColsOf(W))
-  const colW = Math.floor((W - 26 - (n - 1) * 26) / n)
-  const colX = (i: number) => 13 + i * (colW + 26)
+  const colW = Math.floor((W - 2 * SIDE - (n - 1) * COL_GAP) / n)
+  const colX = (i: number) => SIDE + i * (colW + COL_GAP)
   // Only Overview has the pace strip; the others start at the top.
   const yc = tab === 'overview' ? PACE_H : 0
   let g = tab === 'overview' ? paceStrip(kit, pace) + hline(PACE_H) : ''
-  for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - 13, yc + 18, 88) : '') + zones[i].draw(colX(i), yc, colW)
+  for (let i = 0; i < n; i++) g += (i ? vline(colX(i) - SIDE, yc + VLINE_DY, VLINE_H) : '') + zones[i].draw(colX(i), yc, colW)
   let H = yc + ROW
 
   // The zones with no column of their own, one status line each: a small dot, then the text. The text is the
   // longest variant that fits the line.
-  const SS = W < 560 ? 16 : 18
-  const lineRoom = W - 26 - 14
+  const SS = W < NARROW_W ? STATUS_SIZE_NARROW : STATUS_SIZE
+  const lineRoom = W - 2 * SIDE - STATUS_ROOM_PAD
   const status = zones.slice(n).flatMap(z => (z.status ? [z.status] : []))
   if (status.length) {
     g += hline(H)
     status.forEach((s, k) => {
-      const yy = H + 24 + k * STATUS_PITCH
-      g += `<circle cx="17" cy="${yy - Math.round(SS * 0.36)}" r="4" fill="${s.dot}"/>` + t(27, yy, esc(pick(s.variants, lineRoom, SS)), { size: SS, w: 600, fill: TEXT })
+      const yy = H + STATUS_BASE_DY + k * STATUS_PITCH
+      g += `<circle cx="${DOT_CX}" cy="${yy - Math.round(SS * DOT_RISE)}" r="${DOT_R}" fill="${s.dot}"/>` + t(STATUS_TEXT_X, yy, esc(pick(s.variants, lineRoom, SS)), { size: SS, w: 600, fill: TEXT })
     })
     H += statusH(status.length)
   }

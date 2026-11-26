@@ -121,31 +121,57 @@ export type Kit = {
   famName: (id: string) => string
 }
 
+// The kit's geometry, in px of the card's SVG unless said otherwise.
+/** A text's size when none is given, and the margin of a horizontal rule at each side. */
+const TEXT_SIZE = 11
+const RULE_SIDE = 13
+/** Width of a character as a share of its font size: for fitting a variant to a room, and for a column caption. */
+const CHAR_EM = 0.56
+const CAP_EM = 0.53
+/** The gap before a figure's unit. */
+const UNIT_DX = 7
+/** The dot chart: x of the first dot's centre, the pitch between rows, and a dot's radius. */
+const DOT_X0 = 3
+const DOT_ROW_PITCH = 9
+const DOT_R = 3
+/** A caption's size: the width under which it is 16 px instead of 18, and the two sizes. */
+const NARROW_ZONE_W = 230
+const CAP_SIZE_NARROW = 16
+const CAP_SIZE = 18
+/** A metric zone: the title's baseline, size and letter spacing; the caption's and the figure's baselines; the figure's size and its unit's size. */
+const MHEAD_DY = 24
+const MHEAD_SIZE = 14
+const MHEAD_LS = 1.4
+const MWORDS_DY = 108
+const MFIG_DY = 62
+const MFIG_SIZE = 38
+const MFIG_UNIT_SIZE = 15
+
 /** The kit for a card `W` wide in the cache's `mode`. */
 export const kitOf = (W: number, mode: Mode): Kit => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const t = (x: number, y: number, str: string, o: TextOpts = {}) =>
-    `<text x="${x}" y="${y}" font-size="${o.size || 11}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
+    `<text x="${x}" y="${y}" font-size="${o.size || TEXT_SIZE}" font-weight="${o.w || 700}" fill="${o.fill || MUTED}"` +
     ` letter-spacing="${o.ls ?? 0}" text-anchor="${o.anchor || 'start'}">${str}</text>`
   const vline = (x: number, y: number, h: number) => `<rect x="${x}" y="${y}" width="1" height="${h}" fill="${LINE}"/>`
-  const hline = (y: number) => `<rect x="13" y="${y}" width="${W - 26}" height="1" fill="${LINE}"/>`
-  const pick = (variants: string[], px: number, size: number, em = 0.56) => variants.find(s => s.length * size * em <= px) ?? variants[variants.length - 1]
-  const capPick = (variants: string[], px: number, size: number) => pick(variants, px, size, 0.53)
+  const hline = (y: number) => `<rect x="${RULE_SIDE}" y="${y}" width="${W - 2 * RULE_SIDE}" height="1" fill="${LINE}"/>`
+  const pick = (variants: string[], px: number, size: number, em = CHAR_EM) => variants.find(s => s.length * size * em <= px) ?? variants[variants.length - 1]
+  const capPick = (variants: string[], px: number, size: number) => pick(variants, px, size, CAP_EM)
   const big = (x: number, yy: number, figure: string, bs: number, unit: string, ts: number, fill = TEXT) =>
     `<text x="${x}" y="${yy}" font-weight="600" fill="${fill}"><tspan font-size="${bs}">${figure}</tspan>` +
-    (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="7">${unit}</tspan>` : '') +
+    (unit ? `<tspan font-size="${ts}" font-weight="500" fill="${MUTED}" dx="${UNIT_DX}">${unit}</tspan>` : '') +
     '</text>'
   const dots = (gx: number, gy: number, cols: number, step: number, rows: number, fill: (i: number) => string) => {
     let d = ''
     for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) d += `<circle cx="${gx + 3 + c * step}" cy="${gy + r * 9}" r="3" fill="${fill(r * cols + c)}"/>`
+      for (let c = 0; c < cols; c++) d += `<circle cx="${gx + DOT_X0 + c * step}" cy="${gy + r * DOT_ROW_PITCH}" r="${DOT_R}" fill="${fill(r * cols + c)}"/>`
     return d
   }
   // Drawn at 12 px a column, shown at DESKTOP_COL_PX (8.6): about 70%. 18 shows as about 13 px, the band's own text size.
-  const capSize = (w: number) => (w < 230 ? 16 : 18)
-  const mhead = (x: number, y: number, title: string) => t(x, y + 24, title, { size: 14, ls: 1.4 })
-  const mwords = (x: number, y: number, w: number, str: string) => t(x, y + 108, esc(str), { size: capSize(w), w: 500 })
-  const mdash = (x: number, y: number, w: number, title: string) => mhead(x, y, title) + big(x, y + 62, '—', 38, '', 15) + mwords(x, y, w, 'after a few turns')
+  const capSize = (w: number) => (w < NARROW_ZONE_W ? CAP_SIZE_NARROW : CAP_SIZE)
+  const mhead = (x: number, y: number, title: string) => t(x, y + MHEAD_DY, title, { size: MHEAD_SIZE, ls: MHEAD_LS })
+  const mwords = (x: number, y: number, w: number, str: string) => t(x, y + MWORDS_DY, esc(str), { size: capSize(w), w: 500 })
+  const mdash = (x: number, y: number, w: number, title: string) => mhead(x, y, title) + big(x, y + MFIG_DY, '—', MFIG_SIZE, '', MFIG_UNIT_SIZE) + mwords(x, y, w, 'after a few turns')
   const famName = (id: string) => id[0].toUpperCase() + id.slice(1)
   return { W, mode, HUEM: HUE[mode], esc, t, vline, hline, pick, capPick, big, dots, capSize, mhead, mwords, mdash, famName }
 }
