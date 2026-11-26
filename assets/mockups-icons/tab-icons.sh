@@ -34,7 +34,7 @@ block() {
 cap() { printf '<text x="20" y="%s" font-size="12" fill="#a8a28f" font-family="sans-serif">%s</text>' "$1" "$2"; }
 
 {
-printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 580" width="1180" height="580"><rect width="1180" height="580" fill="#2a2925"/>'
+printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 1090" width="1180" height="1090"><rect width="1180" height="1090" fill="#2a2925"/>'
 block 10  'Now: ◷ ◧ $, selected in brackets (◷ falls back to another font; shown as [G] in the dark narrow screenshot)' \
   'Overview' '[Context]' 'Cost' '◷' '[◧]' '$'
 cap 138 'Falls back: ◷ ◧ (not in Consolas, Cascadia or Menlo).'
@@ -47,7 +47,7 @@ cap 398 'Falls back: none expected (≡ ▒ ► are WGL4). Cost: the marker adds
 block 400 'C. ASCII only: = # $, selected gets a > in front' \
   'Overview' '>Context' 'Cost' '=' '>#' '$'
 cap 528 'Falls back: nothing, ever. Cost: plainest look, marker adds a column.'
-printf '<text x="20" y="556" font-size="12" fill="#a8a28f" font-family="sans-serif">Context selected in every row. Wide = words, narrow = one glyph. Light and dark panels are drawn by hand; the app draws its own button background.</text>'
+printf '<text x="20" y="1070" font-size="12" fill="#a8a28f" font-family="sans-serif">Context selected in every row. Wide = words, narrow = one glyph. Light and dark panels are drawn by hand; the app draws its own button background.</text>'
 printf '</svg>\n'
 } > tab-icons.svg
 echo wrote tab-icons.svg
