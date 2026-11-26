@@ -35,3 +35,6 @@ Rejected: text glyph sets A to G (less clear), drawn SVG icons H to J (more work
 
 ## Built
 Tabs are 📊 Overview, 🧠 Context, 💰 Cost: emoji and word on the wide row, the emoji alone elsewhere. The tab in use is marked by dimming the others (`dimColor`), not the accent pill, because a Button's background could not be confirmed settable. The terminal has no tab buttons, so brackets are gone. The compact tab button is still counted at 4 columns, measured for `◷`, not for emoji. Follow-up: `assets/mockups-icons/keep-emoji.svg` shows a green ✅ for the keep-warm box (not chosen yet).
+
+## Also built here (user's request, 2026-11-26)
+The keep-warm checkbox is gone. Keep warm now shows as the pace's own green bold ✓ (`OK`, same meaning: fine) right after the chip while it is on, and as nothing while it is off; hover says what it is. No button, no ✗. `/keepwarm on|off|90m|always|status` is the only control; a click to warm a cold cache is now `/keepwarm on`. Removed `pressKeep` and the click tests; the tip is one text.

@@ -584,20 +584,9 @@ export async function keepOf($: EngineInterface, s: Keep): Promise<KeepView | nu
   }
 }
 
-/**
- * The button's hover: what the box means in the state it is in. `coldUsd` is what re-writing the cache costs, when the
- * band knows it.
- */
-export const keepTip = (v: KeepView, coldUsd: number | null = null): string =>
-  v.on
-    ? 'Keep warm is on until 24h after your last message. A short ping every 50 idle minutes keeps the cache warm (a few cents a ping). Untick to stop.'
-    : !v.switch
-      ? 'Keep warm is off in this conversation. Tick it to keep the cache warm for 24h after each message.'
-      : v.cold
-        ? `The cache went cold (the computer slept or was off, so nothing could ping). Click to warm it now (${coldUsd === null ? 'a re-write of the cache' : `about ${usd(coldUsd)}, a re-write of the cache`}), or your next message will.`
-        : v.stopped
-          ? `Keep warm stopped: ${v.stopped}. Click to start again, or your next message will.`
-          : 'Keep warm is off. Click to start again, or your next message will.'
+/** The mark's hover: it shows only while keep-warm is on. */
+export const keepTip = (): string =>
+  'Keep warm is on until 24h after your last message. A short ping every 50 idle minutes keeps the cache warm (a few cents a ping). /keepwarm off stops it.'
 
 /** The answer to `/keepwarm status`, for `/spendometer status` too. */
 export async function keepwarmStatus($: EngineInterface, s: Keep): Promise<string> {
@@ -626,24 +615,6 @@ async function switchOnWithWindow($: EngineInterface, s: Keep, alsoDefault: bool
   $.ui.invalidate('ui.render')
 }
 
-/**
- * The keep warm checkbox. Ticked: turns this conversation's switch off and stops its window, for good. Unticked: turns
- * the switch on; on a cold cache it sends one ping now to warm it (and opens 24 hours when that lands), on a warm one it
- * opens 24 hours.
- */
-export async function pressKeep($: EngineInterface, s: Keep) {
-  if (!(await active($, s))) return
-  // What the click started with: an untick while a warm-now ping is out wins over it.
-  const gen = s.gen
-  const offs = s.offs
-  // Read now, not from the drawing the click landed on: a click before the redraw would repeat the last press.
-  if ((await keepOf($, s))?.on) return switchOff($, s, false)
-  await putKeepRec($, s.sid, { on: true })
-  const lastAt = await lastAtOf($)
-  if (lastAt > 0 && isCold(lastAt, await $.clock.now())) return warmNow($, s, gen, offs)
-  await startWindow($, s, WINDOW_MS, PING_AFTER_MS)
-  $.ui.invalidate('ui.render')
-}
 
 const USAGE = 'keepwarm takes on, a window such as 90m or 6h, or always, off, or status'
 

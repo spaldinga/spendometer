@@ -17,7 +17,7 @@ import {
 import type { CacheView, PaceMode, PaceRow, Tab, TurnUsage } from './cache-art'
 import { CACHE_PREFIX, SPEND_PREFIX, addKeepWarm, cacheFacts, putCache, readSpend, readStoredCache, recordOf } from './cache-store'
 import type { Keep } from './keepwarm'
-import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, keepwarmCommand, keepwarmStatus, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, pressKeep, startKeep, warnCold } from './keepwarm'
+import { KEEP_PREFIX, afterTurn, endConversation, freshKeep, keepOf, keepTip, keepwarmCommand, keepwarmStatus, noteCompact, noteRequest, noteSeeded, pingKeptCacheWarm, startKeep, warnCold } from './keepwarm'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './keepwarm'
 import { metricsOf, nextGrowth, putSpan } from './metrics'
@@ -914,15 +914,12 @@ export const register: Register = on => {
           <Text wrap="wrap">{text}</Text>
         </Box>
       ) : null
-    // The keep warm button is a checkbox at every width: ✓ ticked, a dim ✗ unticked. The desktop app draws a button's
-    // text in its own colour, so the ✓ is white there, not the pace's green.
-    // Its hover says what the state means, the cold cache included; the figures are the chip's hover.
-    const keepLabel = keep ? '✓' : '✗'
-    const keepButton = keepView === null ? null : (
+    // Keep warm is a status mark, not a button: the pace's green bold ✓ (the same OK colour and meaning) while it is on,
+    // nothing while it is off. /keepwarm turns it on and off. The hover says what the mark means.
+    const keepMark = keepView === null || !keepView.on ? null : (
       <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        {/* plain: no brackets in the terminal and no button background on the desktop. */}
-        <Button key="keep-warm" label={keepLabel} plain dimColor={!keep} onPress={() => pressKeep($, kw)} />
-        {tip('keep', keepTip(keepView, keepColdUsd))}
+        <Text key="keep-warm" color={OK} bold>✓</Text>
+        {tip('keep', keepTip())}
       </Box>
     )
     const grow = <Box key="grow" flexGrow={1} />
@@ -1027,23 +1024,24 @@ export const register: Register = on => {
     const hasCache = view !== null
     // The keep button sits right after the chip, so its columns belong to the cache part, not to the buttons.
     // ✓ and ✗ are one character, but a font may draw them two columns wide: measured as two, as the flame was.
-    const keepButtonCols = buttonCols('  ', BUTTON_GAP, k)
-    const keepWideCols = keep !== null ? keepButtonCols : 0
-    const keepCompactCols = keep !== null ? KEEP_COMPACT_COLS : 0
+    // The mark is one ✓ and its gap; it takes the columns only while it shows (keep-warm on).
+    const keepMarkCols = keep === true ? KEEP_COMPACT_COLS : 0
+    const keepWideCols = keepMarkCols
+    const keepCompactCols = keepMarkCols
     const cacheInlineCols = hasCache ? badgeCols + t(summaryText) + keepWideCols + CACHE_MARGIN : 0
     const cacheBlockCols =
       hasCache && view
         ? Math.max(badgeCols, blockCols([view.mode === 'cold' ? `${view.idle} idle` : `${minsLeft}m left`, nextCost ? `${nextCost} next` : ''], 0, k)) + CACHE_MARGIN
         : 0
     // Before the first reply there is no chip to sit beside: the keep button stays among the buttons.
-    const keepAlone = !view && keep !== null
+    const keepAlone = !view && keep === true
     const buttonsWideCols =
       (button ? FOLD_COLS : 0) +
       (tabsShown ? TABS.reduce((n, id) => n + buttonCols(tabLabel(id, true), BUTTON_GAP, k), 0) : 0) +
-      (keepAlone ? keepButtonCols : 0)
+      (keepAlone ? keepMarkCols : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
     // The tabs: a glyph button each, and the one in use has its two brackets.
-    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS
+    const buttonsCols = ((button ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (keepAlone ? keepMarkCols : 0)
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.
@@ -1091,7 +1089,7 @@ export const register: Register = on => {
       kind: minimal ? 'minimal' : kind === 'stacked' ? `compact step ${compactStep}${slim ? `, slim ${slim}` : ''}` : kind,
       need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}${need.slim ? `, slim ${need.slim.join('/')}+${need.buttons - need.fold}, minimal ${need.minimal}` : ''}`,
     }
-    const buttons = [keepAlone ? keepButton : null]
+    const buttons = [keepAlone ? keepMark : null]
     // Buttons that do not fit beside the row take a row of their own, right-aligned: the terminal, and the desktop
     // before the first reply. From the first reply on the desktop layoutOf never asks for one.
     const buttonsRowEl = buttonsRow ? (
@@ -1410,7 +1408,7 @@ export const register: Register = on => {
                 {summary}
                 {chipHover}
               </Box>
-              {keepButton}
+              {keepMark}
             </Box>
           )}
           {grow}
@@ -1431,7 +1429,7 @@ export const register: Register = on => {
                 {showNext ? <Text key="next" color="subtle"> next</Text> : null}
                 {chipHover}
               </Box>
-              {slim >= 2 ? null : keepButton}
+              {slim >= 2 ? null : keepMark}
             </Box>
           )}
           {grow}
@@ -1451,7 +1449,7 @@ export const register: Register = on => {
             {summary}
             {chipHover}
           </Box>
-          {keepButton}
+          {keepMark}
           {grow}
           {inlineButtons}
         </Box>,

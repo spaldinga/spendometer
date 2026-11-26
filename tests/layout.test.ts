@@ -145,7 +145,7 @@ test('at 90 columns the compact row holds only the essentials, buttons inline as
   const band = await mountAt($, on, 90)
   // The estimate: the compact row is 56 columns here (step 0), the icon button 6 and 2 columns of slack: with the tabs (3 more icon buttons) 85 is the least width for step 0 with the buttons inline.
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   expect(await band.find({ key: 'cache-fold' })).toBeDefined()
   expect(await band.find({ text: '99% left' })).toBeDefined()
   expect(await band.find({ text: '82% left' })).toBeDefined()
@@ -171,14 +171,14 @@ test('the compact buttons: fold and three tabs are 4 × 4 columns = 16 (the emoj
 test('at 160 columns the same content is one wide row, buttons inline with their words', async ($, on) => {
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
 
 test('with keep-warm off the label is the bare ✗, at the wide width too', async ($, on) => {
   const band = await mountAt($, on, 160, false)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✗')
+  expect(await band.find({ key: 'keep' })).toBeUndefined()
   await band.unmount()
 })
 
@@ -219,7 +219,7 @@ const keysOf = (b: { children?: { props?: { key?: string } }[] } | undefined) =>
 test('wide: the keep button is the checkbox right after the chip, not among the right-hand buttons', async ($, on) => {
   const wide = await mountAt($, on, 160)
   expect(keysOf(await wide.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
-  expect((await wide.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect(await wide.find({ key: 'keep' })).toBeDefined()
   expect(keysOf(await wide.find({ key: 'row' })).includes('keep')).toBe(false)
   await wide.unmount()
 })
@@ -329,7 +329,7 @@ test('the terminal, narrow: the keep button is on the cache row after the chip, 
 test('the keep button is there in the terminal too, right after the chip', async ($, on) => {
   const band = await mountAt($, on, 160, true, 22, 'terminal')
   expect(keysOf(await band.find({ key: 'inline' }))).toEqual(['chip-group', 'keep'])
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✓')
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   await band.unmount()
 })
 
@@ -337,7 +337,7 @@ test('at 100 columns, a usual desktop window, every button stays on the first ro
   // Since the tabs always show (2026-11-26) the wide row needs about 140 columns; 100 is compact step 0.
   const band = await mountAt($, on, 100)
   expect(await band.find({ key: 'buttons-row' })).toBeUndefined()
-  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   await band.unmount()
 })
 
@@ -423,7 +423,7 @@ test('narrow ladder: at 38 columns the tabs are inline without the + button, the
   const band = await mountAt($, on, 38)
   expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
-  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeDefined()
   await band.unmount()
 })
@@ -437,7 +437,7 @@ test('narrow ladder: with the 5h pace shown, 46 columns keep the track', async (
 test('narrow ladder: with the 5h pace shown, 40 columns drop the track and its words, keeping the tabs and the keep box', async ($, on) => {
   const band = await paced($, on, 40, ON_PACE)
   expect(await tracks(band)).toEqual([])
-  expect(await band.find({ key: 'keep-warm' })).toBeDefined()
+  expect(await band.find({ key: 'keep' })).toBeDefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
   expect(await band.find({ key: 'cache-fold' })).toBeUndefined()
   await band.unmount()
@@ -445,7 +445,7 @@ test('narrow ladder: with the 5h pace shown, 40 columns drop the track and its w
 
 test('narrow ladder: at 36 columns the keep box goes, the tabs and both windows stay', async ($, on) => {
   const band = await mountAt($, on, 36)
-  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  expect(await band.find({ key: 'keep' })).toBeUndefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeDefined()
   expect(await band.find({ text: '82%' })).toBeDefined()
@@ -456,7 +456,7 @@ test('narrow ladder: at 30 columns only the 5h window is left, with the tabs', a
   const band = await mountAt($, on, 30)
   expect(await band.find({ text: '82%' })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeUndefined()
-  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  expect(await band.find({ key: 'keep' })).toBeUndefined()
   for (const key of TABS_ON) expect(await band.find({ key })).toBeDefined()
   await band.unmount()
 })
@@ -464,7 +464,7 @@ test('narrow ladder: at 30 columns only the 5h window is left, with the tabs', a
 test('minimal (28 columns and under): the 5h pie and percent, Robo and +, nothing else; + opens the card on the stored tab', async ($, on) => {
   const band = await mountAt($, on, 20)
   for (const key of TABS_ON) expect(await band.find({ key })).toBeUndefined()
-  expect(await band.find({ key: 'keep-warm' })).toBeUndefined()
+  expect(await band.find({ key: 'keep' })).toBeUndefined()
   expect(await band.find({ key: 'spend-total' })).toBeUndefined()
   expect(await band.find({ text: '82%' })).toBeDefined()
   expect(await band.find({ text: '99%' })).toBeUndefined()
@@ -554,7 +554,7 @@ test('the progress takes its own row at the bottom, even on a wide band, and the
   expect(await band.find({ key: 'progress' })).toBeUndefined()
   expect(await band.find({ key: 'progress-row' })).toBeDefined()
   expect(await band.find({ text: ' 1/3' })).toBeDefined()
-  for (const key of ['cache-fold', 'keep-warm']) expect(await band.find({ key })).toBeDefined()
+  for (const key of ['cache-fold', 'keep']) expect(await band.find({ key })).toBeDefined()
   await band.unmount()
 })
 
@@ -704,13 +704,13 @@ test('the card element is sized to the band on screen, so the shrunk drawing lea
 test('at 104 columns, with a cold cache idle 18 hours, the wide row and its word buttons no longer fit', async ($, on) => {
   // Measured on 2026-11-18: at 104 columns the wide row cut off the minutes and pushed the buttons out of view.
   const band = await mountAt($, on, 104, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✗') // cold: keep warm is off with the cache
+  expect(await band.find({ key: 'keep' })).toBeUndefined() // cold: keep warm is off with the cache
   await band.unmount()
 })
 
 test('at 150 columns the same row stays wide, the buttons with their words', async ($, on) => {
   const band = await mountAt($, on, 150, true, 18 * 60 + 18)
-  expect((await band.find({ key: 'keep-warm' }))?.props.label).toBe('✗') // cold: keep warm is off with the cache
+  expect(await band.find({ key: 'keep' })).toBeUndefined() // cold: keep warm is off with the cache
   await band.unmount()
 })
 

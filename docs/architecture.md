@@ -6,7 +6,7 @@ the same commit. Why things are as they are: [`adr/`](adr/). What is next: [`bac
 ## What it is
 
 A Claude Code mod that draws a band above the prompt: usage limits, the conversation's cost, the cache state with a
-keep-warm checkbox, a progress bar, the subagents at work, and a card that opens under it with tabs. It also holds risky
+keep-warm mark, a progress bar, the subagents at work, and a card that opens under it with tabs. It also holds risky
 git commands until the user answers, and keeps the prompt cache warm between messages.
 
 ## Entry point
@@ -33,7 +33,7 @@ directly. Engine code lives in `register.tsx`, `keepwarm.ts`, `guard.ts` and `ca
 | File | Role | Pure |
 |---|---|---|
 | `register.tsx` | All event wiring; the band's render; the settings command | no |
-| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message), the checkbox state (follows the cache: cold stops the window, a click on a cold cache warms it with one ping) and its hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
+| `keepwarm.ts` | The keep-warm pinger: window, deadline, retries; the switch (on by default, 24h after each message), the mark's state (follows the cache: cold stops the window; `/keepwarm on` on a cold cache warms it with one ping) and its hover ([ADR 0004](adr/0004-keep-warm-built-in.md), [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cache-store.ts` | Reads and writes the cache facts and the session's `Spent` record in atoms and the store | no |
 | `cache-art.ts` | Prices and models; the chip, Robo, pie, 5h pace track and card SVGs; the chip's hover text; the 5h pace words | yes |
@@ -62,7 +62,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 1. Read the cache view, usage windows, spend and keep-warm state.
 2. Estimate each layout's width in columns from the text it will show (`textCols`; about half a column a character
    on the desktop) and let `layoutOf` pick the layout. From the first reply on the desktop the band is one row at every width: wide, compact (5 steps, tabs and + inline), step 4 without + (the tabs open and close the card), then slimmer variants (no 5h pace track, no keep box, the 5h window only), and last the minimal row (5h pie and percent, Robo, +; no tabs), chosen even when it does not fit. There is no buttons row and no tight layout there. The terminal, and the desktop before the first reply, keep compact, tight and a row of their own for buttons that do not fit.
-3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm checkbox (✓/✗, measured as two columns), then the
+3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm mark (a green ✓ only while on), then the
    tab buttons (desktop, once there is a cache view, card open or closed: a press opens the card on that tab, or closes it on the tab in use; `pressTab` over `toggleFold`), and fold (not from compact step 4 down, until the minimal row, see 2).
 4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` draws the chosen tab at the
    band's width; `fitOpen` drops the progress row if the band would pass `maxRows`.
