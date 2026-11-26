@@ -39,37 +39,52 @@ hooks/
     card.ts               the card frame: tab, grid of zones, status lines; calls the domains' zone drawers
     settings.ts           /spendometer: parses the keyword, asks the owning domain, writes settings
   cost/
-    prices.ts             MODELS, familyOf, cold/warm/turn cost, usd, tok
-    cache.ts              cache facts (from cache-store.ts) and viewOf
-    spend.ts              the Spent record, addSpend, addToolOut cost side, spendLine, per-session reset
-    days.ts, results.ts   (moved)
-    chip.ts               WARM/COLD chip, Robo, chipTip, keepWarmCost, cheaperModels
-    metrics.ts            hit rate, outliers, delegation (from metrics.ts)
-    card-zones.ts         SPEND, DELEGATION, CACHE DISCOUNT, PER MESSAGE, BY MODEL
-    keepwarm/
-      pinger.ts           window, deadline, retries, ping, warmNow
-      switch.ts           records, on/off, checkbox view, keepTip, pressKeep
-      command.ts          /keepwarm, status, warnCold, cache-tax detection
+    prices.ts             MODELS, familyOf, cold/warm/turn cost, usd, tok (shared by the two slices below)
+    spend/
+      record.ts           the Spent record, addSpend, the cost side of addToolOut, spendLine, per-session reset
+      days.ts, results.ts (moved)
+      metrics.ts          hit rate, outliers, delegation (from metrics.ts)
+      card.ts             SPEND, DELEGATION, PER MESSAGE, BY MODEL zones
+    cache/
+      facts.ts            cache facts (from cache-store.ts) and viewOf
+      chip.ts             WARM/COLD chip, Robo, chipTip, keepWarmCost, cheaperModels
+      card.ts             CACHE DISCOUNT zone
+      keepwarm/
+        pinger.ts         window, deadline, retries, ping, warmNow
+        switch.ts         records, on/off, checkbox view, keepTip, pressKeep
+        command.ts        /keepwarm, status, warnCold, cache-tax detection
   capacity/
-    windows.ts            windows atom, clean, trackPace, liveWindows, pull
-    pace.ts               (moved)
-    pace-art.ts           pies, pace track, paceWords, fmtReset, PACE_TIP
-    context.ts            addContext, the measure handler, seen atom, forgetPath, measureCall
-    toolout.ts            (moved)
-    runway.ts             runway, nextGrowth (from metrics.ts)
-    card-zones.ts         pace strip, CONVERSATION SIZE / RE-CACHE, TOOL OUTPUT
+    usage/
+      windows.ts          windows atom, clean, trackPace, liveWindows, pull
+      pace.ts             (moved)
+      art.ts              pies, pace track, paceWords, fmtReset, PACE_TIP
+      card.ts             the pace strip
+    context/
+      size.ts             addContext, the measure handler, seen atom, forgetPath, measureCall
+      toolout.ts          (moved)
+      runway.ts           runway, nextGrowth (from metrics.ts)
+      card.ts             CONVERSATION SIZE / RE-CACHE, TOOL OUTPUT zones
   activity/
-    progress.ts, progress-art.ts   (moved)
     crew.ts               crew atom, crewText, agent.spawn handling
-    themes/
-      kit.ts              shared drawing helpers (text, bar, dotted, anim, nodesOf)
-      calm.ts, vitals.ts, bridge.ts, wake.ts, dial.ts, comet.ts
-      index.ts            THEME_IDS, THEMES, names, isThemeId, themeIdOf, old ids
+    progress/
+      progress.ts, art.ts (moved)
+      themes/
+        kit.ts            shared drawing helpers (text, bar, dotted, anim, nodesOf)
+        calm.ts, vitals.ts, bridge.ts, wake.ts, dial.ts, comet.ts
+        index.ts          THEME_IDS, THEMES, names, isThemeId, themeIdOf, old ids
   safety/
-    guard.ts              (moved; keeps the MIT and Blast Radius notices)
-    hold.ts               held, ticking, waitAt, waitTick, pass, resetHold, the tool.call hold
-    hold-band.tsx         the band shown while a command is held
+    guard/
+      guard.ts            (moved; keeps the MIT and Blast Radius notices)
+      hold.ts             held, ticking, waitAt, waitTick, pass, resetHold, the tool.call hold
+      band.tsx            the band shown while a command is held
 ```
+
+Step paths below name the domain folder; the file goes into its slice subfolder as shown here.
+
+**Slice views.** A slice that shows something in the row exports a view: its piece for each layout mode and the piece's
+width in columns. `band/` composes the pieces and keeps today's ladder in `layoutOf` unchanged. A per-piece drop
+priority would change which piece goes first on a narrow band, so it is not part of this refactor (a later item if
+wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones into a box that `band/card.ts` gives it.
 
 `metricsOf` assembles figures from both cost and capacity for the card, so it goes to `band/card.ts` (or a
 `band/card-metrics.ts` if that keeps `card.ts` under 400 lines).
@@ -129,6 +144,12 @@ hooks/
 21. **Split the big tests, one commit per file**: `keepwarm.test.ts` by keepwarm file, `card.test.ts` and
     `layout.test.ts` by domain/infrastructure. Cases unchanged, same total count.
 22. **Close.** `docs/architecture.md` final pass, ADR 0008 to accepted, backlog 80 `status: done` (file and table).
+
+## Open, not part of this refactor
+
+- **Should the card tabs follow the domains?** Overview mixes capacity (the pace strip) with cost (delegation, spend);
+  Context is capacity and Cost is cost. Changing the tabs is a behaviour change, so it is decided with the user and
+  done as its own item (with or after 90 and 100), not in these steps.
 
 ## Done when
 

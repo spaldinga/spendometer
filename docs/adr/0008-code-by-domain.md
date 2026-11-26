@@ -1,4 +1,4 @@
-# 0008. Code is grouped by the user's questions, with the band as infrastructure
+# 0008. Vertical slices, grouped by the user's four questions, with the band as infrastructure
 
 Status: proposed (2026-11-26)
 
@@ -9,8 +9,12 @@ smaller files with one role each. Grouping by feature (`band/`, `card/`, `keepwa
 first direction; it splits things that belong together (spend and the cache share the price table) and gives seven
 loose folders.
 
+Options weighed: DDD (too heavy for measurements plus a view), layers (one change spread over four folders), vertical
+slices (one folder per feature, matching how the backlog is written). Slices were chosen, then grouped by domain.
+
 ## Decision
-- Four domains, each a question the user asks, not a part of the code:
+- Vertical slices: a slice (usage, context, spend, cache, progress, crew, guard) owns its state, its pure logic and its
+  drawing. Slices are grouped into four domains, each a question the user asks, not a part of the code:
 
   | Folder | The user's question | Holds |
   |---|---|---|
@@ -19,8 +23,11 @@ loose folders.
   | `activity/` | What is Claude doing right now? | progress, its themes, the crew of subagents |
   | `safety/` | Is Claude about to do something I can't undo? | the git hold |
 
-- `band/` is infrastructure, not a domain: the render, the row layout, buttons and hovers, the card's frame, the
-  settings command, and the look (colours, `svgDoc`, the font). `register.tsx` keeps only the `on(...)` wiring.
+- `band/` is infrastructure, not a domain: the render, the row layout, widths and the narrow ladder, buttons and
+  hovers, the card's frame, the settings command, and the look (colours, `svgDoc`, the font). `register.tsx` keeps only
+  the `on(...)` wiring: one event may call several slices (`turn.complete` updates spend, cache and context).
+- Slices are subfolders of their domain (`cost/spend/`, `cost/cache/`, `capacity/usage/`, `capacity/context/`,
+  `activity/progress/`); a slice of one or two files stays a file in the domain folder (`activity/crew.ts`).
 - A domain never imports another domain. What one domain needs from another is passed in as data by `register.tsx` or
   `band/`, or the domain keeps its own copy of a small helper (a formatter, `esc`). Copying is preferred over a shared
   utility module.
