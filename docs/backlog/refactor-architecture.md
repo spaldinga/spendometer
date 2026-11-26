@@ -26,4 +26,7 @@ Why this helps an AI coder: it reads a 300-line file whole and in one go, while 
 No file over about 400 lines; each file has one role that its name says; magic numbers named; all tests pass unchanged.
 
 ## Open
-- Do it before the Context and Cost pictures (less to move later), or after?
+- Settled 2026-11-26: before the Context and Cost pictures (items 90 and 100), so they land in small files.
+- Settled 2026-11-26: the code is grouped by four domains, each a question the user asks (cost, capacity, activity,
+  safety), plus `band/` as infrastructure; domains do not import each other. See [ADR 0008](../adr/0008-code-by-domain.md)
+  and the plan [2026-11-26-refactor-architecture](../plans/2026-11-26-refactor-architecture.md).

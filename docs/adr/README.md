@@ -17,6 +17,7 @@ cannot, so a later change does not undo a decision without knowing it.
 | [0005](0005-card-tabs-replace-metric-row.md) | Tabs on the card replace the metric row | accepted |
 | [0006](0006-docs-live-in-the-repo.md) | Backlog, ADRs and architecture notes live in the repo | accepted |
 | [0007](0007-keep-warm-on-by-default-24h.md) | Keep warm is on by default, 24h after each message, shown as a checkbox (partly supersedes 0004) | accepted |
+| [0008](0008-code-by-domain.md) | Code grouped by the user's questions (cost, capacity, activity, safety), with `band/` as infrastructure | proposed |
 
 Template:
 
