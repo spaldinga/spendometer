@@ -1,43 +1,33 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { CacheFacts, Fold, Spent, Turn, Window } from '../types'
-import { LIST_TOOLS, REPORT_TOOL, barText, fmtElapsed, labelOf, pulseText } from './activity/progress/progress'
-import { BAR_H, crewSvg } from './activity/progress/art'
-import { dropFinished, noteListCall, noteReport, readProgress } from './activity/progress/state'
-import { CREW_SHOWN, addCrew, crewText, dropDoneCrew, finishCrew, noteCrewStep, runningCrew } from './activity/crew'
-import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './activity/progress/themes'
+import type { CacheFacts, Spent } from '../types'
+import { LIST_TOOLS, REPORT_TOOL, labelOf } from './activity/progress/progress'
+import { countStep, dropFinished, noteListCall, noteReport, startTurn } from './activity/progress/state'
+import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew'
+import { DEFAULT_THEME, THEME_IDS, THEME_NAMES, themeIdOf } from './activity/progress/themes'
 import type { ThemeId } from './activity/progress/themes'
-import { SHELLS, heldNow, holdCommand } from './safety/guard/hold'
-import { heldBand } from './safety/guard/band'
+import { SHELLS, holdCommand } from './safety/guard/hold'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
-import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
-import { TABS, TAB_NAMES, cardSvg } from './band/card'
+import { TABS } from './band/card'
 import type { Tab } from './band/card'
-import { bandPx } from './layout'
-import { PACE_TIP, PACE_TRACK_PX, PIE_SIZE, fmtReset, paceTrackSvg, paceWords, pieSvg } from './capacity/usage/art'
-import type { PaceMode } from './capacity/usage/art'
-import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'
-import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
-import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
-import type { CacheView } from './cost/cache/facts'
-import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readDays, readSpend, recordOf, spendLine, addToolOut, addContext } from './cost/spend/record'
+import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
+import { CACHE_PREFIX, TTL_MS, cacheFacts, putCache } from './cost/cache/facts'
+import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readSpend, spendLine, addToolOut, addContext } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
-import { afterTurn, endConversation, keepOf, keepTip, noteCompact, noteRequest, noteSeeded, startKeep } from './cost/cache/keepwarm/lifecycle'
+import { afterTurn, endConversation, keepOf, noteCompact, noteRequest, noteSeeded, startKeep } from './cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, keepwarmStatus, warnCold } from './cost/cache/keepwarm/command'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
-import { metricsOf } from './band/card-metrics'
-import { CELLS, LOW_AT, NAMES, SHORT, TIGHT_CELLS, fiveAtOf, needOf } from './band/widths'
+import { arm, renderBand } from './band/render'
+import { TAB_KEY, resetFold, tabOf, toggleFold } from './band/buttons'
+import { THEME_KEY, themeOf } from './band/settings'
+import { widthLine } from './band/width-note'
 import { nextGrowth } from './capacity/context/runway'
 import { DAY_PREFIX, isOldDay } from './cost/spend/days'
-import { WINDOW_MS } from './capacity/usage/pace'
-import { keptWindows, liveWindows, paceFor, pull, setWindows, trackPace } from './capacity/usage/windows'
-import {
-  BUTTON_GAP, COMPACT_CHAR_COLS, COMPACT_MARGIN, DESKTOP_COL_PX, fitOpen, layoutOf, rowsOf, TIP_LIFT,
-} from './layout'
+import { pull, setWindows } from './capacity/usage/windows'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
 // dot-matrix bars. Shows how much of each usage window is LEFT, 7-day first, then
@@ -53,18 +43,10 @@ import {
 // that the button, the typed /keepwarm and the ping timer all read. A ping that really read the cache
 // starts the hour again. With cache-tax installed it stays passive: two pingers would ping twice.
 
-/** How often the band redraws, so the countdown and the warm-to-cold flip stay current. */
-const TICK_MS = 30_000
 /** The mod's own settings command: one name, so a rename touches one line. */
 const SETTINGS = 'spendometer'
 const HOLD_KEY = 'hold'
-/** The progress row's drawing theme, saved account-wide: an id from THEME_IDS. */
-const THEME_KEY = 'progressTheme'
-/** The card's tab in the store: overview, context or cost. */
-const TAB_KEY = 'cardTab'
 
-const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
-const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
 
@@ -84,25 +66,6 @@ const switchOf = async ($: EngineInterface, key: string, fallback: boolean): Pro
   }
 }
 
-/** The progress theme in the store: an id it knows, else the default. */
-const themeOf = async ($: EngineInterface): Promise<ThemeId> => {
-  try {
-    const v = await $.store.get(THEME_KEY)
-    return themeIdOf(v) ?? DEFAULT_THEME
-  } catch {
-    return DEFAULT_THEME
-  }
-}
-
-/** The card's tab in the store: one it knows, else Overview. */
-const tabOf = async ($: EngineInterface): Promise<Tab> => {
-  try {
-    const v = await $.store.get(TAB_KEY)
-    return TABS.find(id => id === v) ?? 'overview'
-  } catch {
-    return 'overview'
-  }
-}
 
 const TAB_WHAT: Record<Tab, string> = { overview: 'pace, delegation and spend', context: 'conversation size and tool output', cost: 'cache discount, cost per message and by model' }
 const tabList = (now: Tab): string =>
@@ -171,65 +134,6 @@ const settingsAnswer = async ($: EngineInterface, kw: Keep, args: string): Promi
   )
 }
 
-/**
- * The width the band was last drawn at, as the engine gave it, and the layout it chose: shown by the status
- * command, so a layout that does not fit can be traced to the width the band was given.
- */
-let lastWidth: { body: number | null; viewport: number | null; used: number; kind: string; need: string; fit?: string } | null = null
-const widthLine = (): string =>
-  lastWidth === null
-    ? 'band: not drawn yet since the mod loaded'
-    : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}${lastWidth.fit ? `; open card ${lastWidth.fit}` : ''}`
-
-/** How wide a button's hover text is, in columns. */
-const TIP_COLS = 44
-
-/** The step's name beside the bar is cut to this, so the bar keeps its room. */
-const NOTE_MAX = 32
-const BAR_MIN_PX = 140
-/** A column is 12 px; the row's words are measured at COMPACT_CHAR_COLS of it a character. */
-const COL_PX_FULL = 12
-
-const LONG: Record<string, string> = { seven_day: '7-day limit', five_hour: '5-hour limit', spend_limit: 'Spend limit' }
-const COLORS: Record<string, string> = { seven_day: ORANGE, five_hour: YELLOW }
-
-const dots = (left: number, cells: number): { on: string; off: string } => {
-  const n = Math.max(0, Math.min(cells, Math.round((left / 100) * cells)))
-  return { on: '●'.repeat(n), off: '·'.repeat(cells - n) }
-}
-
-/**
- * Opens the cache card if it is closed, closes it if open: the fold button and `/spendometer fold`.
- * The fold is kept per cache state (a cold cache opens by default), as the button has always done. Returns
- * whether the card is now open, or null while there is no card yet.
- */
-const toggleFold = async ($: EngineInterface): Promise<boolean | null> => {
-  const view = viewOf(await cacheFacts($), await $.clock.now())
-  if (!view) return null
-  let open = false
-  await update($, fold, f => {
-    open = !(f && f.mode === view.mode ? f.open : view.mode === 'cold')
-    return { mode: view.mode, open }
-  })
-  $.ui.invalidate('ui.render')
-  return open
-}
-
-/**
- * A tab button: card closed, the tab is stored and the card opens; card open, another tab is stored, and the one
- * in use closes the card. The fold is the one `toggleFold` keeps, so the fold button and `/spendometer fold` agree.
- */
-const pressTab = async ($: EngineInterface, id: Tab): Promise<void> => {
-  const view = viewOf(await cacheFacts($), await $.clock.now())
-  const stored = await read($, fold)
-  const open = view !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
-  const same = id === (await tabOf($))
-  if (!open || !same) await $.store.set(TAB_KEY, id)
-  if (!open || same) await toggleFold($)
-  else $.ui.invalidate('ui.render')
-}
-
-
 /** Fresh context figures from the engine onto the cache facts, when it has them. */
 const measure = async ($: EngineInterface, lastAt: number | null, model: string | null): Promise<void> => {
   const u = await $.session.usage()
@@ -242,21 +146,6 @@ const measure = async ($: EngineInterface, lastAt: number | null, model: string 
   }))
 }
 
-
-/**
- * The 30 s redraw. A reload loses this flag and the old timer with it, and a resume may skip session.start,
- * so the timer is armed from the start, the first request and the first render; the flag keeps it to one.
- */
-let ticking = false
-const arm = ($: EngineInterface): void => {
-  if (ticking) return
-  ticking = true
-  try {
-    $.clock.every(TICK_MS, () => $.ui.invalidate('ui.render'))
-  } catch {
-    ticking = false
-  }
-}
 
 /** Counts what a shell command that ran left behind: its commits and pull requests, and its output in the context. */
 const afterShell = async ($: EngineInterface, tool: string, e: unknown, command: string, r: unknown): Promise<void> => {
@@ -409,7 +298,7 @@ export const register: Register = on => {
     if (e.reason === 'clear') {
       try {
         await update($, { plugin: 'spendometer', key: 'cache' } as const, () => null)
-        await update($, fold, () => null)
+        await resetFold($)
         await clearSeen($)
       } catch { /* the band redraws from the next turn */ }
     }
@@ -437,7 +326,7 @@ export const register: Register = on => {
     const r = await next(e)
     if (e.source === 'clear' || e.source === 'compact') {
       await putCache($, () => null)
-      await update($, fold, () => null)
+      await resetFold($)
       await clearSeen($)
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
@@ -474,11 +363,11 @@ export const register: Register = on => {
       await putCache($, c => ({ lastAt: now, tokens: c?.tokens ?? 0, window: c?.window ?? 0, model: c?.model ?? null }))
       // A turn's first request starts its clock, and a list finished last turn has had its moment.
       if (e.index === 0) {
-        await update($, turn, () => ({ startedAt: now, steps: 1 }))
+        await startTurn($, now)
         await dropFinished($)
         await dropDoneCrew($)
       } else {
-        await update($, turn, t => (t ? { ...t, steps: t.steps + 1 } : { startedAt: now, steps: 1 }))
+        await countStep($, now)
       }
     } else {
       // A subagent's request. One the band never saw start still gets a place.
@@ -520,536 +409,5 @@ export const register: Register = on => {
     return r
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
-
-    const ui = $.ui.resolve(e)
-    const { Box, Button, Text } = ui
-    // Svg draws on desktop, mobile and VS Code; the terminal gets the text form.
-    // Ask the surface, not the table: the terminal's table still lists Svg.
-    const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : null
-
-    // A held command takes the band: what it would lose, and the two answers. Cancel comes first.
-    const holding = heldNow()
-    const heldEl = holding ? heldBand(holding, ui) : null
-    if (heldEl) return heldEl
-    // The atom is cleared by a resume and refilled only by events that may not come: an empty one asks the engine.
-    arm($)
-    const kept = await keptWindows($)
-    const now = await $.clock.now()
-    // A window whose reset time has passed is a new window: the stored share used is from the old one.
-    // Shown as 100% left with no reset time until the next reply brings the real figures.
-    const list = (kept.length > 0 ? kept : await liveWindows($)).map(w =>
-      w.resetsAt && Date.parse(w.resetsAt) <= now ? { ...w, percentUsed: 0, resetsAt: undefined } : w,
-    )
-    const view = viewOf((await read($, { plugin: 'spendometer', key: 'cache' } as const)) ?? (await readStoredCache($)), now)
-
-    // Ticked while the cache is kept warm (see keepOf); null (no button) beside cache-tax.
-    const keepView = await keepOf($, kw)
-    const keep = keepView === null ? null : keepView.on
-    // What re-writing the cache costs, for the hover of a box that went off because the cache is cold.
-    const keepModel = view ? mineModel(view) : undefined
-    const keepColdUsd = view && keepModel ? coldCost(keepModel, view.tokens) : null
-    // What each button does, shown on hover. A box that is hidden until hovered, drawn above the
-    // button with a rounded frame: the way Claude Code's own built-in mods show hover text. Buttons
-    // have no tooltip of their own. Drawing surfaces only; the terminal has no pointer to hover with.
-    // A tip anchored at a button's right edge grows to the left: on a narrow band TIP_COLS ran past the band's left
-    // edge and cut the text off (2026-11-26), so it takes at most what the band leaves left of the buttons.
-    const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
-    const rightTipCols = Math.max(16, Math.min(TIP_COLS, columns - 16))
-    const tip = (_key: string, text: string, side: 'left' | 'right' = 'right') =>
-      Svg ? (
-        <Box
-          position="absolute"
-          bottom={TIP_LIFT}
-          {...(side === 'left' ? { left: 0 } : { right: 0 })}
-          display="none"
-          hover={{ display: 'flex' }}
-          flexDirection="column"
-          borderStyle="round"
-          borderDimColor
-          paddingX={1}
-          width={side === 'left' ? TIP_COLS : rightTipCols}
-        >
-          <Text wrap="wrap">{text}</Text>
-        </Box>
-      ) : null
-    // Keep warm is a status mark, not a button: the pace's green bold ✓ (the same OK colour and meaning) while it is on,
-    // nothing while it is off. /keepwarm turns it on and off. The hover says what the mark means.
-    const keepMark = keepView === null || !keepView.on ? null : (
-      <Box key="keep" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        <Text key="keep-warm" color={OK} bold>✓</Text>
-        {tip('keep', keepTip())}
-      </Box>
-    )
-    const grow = <Box key="grow" flexGrow={1} />
-
-    // What the conversation has cost so far, read from the store: it survives a restart.
-    const paid = await readSpend($)
-    const total = paid ? paid.main + paid.subs : 0
-    const lastText = paid && paid.last > 0 ? usd(paid.last) : null
-
-    // Folding needs the card, and the card is a drawing: the terminal stays hasCache.
-    const stored = await read($, fold)
-    const open = view !== null && Svg !== null && (stored && stored.mode === view.mode ? stored.open : view.mode === 'cold')
-    const toggle = () => toggleFold($)
-    const button = Svg && view ? (
-      <Box key="fold" flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-        <Button key="cache-fold" label={open ? '−' : '+'} onPress={toggle} />
-        {tip('fold', open ? 'Hide the cache card (or /spendometer fold).' : 'Show the cache card (or /spendometer fold): the cache, the spend, pace and the tabs.')}
-      </Box>
-    ) : null
-
-    // The card's tabs, whenever the fold button shows (open or closed): an emoji each, with its word on the wide row.
-    const tab = await tabOf($)
-    const TAB_GLYPH: Record<Tab, string> = { overview: '📊', context: '🧠', cost: '💰' }
-    const TAB_TIPS: Record<Tab, string> = {
-      overview: 'Overview: the pace of each usage window against its reset, what delegating to subagents saved, and what this thread has cost.',
-      context: 'Context: how big the conversation is, how many turns are left, and what tool output filled it.',
-      cost: 'Cost: the cache discount, the cost of a message and what each model cost.',
-    }
-    // Wide row: the emoji and the word; elsewhere the emoji alone. The tab in use is marked by dimming the others (dimColor).
-    const tabLabel = (id: Tab, isWide: boolean) => (isWide ? `${TAB_GLYPH[id]} ${TAB_NAMES[id]}` : TAB_GLYPH[id])
-    const tabsShown = Svg !== null && view !== null
-    const tabButtons = (isWide: boolean) =>
-      tabsShown
-        ? TABS.map(id => (
-            <Box key={`tab-${id}`} flexShrink={0} alignItems="flex-start" marginLeft={BUTTON_GAP}>
-              <Button
-                key={`tab-${id}-button`}
-                label={tabLabel(id, isWide)}
-                dimColor={id !== tab}
-                onPress={() => pressTab($, id)}
-              />
-              {tip(`tab-${id}`, TAB_TIPS[id])}
-            </Box>
-          ))
-        : []
-    // The layout follows from what the row holds: each width is counted in columns from the
-    // text the row will say (band/widths), and layoutOf picks the first layout whose row fits.
-    const lefts = list.map(w => Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10))
-    // The compact row writes what is used, as /usage does. On the desktop the wide and stacked rows do too, beside a pie;
-    // the terminal keeps what is left beside its dots.
-    const useds = lefts.map(l => Math.round((100 - l) * 10) / 10)
-    const resets = list.map(w => fmtReset(w.resetsAt, now))
-    const paces = list.map(w => paceFor(w, now))
-    // Before the first reply there is no chip to sit beside: the keep button stays among the buttons.
-    const keepAlone = !view && keep === true
-    const fiveAt = fiveAtOf(list)
-    const need = needOf({
-      svg: Svg !== null, list, lefts, useds, resets, paces, total, lastText, view, keep,
-      hasFold: !!button, tabsShown, tabLabels: TABS.map(id => tabLabel(id, true)),
-    })
-    const { kind, buttonsRow, compactStep, fold: foldShown, slim = 0 } = layoutOf(columns, need)
-    const minimal = kind === 'minimal'
-    const foldEl = foldShown ? button : null
-    lastWidth = {
-      body: typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : null,
-      viewport: typeof e.viewport?.columns === 'number' ? e.viewport.columns : null,
-      used: columns,
-      kind: minimal ? 'minimal' : kind === 'stacked' ? `compact step ${compactStep}${slim ? `, slim ${slim}` : ''}` : kind,
-      need: `wide ${need.wide}+${need.buttonsWide}, compact ${need.compact.join('/')}+${need.buttons}${need.slim ? `, slim ${need.slim.join('/')}+${need.buttons - need.fold}, minimal ${need.minimal}` : ''}`,
-    }
-    const buttons = [keepAlone ? keepMark : null]
-    // Buttons that do not fit beside the row take a row of their own, right-aligned: the terminal, and the desktop
-    // before the first reply. From the first reply on the desktop layoutOf never asks for one.
-    const buttonsRowEl = buttonsRow ? (
-      <Box key="buttons-row" flexDirection="row" paddingX={1}>
-        {grow}
-        {tabButtons(kind === 'wide')}
-        {foldEl}
-        {buttons}
-      </Box>
-    ) : null
-    // The minimal row has the fold button alone: the tabs are not drawn.
-    const inlineButtons = buttonsRow ? [] : [...(minimal ? [] : tabButtons(kind === 'wide')), foldEl, ...buttons]
-
-    const running = await runningCrew($)
-    const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
-
-    // Where the request is: a segment per step when there is a list or a report to measure
-    // against, one segment sweeping while a turn works with neither, nothing when idle.
-    const prog = await readProgress($)
-    const walking = prog && prog.total > 0 ? prog : null
-    const pacing = !walking && e.props.isWorking ? await read($, turn) : null
-    // Subagents still working after the main turn ended (a background agent): the work goes on, so the bar sweeps
-    // beside them, without the turn's step count and time, which have stopped.
-    const sweeping = !!pacing || (!walking && running.length > 0)
-    const said = walking ? labelOf(walking) : null
-    const note = said && said.note.length > NOTE_MAX ? said.note.slice(0, NOTE_MAX - 1) + '…' : (said?.note ?? '')
-    // The theme draws the step's name (and the idle line) itself on the desktop; the words beside the bar then leave them out.
-    const theme = THEMES[await themeOf($)]
-    const inDrawing = !!Svg && theme.names
-    const pulse = pacing && !(Svg && theme.info) ? ` ${pulseText(pacing, now)}` : ''
-    const paceInfo = pacing ? `${pacing.steps} ${pacing.steps === 1 ? 'step' : 'steps'} · ${fmtElapsed(now - pacing.startedAt)}` : ''
-    // The progress row's words are measured like the compact row's: about 0.85 columns a character on the desktop.
-    const charPx = COL_PX_FULL * (Svg ? COMPACT_CHAR_COLS : 1)
-    const crewDrawPx = running.length && Svg ? crewSvg(Math.min(CREW_SHOWN, running.length)).w : 0
-    const crewPx = running.length ? crewDrawPx + (crewWords.length + (walking || sweeping ? 2 : 0)) * charPx : 0
-    // What the words need beside the bar, apart from the step's name: the count (or nothing) and the crew.
-    const fixedPx = (walking ? (` ${said!.count}`.length) * charPx : 0) + crewPx
-    const fitChars = (s: string, chars: number) => (s.length <= chars ? s : chars >= 2 ? s.slice(0, chars - 1) + '…' : '')
-    const crewBits = !running.length
-      ? []
-      : [
-          Svg ? (
-            <Svg
-              key="crew"
-              source={crewSvg(Math.min(CREW_SHOWN, running.length)).source}
-              alt={`${running.length} ${running.length === 1 ? 'subagent' : 'subagents'} working`}
-              width={crewSvg(Math.min(CREW_SHOWN, running.length)).w}
-              height={BAR_H}
-              isInteractive
-            />
-          ) : null,
-          <Text key="crew-count" color="text" bold>{` ×${running.length}`}</Text>,
-          <Text key="crew-names" color="subtle">{` ${crewText(running)}`}</Text>,
-        ]
-    /**
-     * The bar, its words and the crew in `availPx` of room, the bar's drawing at most `max` wide; null when
-     * there is nothing to show. The bar keeps at least BAR_MIN_PX; the step's name is cut to what is left
-     * and dropped when nothing is, so the row never wraps past the band.
-     */
-    const progressOf = (key: string, availPx: number, max: number) => {
-      if (!walking && !sweeping) return null
-      const wordsPx = (s: string) => s.length * charPx
-      // The text wanted beside the bar: the step's name (with its dot) or the pulse line.
-      const wanted = walking ? (note && !inDrawing ? ` · ${note}` : '') : pulse
-      const room = availPx - fixedPx
-      const barPx = Math.max(BAR_MIN_PX, Math.min(max, room - wordsPx(wanted)))
-      const left = room - barPx
-      const shown = !wanted ? '' : fitChars(wanted, Math.floor(left / charPx + 1e-6))
-      const noteShown = walking ? (shown.length > 3 ? shown.slice(3) : '') : shown
-      const w = Math.round(barPx)
-      const drawing = !walking && !sweeping ? null : !Svg ? (
-        walking ? <Text key="bar" color={ORANGE}>{barText(walking, kind === 'tight' ? TIGHT_CELLS : CELLS)}</Text> : null
-      ) : walking ? (
-        <Svg
-          key="bar"
-          source={theme.walk(walking, w)}
-          alt={walking.isFinished ? `Progress: all ${walking.total} done` : `Progress: ${walking.done} of ${walking.total} done.${note ? ` Now: ${note}` : ''}`}
-          width={w}
-          height={BAR_H}
-          isInteractive
-        />
-      ) : (
-        <Svg key="bar" source={theme.pace(w, paceInfo)} alt="Working" width={w} height={BAR_H} isInteractive />
-      )
-      return (
-        <Box key={key} flexDirection="row" flexShrink={0} alignItems="center" paddingX={1}>
-          {drawing}
-          {walking ? <Text key="count" color="text" bold>{` ${said!.count}`}</Text> : null}
-          {walking && noteShown ? <Text key="note" color="subtle" wrap="truncate-end">{` · ${noteShown}`}</Text> : null}
-          {pacing && shown ? <Text key="pulse" color="subtle" wrap="truncate-end">{shown}</Text> : null}
-          {crewBits.length && (walking || sweeping) ? <Text key="crew-gap">{'  '}</Text> : null}
-          {crewBits}
-        </Box>
-      )
-    }
-    // On a row of its own the bar takes the width the words leave: the band less its padding and a column of safety.
-    const rowPx = (columns - 3) * COL_PX_FULL
-    const progressRow = progressOf('progress-row', rowPx, rowPx)
-
-    const isWide = kind === 'wide'
-    const isCompact = kind === 'stacked' || minimal
-    const spendBox = total <= 0 || (isCompact && compactStep >= 2) ? null : isCompact ? (
-      <Box key="spend" flexShrink={0} marginRight={COMPACT_MARGIN}>
-        <Text key="spend-total" color="text" bold>{`≈${usd(total)}`}</Text>
-      </Box>
-    ) : (
-      <Box key="spend" flexDirection={isWide ? 'row' : 'column'} flexShrink={0} marginRight={3}>
-        <Text color="subtle" bold>{isWide ? 'COST ' : 'COST'}</Text>
-        <Text key="spend-total" color="text" bold>{`≈${usd(total)}`}</Text>
-        {lastText ? <Text key="spend-last" color="subtle">{isWide ? ` · last ${lastText}` : `last ${lastText}`}</Text> : null}
-      </Box>
-    )
-
-    if (list.length === 0 && !view) {
-      return (
-        <Box flexDirection="column">
-          <Box flexDirection="row" paddingX={1}>
-            <Text color="subtle">USAGE · waiting for the first reply</Text>
-            {spendBox ? <Box key="wait-spend" marginLeft={2}>{spendBox}</Box> : null}
-            {grow}
-            {inlineButtons}
-          </Box>
-          {buttonsRowEl}
-          {progressRow}
-        </Box>
-      )
-    }
-
-    const cells = kind === 'tight' ? TIGHT_CELLS : CELLS
-
-    const parts = (w: Window) => {
-      const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
-      return {
-        left,
-        used: Math.round((100 - left) * 10) / 10,
-        col: COLORS[w.kind] ?? 'text',
-        name: NAMES[w.kind] ?? w.kind.toUpperCase(),
-        d: dots(left, cells),
-        reset: fmtReset(w.resetsAt, now),
-        tip: (() => {
-          const r = fmtReset(w.resetsAt, now)
-          const pace = paceFor(w, now)
-          const paceTip = pace ? ` · pace ${pace.ok ? `~${pace.atReset}% at reset` : `runs out in ~${fmtIdle(pace.lastsMs)}`}.${Svg ? ` ${PACE_TIP}` : ''}` : ''
-          return `${LONG[w.kind] ?? w.kind.replace(/_/g, ' ') + ' limit'} · ${Math.round((100 - left) * 10) / 10}% used, ${left}% left${r ? ` · ${r === 'resetting' ? 'resetting now' : `resets in ${r}`}` : ''}${paceTip}`
-        })(),
-      }
-    }
-
-    // The pie beside a window on the desktop: what is used, in the window's colour. The terminal has none.
-    const pie = (w: Window, p: ReturnType<typeof parts>, i: number) =>
-      Svg ? <Svg key={`pie-${i}`} source={pieSvg(p.used, COLORS[w.kind] ?? TEXT)} alt={`${p.name} ${p.used}% used`} width={PIE_SIZE} height={PIE_SIZE} /> : null
-
-    // The 5h pace after the percent: the mini track on the desktop (fill = used, tick = time gone), then words.
-    const paceEls = (w: Window, p: ReturnType<typeof parts>, mode: PaceMode, full = true) => {
-      const pc = paceFor(w, now)
-      if (!pc) return []
-      const pw = paceWords(pc, mode, full)
-      const els = []
-      if (Svg) {
-        const tr = paceTrackSvg(p.used, 1 - pc.untilResetMs / WINDOW_MS[w.kind], p.col, pc.ok, PACE_TRACK_PX[mode])
-        els.push(
-          <Box key="pace-track" marginLeft={1}>
-            <Svg source={tr.source} alt={`${p.name} pace: ${p.used}% of the limit used`} width={tr.w} height={tr.h} />
-          </Box>,
-        )
-      }
-      if (pw.text) els.push(<Text key="pace-text" color={pw.ok ? 'subtle' : DANGER} bold={!pw.ok}>{` ${pw.text}`}</Text>)
-      if (pw.mark) els.push(<Text key="pace-mark" color={OK} bold>{` ${pw.mark}`}</Text>)
-      return els
-    }
-
-    // Wide: every window on one row. Narrow: each window is a block of three
-    // lines (name and pie, percent used, reset time) so nothing wraps or clips. The terminal keeps dots and percent left.
-    const wide = (w: Window, i: number) => {
-      const p = parts(w)
-      return (
-        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={3} alignItems="center">
-          <Text color="subtle" bold>{p.name} </Text>
-          {Svg ? (
-            pie(w, p, i)
-          ) : (
-            <>
-              <Text color={p.col}>{p.d.on}</Text>
-              <Text color={EMPTY}>{p.d.off}</Text>
-            </>
-          )}
-          <Text color={p.col} bold> {Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
-          {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
-          {p.reset && !(Svg && paceFor(w, now)) ? <Text color="subtle"> · {p.reset}</Text> : null}
-          {paceEls(w, p, 'wide')}
-          {tip(`w-tip-${i}`, p.tip, 'left')}
-        </Box>
-      )
-    }
-
-    const stacked = (w: Window, i: number) => {
-      const p = parts(w)
-      return (
-        <Box key={`w-${i}`} flexDirection="column" flexShrink={0} marginRight={3}>
-          <Box flexDirection="row" alignItems="center">
-            <Text color="subtle" bold>{p.name} </Text>
-            {Svg ? (
-              pie(w, p, i)
-            ) : (
-              <>
-                <Text color={p.col}>{p.d.on}</Text>
-                <Text color={EMPTY}>{p.d.off}</Text>
-              </>
-            )}
-            {paceEls(w, p, 'tight')}
-          </Box>
-          <Box flexDirection="row">
-            <Text color={p.col} bold>{Svg ? `${p.used}% used` : `${p.left}% left`}</Text>
-            {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
-          </Box>
-          {p.reset ? <Text color="subtle">resets {p.reset}</Text> : null}
-          {tip(`w-tip-${i}`, p.tip, 'left')}
-        </Box>
-      )
-    }
-
-    // Compact: only what is used of each window, in its colour; the desktop puts a pie before the percent.
-    const compact = (w: Window, i: number) => {
-      const p = parts(w)
-      return (
-        <Box key={`w-${i}`} flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
-          {compactStep < 4 && SHORT[w.kind] ? <Text color="subtle">{SHORT[w.kind]} </Text> : null}
-          {Svg ? <Box key="pie-gap" marginRight={1}>{pie(w, p, i)}</Box> : null}
-          <Text color={p.col} bold>{`${p.used}%`}</Text>
-          {p.left < LOW_AT ? <Text color="text" bold> LOW</Text> : null}
-          {slim ? null : paceEls(w, p, 'compact', compactStep < 2)}
-          {tip(`w-tip-${i}`, p.tip, 'left')}
-        </Box>
-      )
-    }
-
-    const label = isCompact ? null : (
-      <Box key="label" flexShrink={0} marginRight={isWide ? 2 : 3}>
-        <Text color="text" bold>USAGE</Text>
-      </Box>
-    )
-    const usage = [
-      ...(list.length > 0
-        ? list.map((w, i) => (slim >= 3 && i !== fiveAt ? null : (isWide ? wide : isCompact ? compact : stacked)(w, i)))
-        : isCompact ? [] : [<Box key="wait" flexShrink={0} marginRight={3}><Text color="subtle">waiting for the first reply</Text></Box>]),
-      spendBox,
-    ]
-
-    // Before the first reply there is no cache to show.
-    if (!view) {
-      return (
-        <Box flexDirection="column">
-          <Box key="row" flexDirection="row" paddingX={1}>
-            {label}
-            {usage}
-            {grow}
-            {inlineButtons}
-          </Box>
-          {buttonsRowEl}
-          {progressRow}
-        </Box>
-      )
-    }
-
-    const mode = view.mode
-    const cold = mode === 'cold'
-    const hue = HUE[mode]
-    const mine = mineModel(view)
-
-    const chip = Svg
-      ? (() => {
-          const c = chipSvg(mode)
-          return <Svg key="chip" source={c.source} alt={WORD[mode]} width={c.w} height={c.h} />
-        })()
-      : <Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode]} `}</Text>
-    // Compact step 3 and up: Robo alone (the terminal: a one-letter chip) in place of the chip.
-    const compactChip =
-      compactStep < 3
-        ? chip
-        : Svg
-          ? <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />
-          : <Text key="chip" backgroundColor={hue} color={INK} bold>{` ${WORD[mode][0]} `}</Text>
-    // The next message's cost: always at step 0, after that only while cold.
-    const showNext = !minimal && mine !== undefined && (compactStep === 0 || cold)
-    const badge = Svg
-      ? [
-          <Svg key="robo" source={roboSvg(mode)} alt={cold ? 'Robo, frozen' : 'Robo, bobbing'} width={ROBO_SIZE} height={ROBO_SIZE} isInteractive />,
-          <Text key="gap"> </Text>,
-          chip,
-        ]
-      : [chip]
-
-    const summary = cold
-      ? [
-          <Text key="idle" color={hue} bold>{` ${view.idle}`}</Text>,
-          mine ? <Text key="dot" color="subtle"> · </Text> : null,
-          mine ? <Text key="cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null,
-        ]
-      : [<Text key="left" color={hue} bold>{` ${Math.max(0, TTL_MIN - view.idleMin)}m left`}</Text>]
-
-
-    // The chip's hover: what keeping warm costs and what going cold would cost (the card no longer has a column for it).
-    const chipHover = tip('chip', chipTip(view, paid?.saved ?? 0, keep), 'left')
-
-    let rows
-    if (kind === 'wide') {
-      rows = (
-        <Box key="row" flexDirection="row" paddingX={1} alignItems="center">
-          {label}
-          {usage}
-          {/* WARM or COLD stays in the row whether the card is open or not. */}
-          {(
-            <Box key="inline" flexDirection="row" flexShrink={0} marginRight={2} alignItems="center">
-              <Box key="chip-group" flexDirection="row" alignItems="center">
-                {badge}
-                {summary}
-                {chipHover}
-              </Box>
-              {keepMark}
-            </Box>
-          )}
-          {grow}
-          {inlineButtons}
-        </Box>
-      )
-    } else if (kind === 'stacked' || minimal) {
-      // Compact: one line, the chip and the next message's cost standing in for the cache block.
-      rows = (
-        <Box key="row" flexDirection="row" paddingX={1} alignItems="center">
-          {usage}
-          {(
-            <Box key="block" flexDirection="row" flexShrink={0} marginRight={COMPACT_MARGIN} alignItems="center">
-              <Box key="chip-group" flexDirection="row" alignItems="center">
-                {compactChip}
-                {showNext ? <Text key="next-gap"> </Text> : null}
-                {showNext && mine ? <Text key="next-cost" color="text" bold>{usd(costOf(mine, mode, view.tokens))}</Text> : null}
-                {showNext ? <Text key="next" color="subtle"> next</Text> : null}
-                {chipHover}
-              </Box>
-              {slim >= 2 ? null : keepMark}
-            </Box>
-          )}
-          {grow}
-          {inlineButtons}
-        </Box>
-      )
-    } else {
-      // Narrow: the cache gets its own row under the usage blocks.
-      rows = [
-        <Box key="row" flexDirection="row" paddingX={1}>
-          {label}
-          {usage}
-        </Box>,
-        <Box key="cache" flexDirection="row" paddingX={1} alignItems="center">
-          <Box key="chip-group" flexDirection="row" alignItems="center">
-            {badge}
-            {summary}
-            {chipHover}
-          </Box>
-          {keepMark}
-          {grow}
-          {inlineButtons}
-        </Box>,
-      ]
-    }
-
-    let card = null
-    let showProgress = true
-    if (open && Svg) {
-      const paceRows = trackPace(list, now)
-      const days = await readDays($, now)
-      // The card is drawn at W, 12 px a column, but the band is narrower on screen (DESKTOP_COL_PX). Its
-      // element gets the width it is shown at and the height that goes with it: given the drawn height, the
-      // shrunk drawing sat centred in a box too tall for it, with empty bands above and below.
-      // The band may be at most maxRows tall, else the host scrolls it: fitOpen drops the progress row
-      // when the open band would not fit with it.
-      const W = bandPx(columns)
-      const scale = Math.min(1, Math.floor(columns * DESKTOP_COL_PX) / W)
-      const shownH = (h: number) => Math.round(h * scale)
-      const rowsAbove = (kind === 'tight' ? 2 : 1) + (buttonsRowEl ? 1 : 0)
-      const maxRows = typeof e.props.maxRows === 'number' ? e.props.maxRows : Infinity
-      const c = cardSvg(view, W, { main: paid?.main ?? 0, subs: paid?.subs ?? 0, days, saved: paid?.saved, pings: paid?.pings, commits: paid?.commits, prs: paid?.prs }, paceRows, metricsOf(paid, Math.max(0, view.window - view.tokens)), tab)
-      const fit = fitOpen(maxRows, rowsAbove, progressRow ? BAR_H : 0, shownH(c.h))
-      showProgress = fit.progress
-      if (lastWidth) lastWidth.fit = `${rowsAbove}+${progressRow && fit.progress ? rowsOf(BAR_H) : 0}+${rowsOf(shownH(c.h))} of ${maxRows} rows${fit.progress ? '' : ', progress dropped'}, card ${c.cols} cols`
-      card = (
-        <Box key="card" flexDirection="row">
-          <Svg source={c.source} alt={c.alt} width={Math.round(c.w * scale)} height={shownH(c.h)} isInteractive={kind !== 'tight'} />
-        </Box>
-      )
-    }
-
-    return (
-      <Box flexDirection="column">
-        {rows}
-        {buttonsRowEl}
-        {showProgress ? progressRow : null}
-        {card}
-      </Box>
-    )
-  })
+  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => renderBand($, e, next, kw))
 }

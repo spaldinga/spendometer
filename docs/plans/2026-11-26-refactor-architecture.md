@@ -206,3 +206,14 @@ all tests pass with only import lines changed (until step 21); the band looks th
   (adds results via cost, counts output via capacity), so the hold imports neither domain. `pass` lost its `$`,
   `command` and `tool` parameters for that. The held band is `heldBand(holding, ui)` in `safety/guard/band.tsx`;
   register keeps the `if` that returns it. `HOLD_KEY` stays in register.
+- **Step 17:** the render is `renderBand($, e, next, kw)` in `band/render.tsx` (also `arm`, `ticking`, `TICK_MS`, which
+  `session.start` and `turn.step` call). Closures became functions over two context objects built once in `render.tsx`:
+  `TipCtx` (`{ ui, columns }`, what a hover box needs; `ui` is `{ Box, Button, Text, Svg }`, `Svg` null in the terminal)
+  and `RowCtx` (`TipCtx` plus `now`, `list`, `kind`, `compactStep`, `slim`, `total`, `lastText`); the row's shared
+  elements travel as a `Pieces` object. Widths take plain data (`WidthIn`, `needOf`). The progress row is its own file,
+  `band/progress-row.tsx` (the row file would pass 400 lines). Cycle-free layering: `buttons` owns the `fold` atom and
+  the card's tab (`TAB_KEY`, `tabOf`, `resetFold`), so `settings` (step 18) imports it, not the other way round;
+  `lastWidth` lives in `band/width-note.ts` rather than `render.tsx`, because `settings` reads `widthLine` and `render`
+  reads `themeOf` from `settings`. The `turn` atom moved to `activity/progress/state.ts` (`readTurn`, `startTurn`,
+  `countStep`) because the render and `turn.step` both use it. `tip` lost its unused key parameter; the unused
+  `keepModel`/`keepColdUsd` and `cacheBlockCols` were dropped.

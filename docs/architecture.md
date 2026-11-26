@@ -32,7 +32,13 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 
 | File | Role | Pure |
 |---|---|---|
-| `register.tsx` | All event wiring; the band's render; the settings command | no |
+| `register.tsx` | All event wiring; the settings command (until it moves to `band/settings.ts`); the `ui.render` handler is one line calling `renderBand` | no |
+| `band/render.tsx` | `renderBand` (`ui.render`): reads the domains' views, measures, picks the layout, builds the band and the open card; `arm`, the 30 s redraw timer | no |
+| `band/row.tsx` | The row's pieces per layout: window blocks (pie, pace track and words), the cost box, the chip with Robo, the assembled rows (`RowCtx`, `Pieces`) | no |
+| `band/progress-row.tsx` | The progress row: bar, words and crew fitted to the room (`progressRowOf`) | no |
+| `band/buttons.tsx` | The fold button, the tabs and the keep-warm mark, the hover box (`tip`), `toggleFold`, `pressTab`, `tabOf`; the `fold` atom and the card tab in the store | no |
+| `band/width-note.ts` | The width the band was last drawn at (`noteWidth`, `noteFit`, `widthLine`), for the status command | no |
+| `band/settings.ts` | The band's settings in the store: `THEME_KEY`, `themeOf` | no |
 | `cost/cache/keepwarm/pinger.ts` | The keep-warm pinger: window, deadline, timers, retries, the warm-now ping ([ADR 0004](adr/0004-keep-warm-built-in.md)) | no |
 | `cost/cache/keepwarm/state.ts` | The switch's state: the `Keep` record, the per-conversation records in the store, the constants (on by default, 24h after each message; [ADR 0007](adr/0007-keep-warm-on-by-default-24h.md)) | no |
 | `cost/cache/keepwarm/lifecycle.ts` | The conversation lifecycle (seat, detect cache-tax, restore, the band's hooks) and the mark's state and hover (follows the cache: cold stops the window) | no |
@@ -62,7 +68,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
 | `activity/progress/progress.ts`, `activity/progress/art.ts` | Where the request is; the progress bar drawings | yes |
 | `activity/progress/themes/` | The progress themes: `kit.ts` (shared drawing helpers, `Theme`), one file per theme (`calm`, `vitals`, `bridge`, `wake`, `dial`, `comet`), `index.ts` (`THEMES`, ids, names, `themeIdOf`) | yes |
-| `activity/progress/state.ts` | The `progress` atom: `readProgress`, `noteListCall`, `noteReport`, `dropFinished` | no |
+| `activity/progress/state.ts` | The `progress` atom (`readProgress`, `noteListCall`, `noteReport`, `dropFinished`) and the `turn` atom (`readTurn`, `startTurn`, `countStep`) | no |
 | `activity/crew.ts` | The `crew` atom, `crewText`, `CREW_SHOWN`, and what the spawn, step and turn hooks do to the crew | no |
 | `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...), `svgDoc`, the SVG wrapper, and the drawing kit (`Kit`, `kitOf(W, mode)`: `t`, `big`, `dots`, `pick`, `capPick`, `hline`...) the zones share; the one file domains may import | yes |
 | `band/font.ts` | The embedded Outfit font for SVG text | data |
@@ -74,18 +80,20 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress (`activity/progress/state.ts`), crew (`activity/crew.ts`), turn, seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold (`band/buttons.tsx`), progress and turn (`activity/progress/state.ts`), crew (`activity/crew.ts`), seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
-| Module variables | Lost on reload | `lastWidth` (for the status command), timers, the redraw flag (`ticking`), the held call and the working wait (`held`, `waitAt`, in `safety/guard/hold.ts`) |
+| Module variables | Lost on reload | `lastWidth` (for the status command, in `band/width-note.ts`), timers, the redraw flag (`ticking`, in `band/render.tsx`), the held call and the working wait (`held`, `waitAt`, in `safety/guard/hold.ts`) |
 
 The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; new fields must be carried by both.
 
 ## The band's render
 
-1. Read the cache view, usage windows, spend and keep-warm state.
+`ui.render` calls `renderBand` (`band/render.tsx`), which does the four steps below; `RowCtx` (`band/row.tsx`) carries the surface, the windows, the cost and the chosen layout to the row's pieces.
+
+1. Read the cache view, usage windows, spend, fold and tab, keep-warm state, the crew, the progress and the theme.
 2. Estimate each layout's width in columns from the text it will show (`needOf` in `band/widths.ts`, over `textCols`; about half a column a character
    on the desktop) and let `layoutOf` pick the layout. From the first reply on the desktop the band is one row at every width: wide, compact (5 steps, tabs and + inline), step 4 without + (the tabs open and close the card), then slimmer variants (no 5h pace track, no keep box, the 5h window only), and last the minimal row (5h pie and percent, Robo, +; no tabs), chosen even when it does not fit. There is no buttons row and no tight layout there. The terminal, and the desktop before the first reply, keep compact, tight and a row of their own for buttons that do not fit.
-3. Build the row: label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm mark (a green ✓ only while on), then the
+3. Build the row (`band/row.tsx`; buttons in `band/buttons.tsx`, the progress row in `band/progress-row.tsx`): label, usage pies (the 5h one with its pace track and words), cost, Robo and the WARM/COLD chip with its hover, the keep-warm mark (a green ✓ only while on), then the
    tab buttons (desktop, once there is a cache view, card open or closed: a press opens the card on that tab, or closes it on the tab in use; `pressTab` over `toggleFold`), and fold (not from compact step 4 down, until the minimal row, see 2).
 4. The open card (desktop only, [ADR 0003](adr/0003-card-is-one-svg.md)): `cardSvg` builds the drawing kit (`kitOf`) and draws the chosen tab at the
    band's width, handing each zone function in a slice's `card.ts` the kit, its box and its data; `fitOpen` drops the progress row if the band would pass `maxRows`.
@@ -96,7 +104,7 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 rendering through the kit and reading the visible text (`tests/visible.ts` leaves hover boxes out). No `Bun` global,
 no `toBeCloseTo`, no dynamic `import()`.
 
-## Known debt
-
+`register.tsx` (about 400 lines) still holds the settings command, the per-session resets and the clean-up of
+old saved state, and pixel and column figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).
 `register.tsx` (about 1,450 lines) carries several roles, and pixel and column
 figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).
