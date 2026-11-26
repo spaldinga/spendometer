@@ -67,26 +67,45 @@ const CHIP: Record<string, { w: number; h: number }> = {
   'YOU@10': { w: 36, h: 17 },
 }
 
+/** Chip size when a word and size were not measured: the text's width per character and padding, and the height, as shares of the font size; the corner radius as a share of the height; the text baseline below the middle as a share of the font size. */
+const CHIP_CHAR_W = 0.8
+const CHIP_PAD = 1.24
+const CHIP_H = 1.65
+const CHIP_RADIUS = 0.32
+const CHIP_BASELINE = 0.36
+
 export const chipShapes = (x: number, y: number, word: string, fill: string, size: number, ls: number): { w: number; h: number; svg: string } => {
-  const { w, h } = CHIP[`${word}@${size}`] ?? { w: Math.round(word.length * size * 0.8 + size * 1.24), h: Math.round(size * 1.65) }
+  const { w, h } = CHIP[`${word}@${size}`] ?? { w: Math.round(word.length * size * CHIP_CHAR_W + size * CHIP_PAD), h: Math.round(size * CHIP_H) }
   return {
     w,
     h,
     svg:
-      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(h * 0.32)}" fill="${fill}"/>` +
-      `<text x="${x + w / 2}" y="${y + h / 2 + size * 0.36}" font-size="${size}" font-weight="700" letter-spacing="${ls}"` +
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(h * CHIP_RADIUS)}" fill="${fill}"/>` +
+      `<text x="${x + w / 2}" y="${y + h / 2 + size * CHIP_BASELINE}" font-size="${size}" font-weight="700" letter-spacing="${ls}"` +
       ` text-anchor="middle" fill="${INK}">${word}</text>`,
   }
 }
 
+/** The WARM or COLD chip's font size (px) and letter spacing (px). */
+const CHIP_FONT = 13
+const CHIP_LS = 1
+
 /** The WARM or COLD chip beside Robo in the band's row. */
 export const chipSvg = (mode: Mode): { source: string; w: number; h: number } => {
-  const c = chipShapes(0, 0, WORD[mode], HUE[mode], 13, 1)
+  const c = chipShapes(0, 0, WORD[mode], HUE[mode], CHIP_FONT, CHIP_LS)
   return { source: svgDoc(c.w, c.h, c.svg, true), w: c.w, h: c.h }
 }
 
 // ---------- Robo: bobbing when warm, frozen in ice when cold ----------
 const ROBO_PIX = ['..X..X..', 'XXXXXXXX', 'XXXXXXXX', 'X.XXXX.X', 'XXXXXXXX', 'XXXXXXXX', 'X..XX..X']
+
+/** Robo's box in pixel units across: the warm drawing, and the cold one with its ice block around it. */
+const WARM_UNITS = 10
+const COLD_UNITS = 12.2
+/** Animation periods in seconds: Robo's bob, its blink, the ice's twinkle. */
+const BOB_S = 1.2
+const BLINK_S = 3.4
+const TWINKLE_S = 2.8
 
 // One path, not a rect per pixel: separate rects at fractional sizes leave faint
 // seams between them, while one path fills the shared edges solid.
@@ -106,23 +125,23 @@ export const roboShapes = (x: number, y: number, size: number, mode: Mode): stri
   if (mode === 'warm') {
     // Robo takes the WARM chip's red, so the two read as one badge.
     const ROBO = HUE.warm
-    const u = size / 10
+    const u = size / WARM_UNITS
     const ox = x + u
     const oy = y + 1.6 * u
     return (
       `<g transform="translate(${ox} ${oy})" shape-rendering="crispEdges">` +
       `<ellipse cx="${4 * u}" cy="${7.75 * u}" rx="${3 * u}" ry="${0.42 * u}" fill="#000" opacity=".4" shape-rendering="auto">` +
-      `<animate attributeName="rx" values="${3 * u};${2.3 * u};${3 * u}" dur="1.2s" repeatCount="indefinite" ${ease}/></ellipse>` +
-      `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 ${-1.1 * u};0 0" dur="1.2s" repeatCount="indefinite" ${ease}/>` +
+      `<animate attributeName="rx" values="${3 * u};${2.3 * u};${3 * u}" dur="${BOB_S}s" repeatCount="indefinite" ${ease}/></ellipse>` +
+      `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 ${-1.1 * u};0 0" dur="${BOB_S}s" repeatCount="indefinite" ${ease}/>` +
       pixels(u, ROBO) +
       // A blink every few seconds: the eye holes fill for a moment.
       `<g opacity="0"><rect x="${u}" y="${3 * u}" width="${u}" height="${u}" fill="${ROBO}"/><rect x="${6 * u}" y="${3 * u}" width="${u}" height="${u}" fill="${ROBO}"/>` +
-      `<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.9;0.91;0.95;1" dur="3.4s" repeatCount="indefinite"/></g>` +
+      `<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.9;0.91;0.95;1" dur="${BLINK_S}s" repeatCount="indefinite"/></g>` +
       `</g></g>`
     )
   }
   // Cold: still, pale, inside a rounded ice block with icicles and one twinkle.
-  const u = size / 12.2
+  const u = size / COLD_UNITS
   const ice = ICE
   const ox = x + 1.6 * u
   const oy = y + 1.6 * u
@@ -145,7 +164,7 @@ export const roboShapes = (x: number, y: number, size: number, mode: Mode): stri
   const r = 1.1 * u
   s +=
     `<path d="M${sx} ${sy - r}L${sx + 0.25 * r} ${sy - 0.25 * r}L${sx + r} ${sy}L${sx + 0.25 * r} ${sy + 0.25 * r}L${sx} ${sy + r}L${sx - 0.25 * r} ${sy + 0.25 * r}L${sx - r} ${sy}L${sx - 0.25 * r} ${sy - 0.25 * r}z" fill="#fff">` +
-    `<animate attributeName="opacity" values="0;0;1;0;0" keyTimes="0;0.55;0.7;0.85;1" dur="2.8s" repeatCount="indefinite"/></path>`
+    `<animate attributeName="opacity" values="0;0;1;0;0" keyTimes="0;0.55;0.7;0.85;1" dur="${TWINKLE_S}s" repeatCount="indefinite"/></path>`
   return s + '</g>'
 }
 

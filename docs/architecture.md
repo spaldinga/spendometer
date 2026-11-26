@@ -104,7 +104,6 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 rendering through the kit and reading the visible text (`tests/visible.ts` leaves hover boxes out). No `Bun` global,
 no `toBeCloseTo`, no dynamic `import()`.
 
-## Known debt
 
-`register.tsx` (about 330 lines) still has
-pixel and column figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).
+
+Pixel and column figures are often unnamed (being named in step 20). See [refactor-architecture](backlog/refactor-architecture.md).
