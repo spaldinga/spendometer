@@ -102,7 +102,8 @@ The `Spent` record is written read-modify-write through `readSpend`/`recordOf`; 
 
 `tests/` uses the plugin test kit: `BUN_INSPECT= claude plugin test .`. Pure modules are tested by value; the band by
 rendering through the kit and reading the visible text (`tests/visible.ts` leaves hover boxes out). No `Bun` global,
-no `toBeCloseTo`, no dynamic `import()`.
+no `toBeCloseTo`, no dynamic `import()`. Test files are named for the slice they cover (`<area>-<slice>.test.ts`, each under about 400 lines);
+setup several of them share lives in `tests/<area>-kit.ts` (`keepwarm-kit`, `layout-kit`, `card-kit`, `progress-kit`), exported unchanged.
 
 
 
