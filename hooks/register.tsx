@@ -28,7 +28,8 @@ import { afterTurn, endConversation, keepOf, keepTip, noteCompact, noteRequest, 
 import { keepwarmCommand, keepwarmStatus, warnCold } from './cost/cache/keepwarm/command'
 export { pingKeptCacheWarm }
 export type { PingUsage } from './cost/cache/keepwarm/pinger'
-import { metricsOf, nextGrowth } from './metrics'
+import { metricsOf } from './band/card-metrics'
+import { nextGrowth } from './capacity/context/runway'
 import { DAY_PREFIX, isOldDay } from './cost/spend/days'
 import { WINDOW_MS } from './capacity/usage/pace'
 import { keptWindows, liveWindows, paceFor, pull, setWindows, trackPace } from './capacity/usage/windows'

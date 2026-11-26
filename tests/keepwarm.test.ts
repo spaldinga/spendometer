@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import { turnCost, usd } from '../hooks/cost/prices'
 import { dayKey } from '../hooks/cost/spend/days'
-import { metricsOf } from '../hooks/metrics'
+import { metricsOf } from '../hooks/band/card-metrics'
 import type { Spent } from '../types'
 import { pingKeptCacheWarm } from '../hooks/register'
 

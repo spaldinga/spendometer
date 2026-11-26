@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { delegationOf, hitRate, metricsOf, modelsOf, nextGrowth, outlierMultiple, runwayTurns, topTypes, unionMs, workMs } from '../hooks/metrics'
+import { metricsOf } from '../hooks/band/card-metrics'
+import { nextGrowth, runwayTurns } from '../hooks/capacity/context/runway'
+import { delegationOf, hitRate, modelsOf, outlierMultiple, topTypes, unionMs, workMs } from '../hooks/cost/spend/metrics'
 import { putSpan } from '../hooks/cost/spend/record'
 import type { Spent } from '../types'
 

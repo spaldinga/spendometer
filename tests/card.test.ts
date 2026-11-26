@@ -7,7 +7,7 @@ import { paceTrackSvg, paceWords, pieSvg, wedgePath } from '../hooks/capacity/us
 import { chipSvg, cheaperModels, chipTip, fmtBreakEven, keepWarmCost, roboSvg } from '../hooks/cost/cache/chip'
 import type { PaceRow } from '../hooks/capacity/usage/art'
 import type { CacheView } from '../hooks/cost/cache/facts'
-import type { Metrics } from '../hooks/metrics'
+import type { Metrics } from '../hooks/band/card-metrics'
 
 const WARM: CacheView = { mode: 'warm', idle: '18m', idleMin: 18, tokens: 240000, window: 1000000, mine: 'opus' }
 const COLD: CacheView = { mode: 'cold', idle: '2h 5m', idleMin: 125, tokens: 240000, window: 1000000, mine: 'opus' }

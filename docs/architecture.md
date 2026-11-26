@@ -44,7 +44,9 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
 | `cache-art.ts` | The card SVG (palette in `band/look.ts`) | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
-| `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
+| `cost/spend/metrics.ts` | Cost-side figures from the `Spent` record: hit rate, outliers, top types and models, delegation | yes |
+| `capacity/context/runway.ts` | Context growth (`nextGrowth`) and runway turns | yes |
+| `band/card-metrics.ts` | `metricsOf` and `Metrics`: the card's metric row, assembled from both domains | yes |
 | `capacity/context/toolout.ts` | Tool output tokens and the re-read keys | yes |
 | `capacity/context/size.ts` | The `seen` atom (re-read keys), `clearSeen`, `measureCall` (returns the tool, tokens and re-read flag), `forgetPath`, `isDeny` | no |
 | `capacity/usage/pace.ts` | Pace of a usage window | yes |
