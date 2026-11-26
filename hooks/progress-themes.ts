@@ -5,7 +5,7 @@ import type { Progress } from '../types'
 // The progress row's themes. Each is a pair of pure functions: `walk` draws a request with a step list
 // (or a report) at `W` pixels, `pace` draws a request that is working with no list. Colours are only the
 // band's own constants and the console's, so svgDoc's light style covers every drawing. Text is
-// measured by estimate (0.6 em a character, 0.7 for bold capitals), as cache-art.ts does; the step names
+// measured by estimate (0.6 em a character, 0.7 for bold capitals), as band/card.ts does; the step names
 // are cut with … to what the width leaves. A colour that changes in an animation would escape the light
 // style (it swaps attributes, not animated values), so a changing colour is two shapes and an
 // animated opacity.

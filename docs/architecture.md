@@ -42,8 +42,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
 | `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output (`addToolOut`), context size and growth (`addContext`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
-| `cache-art.ts` | The card SVG (palette in `band/look.ts`) | yes |
-| `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
+| `band/card.ts` | The card SVG (`cardSvg`), its tabs and spend type (palette in `band/look.ts`) | yes |
+| `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen`; `Kind`, `bandPx` | yes |
 | `cost/spend/metrics.ts` | Cost-side figures from the `Spent` record: hit rate, outliers, top types and models, delegation | yes |
 | `capacity/context/runway.ts` | Context growth (`nextGrowth`) and runway turns | yes |
 | `band/card-metrics.ts` | `metricsOf` and `Metrics`: the card's metric row, assembled from both domains | yes |
@@ -88,5 +88,5 @@ no `toBeCloseTo`, no dynamic `import()`.
 
 ## Known debt
 
-`register.tsx` (about 1,450 lines) and `cache-art.ts` (about 830) carry several roles each, and pixel and column
+`register.tsx` (about 1,450 lines) and `band/card.ts` (about 460) carry several roles each, and pixel and column
 figures are often unnamed. See [refactor-architecture](backlog/refactor-architecture.md).

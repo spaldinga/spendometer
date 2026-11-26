@@ -10,10 +10,9 @@ import { classify, measure as measureRisk, refusal } from './guard'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
-import {
-  TABS, TAB_NAMES, bandPx, cardSvg,
-} from './cache-art'
-import type { Tab } from './cache-art'
+import { TABS, TAB_NAMES, cardSvg } from './band/card'
+import type { Tab } from './band/card'
+import { bandPx } from './layout'
 import { PACE_TIP, PACE_TRACK_PX, PIE_SIZE, fmtReset, paceTrackSvg, paceWords, pieSvg } from './capacity/usage/art'
 import type { PaceMode } from './capacity/usage/art'
 import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'

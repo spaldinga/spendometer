@@ -115,6 +115,8 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
 - **Measure in one domain, record in another** (step 9): `measureCall` returns `{tool, tokens, reread}` and
   `register.tsx`'s `countCall` passes it to cost's `addToolOut`; `addContext` (cost) takes capacity's `nextGrowth` as a
   parameter, passed by `register.tsx`.
+- **Step 11:** `Kind` and `bandPx` went from the card to `layout.ts` (the band's layout, not the card); this also
+  removes the card/layout import cycle.
 - **Copies so far:** `fmtIdle` in `capacity/usage/art.ts`; the window `NAMES` and `COLORS` in
   `capacity/usage/windows.ts` (the band keeps its own until step 17, which should pass one set as data).
 

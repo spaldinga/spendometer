@@ -1,31 +1,22 @@
 // The cache card's drawings. Pure: each function returns an SVG string the band
 // hands to Svg. Nothing here touches the engine.
 
-import { DANGER, EMPTY, FABLE, HUE, LINE, MUTED, OK, ORANGE, TEXT, YELLOW, svgDoc } from './band/look'
-import type { Mode } from './band/look'
-import { modelName, tok, usd } from './cost/prices'
-import { cheaperModels, keepWarmCost } from './cost/cache/chip'
-import { TTL_MIN, fmtIdle, mineModel } from './cost/cache/facts'
-import type { CacheView } from './cost/cache/facts'
-export type { Mode } from './band/look'
-import { RUNWAY_CAP } from './capacity/context/runway'
-import type { Metrics } from './band/card-metrics'
-import { cardColsOf } from './layout'
-import { resultsSentence, resultsText } from './cost/spend/results'
-import { PACE_TIP, fmtSpan } from './capacity/usage/art'
-import type { PaceRow } from './capacity/usage/art'
-
-export type Kind = 'wide' | 'stacked' | 'tight' | 'minimal'
+import { DANGER, EMPTY, FABLE, HUE, LINE, MUTED, OK, ORANGE, TEXT, YELLOW, svgDoc } from './look'
+import type { Mode } from './look'
+import { modelName, tok, usd } from '../cost/prices'
+import { cheaperModels, keepWarmCost } from '../cost/cache/chip'
+import { TTL_MIN, fmtIdle, mineModel } from '../cost/cache/facts'
+import type { CacheView } from '../cost/cache/facts'
+export type { Mode } from './look'
+import { RUNWAY_CAP } from '../capacity/context/runway'
+import type { Metrics } from './card-metrics'
+import { cardColsOf } from '../layout'
+import { resultsSentence, resultsText } from '../cost/spend/results'
+import { PACE_TIP, fmtSpan } from '../capacity/usage/art'
+import type { PaceRow } from '../capacity/usage/art'
 
 /** Each model family's colour in the by-model split. */
 export const MODEL_COLOR: Record<string, string> = { opus: HUE.warm, sonnet: ORANGE, haiku: YELLOW, fable: FABLE }
-
-/**
- * The band's width in CSS pixels for a column count: the engine keeps 5 cells
- * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
- * so the card never runs past the slot; the few pixels left are band colour.
- */
-export const bandPx = (columns: number): number => (columns + 5) * 12
 
 // ---------- The card, laid out for the band's width ----------
 type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?: string }

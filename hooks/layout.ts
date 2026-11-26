@@ -1,7 +1,8 @@
 // Which layout the band takes, chosen from what its row holds. Pure: the band
 // estimates each layout's width in columns and asks here. Nothing touches the engine.
 
-import type { Kind } from './cache-art'
+/** Which layout the band takes. */
+export type Kind = 'wide' | 'stacked' | 'tight' | 'minimal'
 
 /** A row's side padding (paddingX={1}), both sides. */
 export const ROW_PAD = 2
@@ -186,7 +187,7 @@ export const fitOpen = (maxRows: number, rowsAbove: number, progressPx: number, 
 export const PIE_COLS = 2
 
 /**
- * The 5h pace track in the top row (PACE_TRACK_PX in cache-art.ts, 64, 44 and 30 px) as columns at DESKTOP_COL_PX,
+ * The 5h pace track in the top row (PACE_TRACK_PX in capacity/usage/art.ts, 64, 44 and 30 px) as columns at DESKTOP_COL_PX,
  * rounded up, plus the one column of margin before it. The words after it are counted as text.
  *
  * The compact track is 44 px: measured 2026-11-26 at about 10.2 px a column (58 columns = 590 px), 4.3 columns, so 5 with
@@ -194,3 +195,10 @@ export const PIE_COLS = 2
  * under-estimate makes the app wrap.
  */
 export const PACE_TRACK_COLS = { wide: 8 + 1, compact: 5, tight: 4 + 1 } as const
+
+/**
+ * The band's width in CSS pixels for a column count: the engine keeps 5 cells
+ * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
+ * so the card never runs past the slot; the few pixels left are band colour.
+ */
+export const bandPx = (columns: number): number => (columns + 5) * 12
