@@ -129,11 +129,14 @@ test('running subagents stand beside the bar with their kind and requests, and l
   const alts = async () => (await band.findAll({ type: 'Svg' })).map(s => String(s.props.alt))
   expect(await alts()).toContain('2 subagents working')
   expect(await band.find({ text: ' ×2' })).toBeDefined()
-  expect(await band.find({ text: ' Explore 2, sonnet-coder 1' })).toBeDefined()
+  // The names are buttons (a press opens the subagent's output).
+  expect((await band.find({ key: 'crew-a-Explore' }))?.props.label).toBe('Explore 2')
+  expect((await band.find({ key: 'crew-a-sonnet-coder' }))?.props.label).toBe('sonnet-coder 1')
 
   await ($.turn.complete as (e: unknown) => Promise<unknown>)({ agentId: 'a-Explore', reason: 'answer', answer: 'ok', usage: null, durationMs: 10 })
   expect(await alts()).toContain('1 subagent working')
-  expect(await band.find({ text: ' sonnet-coder 1' })).toBeDefined()
+  expect(await band.find({ key: 'crew-a-Explore' })).toBeUndefined()
+  expect((await band.find({ key: 'crew-a-sonnet-coder' }))?.props.label).toBe('sonnet-coder 1')
   await band.unmount()
 })
 
@@ -145,7 +148,7 @@ test('a background subagent still shows after the main turn has stopped working'
   await $.agent.spawn(spawn('Explore') as never)
   const band = await $.ui.mount({ plugin: 'spendometer', surface: 'terminal', component: 'AbovePrompt', props: props(false, 100) })
   expect(await band.find({ text: ' ×1' })).toBeDefined()
-  expect(await band.find({ text: ' Explore 0' })).toBeDefined()
+  expect((await band.find({ key: 'crew-a-Explore' }))?.props.label).toBe('Explore 0')
   await band.unmount()
 })
 

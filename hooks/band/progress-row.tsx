@@ -3,10 +3,10 @@
 
 import type { Progress, Turn, Worker } from '../../types'
 import { BAR_H, crewSvg } from '../activity/progress/art'
-import { CREW_SHOWN, crewText } from '../activity/crew'
+import { CREW_SHOWN, crewLabel, crewShown } from '../activity/crew'
 import { barText, fmtElapsed, labelOf, pulseText } from '../activity/progress/progress'
 import type { Theme } from '../activity/progress/themes/kit'
-import { COMPACT_CHAR_COLS } from '../layout'
+import { BUTTON_CHROME, BUTTON_GAP, COMPACT_CHAR_COLS } from '../layout'
 import type { Kind } from '../layout'
 import type { BandUi } from './buttons'
 import { ORANGE } from './look'
@@ -29,6 +29,8 @@ export type ProgressIn = {
   /** The turn while it works with no list or report, else null. */
   pacing: Turn | null
   running: Worker[]
+  /** A press on a subagent's name. */
+  onCrew: (w: Worker) => void
   theme: Theme
 }
 
@@ -44,7 +46,7 @@ export function progressRowOf(p: ProgressIn) {
  * and dropped when nothing is, so the row never wraps past the band.
  */
 function progressOf(p: ProgressIn, key: string, availPx: number, max: number) {
-  const { Box, Text, Svg } = p.ui
+  const { Box, Button, Text, Svg } = p.ui
   const { kind, now, walking, pacing, running, theme } = p
   // Subagents still working after the main turn ended (a background agent): the work goes on, so the bar sweeps
   // beside them, without the turn's step count and time, which have stopped.
@@ -55,11 +57,15 @@ function progressOf(p: ProgressIn, key: string, availPx: number, max: number) {
   const inDrawing = !!Svg && theme.names
   const pulse = pacing && !(Svg && theme.info) ? ` ${pulseText(pacing, now)}` : ''
   const paceInfo = pacing ? `${pacing.steps} ${pacing.steps === 1 ? 'step' : 'steps'} · ${fmtElapsed(now - pacing.startedAt)}` : ''
-  const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
+  const { shown: named, more } = crewShown(running)
+  const crewWords = running.length ? ` ×${running.length}` : ''
+  const moreWords = more > 0 ? ` +${more}` : ''
   // The progress row's words are measured like the compact row's: about 0.85 columns a character on the desktop.
   const charPx = COL_PX_FULL * (Svg ? COMPACT_CHAR_COLS : 1)
   const crewDrawPx = running.length && Svg ? crewSvg(Math.min(CREW_SHOWN, running.length)).w : 0
-  const crewPx = running.length ? crewDrawPx + (crewWords.length + (walking || sweeping ? 2 : 0)) * charPx : 0
+  // Each name is a Button: its words, the frame and the gap before it, in columns of COL_PX_FULL.
+  const buttonsPx = named.reduce((sum, w) => sum + crewLabel(w).length * charPx + (BUTTON_CHROME + BUTTON_GAP) * COL_PX_FULL, 0)
+  const crewPx = running.length ? crewDrawPx + buttonsPx + (crewWords.length + moreWords.length + (walking || sweeping ? 2 : 0)) * charPx : 0
   // What the words need beside the bar, apart from the step's name: the count (or nothing) and the crew.
   const fixedPx = (walking ? (` ${said!.count}`.length) * charPx : 0) + crewPx
   const fitChars = (s: string, chars: number) => (s.length <= chars ? s : chars >= 2 ? s.slice(0, chars - 1) + '…' : '')
@@ -77,7 +83,12 @@ function progressOf(p: ProgressIn, key: string, availPx: number, max: number) {
           />
         ) : null,
         <Text key="crew-count" color="text" bold>{` ×${running.length}`}</Text>,
-        <Text key="crew-names" color="subtle">{` ${crewText(running)}`}</Text>,
+        ...named.map(w => (
+          <Box key={`crew-box-${w.id}`} flexShrink={0} marginLeft={BUTTON_GAP}>
+            <Button key={`crew-${w.id}`} label={crewLabel(w)} plain dimColor onPress={() => p.onCrew(w)} />
+          </Box>
+        )),
+        more > 0 ? <Text key="crew-more" color="subtle">{moreWords}</Text> : null,
       ]
   if (!walking && !sweeping) return null
   const wordsPx = (s: string) => s.length * charPx

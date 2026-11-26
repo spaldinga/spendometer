@@ -29,6 +29,15 @@ export type Turn = { startedAt: number; steps: number }
 /** One subagent of the main session: what kind it is, how many requests it has made, whether it is finished. */
 export type Worker = { id: string; type: string; steps: number; isDone: boolean; startedAt?: number; endedAt?: number }
 
+/** The subagent whose output the pane shows. */
+export type Watched = { id: string; type: string }
+
+/** The lines the pane shows for one agent (`denied`: why its messages cannot be read). */
+export type AgentOut = { id: string; lines: string[]; denied?: string }
+
+/** An agent the pane's switch row lists. */
+export type Recent = { id: string; type: string; isDone: boolean }
+
 /** What this conversation has cost so far at list prices, in dollars: the main session's turns and its subagents'. */
 export type Spend = { main: number; subs: number }
 
@@ -91,6 +100,9 @@ declare module 'claude-code' {
       progress: Progress | null
       turn: Turn | null
       crew: Worker[]
+      watched: Watched | null
+      agentOut: AgentOut | null
+      recentCrew: Recent[]
       subsSince: number
       realAt: number | null
       seen: string[]

@@ -10,6 +10,7 @@ import { BAR_H } from '../activity/progress/art'
 import { readProgress, readTurn } from '../activity/progress/state'
 import { THEMES } from '../activity/progress/themes'
 import { runningCrew } from '../activity/crew'
+import { openOutput } from '../activity/output/state'
 import { fmtReset } from '../capacity/usage/art'
 import { keptWindows, liveWindows, paceFor, trackPace } from '../capacity/usage/windows'
 import { readStoredCache, viewOf } from '../cost/cache/facts'
@@ -150,7 +151,7 @@ export async function renderBand<E extends RenderEvent, R>($: EngineInterface, e
   const walking = prog && prog.total > 0 ? prog : null
   const pacing = !walking && e.props.isWorking ? await readTurn($) : null
   const theme = THEMES[await themeOf($)]
-  const progressRow = progressRowOf({ ui: bandUi, kind, columns, now, walking, pacing, running, theme })
+  const progressRow = progressRowOf({ ui: bandUi, kind, columns, now, walking, pacing, running, theme, onCrew: w => openOutput($, w.id, w.type) })
 
   const rowCtx: RowCtx = { ...tipCtx, now, list, kind, compactStep, slim, total, lastText }
   const spendBox = spendBoxOf(rowCtx)

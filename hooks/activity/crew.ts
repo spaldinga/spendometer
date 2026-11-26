@@ -11,10 +11,27 @@ const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[
 export const CREW_MAX = 40
 export const CREW_SHOWN = 5
 
-/** The running subagents as the band names them: "Explore 4, sonnet-coder 12", kind and requests made. */
-export const crewText = (running: Worker[]): string => {
-  const s = running.map(w => `${w.type} ${w.steps}`).join(', ')
+/** One subagent as the band names it: "Explore 4", kind and requests made; cut to CREW_MAX. */
+export const crewLabel = (w: Worker): string => {
+  const s = `${w.type} ${w.steps}`
   return s.length > CREW_MAX ? s.slice(0, CREW_MAX - 1) + '…' : s
+}
+
+/**
+ * The subagents the band names (as buttons): at most CREW_SHOWN, and fewer when their labels, joined with ", ",
+ * would pass CREW_MAX characters; the first is always shown. `more` is how many are left out.
+ */
+export function crewShown(running: Worker[]): { shown: Worker[]; more: number } {
+  const shown: Worker[] = []
+  let len = 0
+  for (const w of running) {
+    if (shown.length >= CREW_SHOWN) break
+    const next = len + (shown.length ? 2 : 0) + crewLabel(w).length
+    if (shown.length > 0 && next > CREW_MAX) break
+    shown.push(w)
+    len = next
+  }
+  return { shown, more: running.length - shown.length }
 }
 
 /** The subagents still working. */

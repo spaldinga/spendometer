@@ -4,7 +4,7 @@ project: spendometer
 order: 140
 kind: feature
 size: M
-status: todo
+status: doing
 source: idea from the agent-den mod (stilero/mods-marketplace), 2026-11-26
 ---
 
@@ -19,12 +19,38 @@ Clicking a subagent in the crew display opens a pane with that subagent's messag
 updated while it runs and kept for a while after it finishes. Redraw the pane only when its content changed, so an
 idle pane costs nothing.
 
+Built and committed 2026-11-26; not yet checked in the app.
+
+### Check in the app
+After `/reload-plugins --force`, start a turn that runs two or more subagents:
+- The crew on the progress row shows each subagent's name as a dim button (`Explore 3`), at most five, with `+N` for
+  the rest; the row still fits at narrow widths (each button's frame is counted as 4 columns; it may be generous).
+- Clicking a name opens a pane beside the chat titled `<type> · output`: the header `<type> · running`, the prompt as
+  `▸ …`, then its text and `→ Tool arg` lines, growing as it works.
+- When the subagent finishes, the header says `done` and the final output stays.
+- With more than one subagent seen, the pane has a row of their names; clicking one switches the pane to it,
+  finished ones included.
+- Closing the pane stops the reading; clicking a name again opens it.
+- After `/clear` the pane's list is empty.
+
 ## Done when
 In the app, clicking a running subagent opens a pane that shows its output as it grows; clicking a finished one shows
 its final output.
 
 ## Open
-- Pane beside the chat, or a tab in the card under the band?
-- How much output to keep: the last N lines, or everything?
-- How long a finished subagent stays clickable?
-- Do workflow agents expose their messages the same way? (agent-den says their output is limited.)
+Assumptions taken while building (2026-11-26), to be confirmed in the app:
+- **A pane beside the chat, not a card tab.** The host offers panes (`$.ui.open` with a `ui.render` hook on `Pane`),
+  drawn with text, scrolling and placed at any width when a press opens them. The card is one SVG
+  ([ADR 0003](../adr/0003-card-is-one-svg.md)) sized to the band: wrong for growing text. The host also has
+  `$.ui.view({ agentId })`, which swaps the main view to the agent's transcript; not used, as it takes over the
+  prompt and hides the main conversation.
+- **How much output:** the newest 200 lines, each cut to 300 characters; tool results are left out, tool uses are one
+  line. The host refuses `last` on `$.session.messages` from a mod, so the whole transcript is read and cut here.
+  It is read only for the watched agent, after each of its steps and when it finishes, and the pane's state is
+  written only when its lines changed.
+- **How long a finished subagent stays clickable:** the band's crew shows running ones only (as before); the pane's
+  switch row keeps the last 6 subagents of the conversation until `/clear`.
+- **Workflow agents:** the host's types say `$.session.messages({ agentId })` does not read "an agent a workflow run
+  filed under the run". Such an agent shows "This agent's output can't be read here: <reason>". Not verified live.
+- If the host denies the read after an agent finishes, the lines read while it ran stay.
+- Not tested: the `ui.close` hook (the test kit has no `$.ui.close`), and the crew buttons' real width.

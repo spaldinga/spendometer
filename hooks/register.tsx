@@ -4,6 +4,8 @@ import type { EngineInterface, Register } from 'claude-code'
 import { LIST_TOOLS, REPORT_TOOL, labelOf } from './activity/progress/progress'
 import { countStep, dropFinished, noteListCall, noteReport, startTurn } from './activity/progress/state'
 import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew'
+import { OUTPUT_PANE, closedOutput, noteRecent, refreshOutput, resetOutput } from './activity/output/state'
+import { outputPane } from './activity/output/pane'
 import { SHELLS, holdCommand } from './safety/guard/hold'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
@@ -198,6 +200,7 @@ export const register: Register = on => {
         await resetCache($)
         await resetFold($)
         await clearSeen($)
+        await resetOutput($)
       } catch { /* the band redraws from the next turn */ }
     }
     return next(e)
@@ -226,6 +229,7 @@ export const register: Register = on => {
       await putCache($, () => null)
       await resetFold($)
       await clearSeen($)
+      await resetOutput($)
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
       const lastAt = now - e.seconds_since_last_response * MS_PER_SECOND
@@ -272,6 +276,8 @@ export const register: Register = on => {
       await noteCrewStep($, e.agentId)
     }
     yield* next(e)
+    // After the step, so its messages exist: the watched subagent's pane takes what is new.
+    if (e.agentId) await refreshOutput($, e.agentId)
   })
 
   on('agent.spawn', async ($, e, next) => {
@@ -281,6 +287,7 @@ export const register: Register = on => {
     const type = String(e.subagentType || 'agent')
     const startedAt = await $.clock.now()
     await addCrew($, id, type, startedAt)
+    await noteRecent($, id, type, false)
     return started
   })
 
@@ -292,6 +299,8 @@ export const register: Register = on => {
       const id = e.agentId
       const { type, start, end, prevEnd } = await finishCrew($, id, paid, e.durationMs)
       if (paid > 0) await addSpend($, paid, false, e.usage, type, { start, end, prevEnd })
+      await noteRecent($, id, type, true)
+      await refreshOutput($, id)
       return r
     }
     if (paid > 0) await addSpend($, paid, true, e.usage)
@@ -308,4 +317,11 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => renderBand($, e, next, kw))
+
+  // The subagent output pane: drawn by outputPane; closing it (by the person or by us) stops the refreshing.
+  on('ui.render', { component: 'Pane', requestId: OUTPUT_PANE }, ($, e) => outputPane($, e))
+  on('ui.close', { id: OUTPUT_PANE }, async ($, e, next) => {
+    await closedOutput($)
+    return next(e)
+  }).catch(($, e, next) => next(e)) // a pane that fails to note its closing is still closed
 }

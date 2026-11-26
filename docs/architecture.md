@@ -15,13 +15,14 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 
 | Event | What it does |
 |---|---|
-| `session.start`, `session.end`, `classic.SessionStart`, `session.compact` | Reset or carry per-conversation state: each owner exports its reset (`resetCache`, `resetFold`, `clearSeen`) and the handler calls them; keep-warm window; old saved state is pruned at start by each owner's `cleanOld…` (one `$.store.keys()` read in register) |
+| `session.start`, `session.end`, `classic.SessionStart`, `session.compact` | Reset or carry per-conversation state: each owner exports its reset (`resetCache`, `resetFold`, `clearSeen`, `resetOutput`) and the handler calls them; keep-warm window; old saved state is pruned at start by each owner's `cleanOld…` (one `$.store.keys()` read in register) |
 | `prompt.submit`, `turn.step`, `turn.complete` | Progress, the turn's cost, pace samples, the spend record |
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
-| `agent.spawn` | Subagents for the crew display and delegation figures |
+| `agent.spawn` | Subagents for the crew display, the output pane's recent list and delegation figures |
 | `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)) |
 | `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
+| `ui.render` (Pane), `ui.close` | The subagent output pane (`activity/output/pane.tsx`), opened by pressing a subagent in the band and refreshed on that subagent's steps and turn end; its close stops the reading |
 
 On this machine `classic.SessionStart` is skipped for user-installed mods; don't rely on it (see `AGENTS.md`).
 
@@ -35,7 +36,7 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `register.tsx` | All event wiring: `on(...)` calls, `countCall` and `afterShell`; the `ui.render` handler is one line calling `renderBand`, and `/spendometer` calls `settingsAnswer` | no |
 | `band/render.tsx` | `renderBand` (`ui.render`): reads the domains' views, measures, picks the layout, builds the band and the open card; `arm`, the 30 s redraw timer | no |
 | `band/row.tsx` | The row's pieces per layout: window blocks (pie, pace track and words), the cost box, the chip with Robo, the assembled rows (`RowCtx`, `Pieces`) | no |
-| `band/progress-row.tsx` | The progress row: bar, words and crew fitted to the room (`progressRowOf`) | no |
+| `band/progress-row.tsx` | The progress row: bar, words and crew fitted to the room (`progressRowOf`); each shown subagent is a Button whose press calls `onCrew` (counted in the width with its frame) | no |
 | `band/buttons.tsx` | The fold button, the tabs and the keep-warm mark, the hover box (`tip`), `toggleFold`, `pressTab`, `tabOf`; the `fold` atom and the card tab in the store | no |
 | `band/width-note.ts` | The width the band was last drawn at (`noteWidth`, `noteFit`, `widthLine`), for the status command | no |
 | `band/settings.ts` | `/spendometer`: `settingsAnswer` parses the keyword and asks the owner (the `keepwarm` keyword goes to the keepwarm command); `SETTINGS`, `HOLD_KEY`, `THEME_KEY`, `switchOf`, `themeOf`, the theme and tab lists | no |
@@ -69,7 +70,10 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `safety/g
 | `activity/progress/progress.ts`, `activity/progress/art.ts` | Where the request is; the progress bar drawings | yes |
 | `activity/progress/themes/` | The progress themes: `kit.ts` (shared drawing helpers, `Theme`), one file per theme (`calm`, `vitals`, `bridge`, `wake`, `dial`, `comet`), `index.ts` (`THEMES`, ids, names, `themeIdOf`) | yes |
 | `activity/progress/state.ts` | The `progress` atom (`readProgress`, `noteListCall`, `noteReport`, `dropFinished`) and the `turn` atom (`readTurn`, `startTurn`, `countStep`) | no |
-| `activity/crew.ts` | The `crew` atom, `crewText`, `CREW_SHOWN`, and what the spawn, step and turn hooks do to the crew | no |
+| `activity/crew.ts` | The `crew` atom, `crewLabel`, `crewShown` (the names the band shows as buttons: at most `CREW_SHOWN`, fewer past `CREW_MAX` characters, the rest a `+N`), and what the spawn, step and turn hooks do to the crew | no |
+| `activity/output/lines.ts` | `outputLines`: a subagent's messages as pane lines (prompt `▸`, text, tool uses `→ tool arg`, the newest `OUT_KEEP`) | yes |
+| `activity/output/state.ts` | The output pane's atoms (`watched`, `agentOut`, `recentCrew`), `OUTPUT_PANE`, `openOutput` (a crew button press), `refreshOutput` (writes `agentOut` only when it changed), `noteRecent`, `closedOutput`, `resetOutput`, `outputView` | no |
+| `activity/output/pane.tsx` | `outputPane`: the pane's body (agent and running/done, a switch row for recent agents, the tail of the output that fits) | no |
 | `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...), `svgDoc`, the SVG wrapper, and the drawing kit (`Kit`, `kitOf(W, mode)`: `t`, `big`, `dots`, `pick`, `capPick`, `hline`...) the zones share; the one file domains may import | yes |
 | `band/font.ts` | The embedded Outfit font for SVG text | data |
 
@@ -80,7 +84,7 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold (`band/buttons.tsx`), progress and turn (`activity/progress/state.ts`), crew (`activity/crew.ts`), seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold (`band/buttons.tsx`), progress and turn (`activity/progress/state.ts`), crew (`activity/crew.ts`), seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`), the subagent output pane's watched agent, its lines and the recent agents (`watched`, `agentOut`, `recentCrew`, in `activity/output/state.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command, in `band/width-note.ts`), timers, the redraw flag (`ticking`, in `band/render.tsx`), the held call and the working wait (`held`, `waitAt`, in `safety/guard/hold.ts`) |
 
