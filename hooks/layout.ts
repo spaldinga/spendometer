@@ -42,12 +42,10 @@ export const ROBO_COLS = 3
 /**
  * One icon button on the compact and tight layouts, its gap included. Measured again on 2026-11-26 at 58
  * columns (590 px, about 10.2 px a column): `◷`, `$` and `+` each 30 px plus a 10 px gap, 40 px = 4 columns;
- * the tab in use, in brackets, 41 px: one column more (TAB_BRACKET_COLS). The 2026-11-13 figure (58 px plus
+ * (the tabs are emoji now; their width is not yet measured). The 2026-11-13 figure (58 px plus
  * 12, 6 columns) sent the buttons to a row of their own with half the row empty. The fold button counts the same.
  */
 export const COMPACT_BUTTON_COLS = 4
-/** The extra column the tab in use takes for its brackets, on the compact and tight layouts. */
-export const TAB_BRACKET_COLS = 1
 /**
  * The keep-warm box on the compact and tight rows: a plain ✓ with its gap, measured 2026-11-26 at 51 columns
  * (520 px, about 10.2 px a column) at about 31 px: 3 columns. It has no button background, so it is smaller than the icon buttons.

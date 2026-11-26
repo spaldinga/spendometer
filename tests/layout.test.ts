@@ -159,12 +159,12 @@ test('at 90 columns the compact row holds only the essentials, buttons inline as
   await band.unmount()
 })
 
-test('the compact buttons, measured 2026-11-26: fold and three tabs are 4 × 4 columns + 1 for the brackets = 17', async ($, on) => {
+test('the compact buttons: fold and three tabs are 4 × 4 columns = 16 (the emoji width is not yet measured in the app)', async ($, on) => {
   // At 6 columns a button the band sent them to a row of their own at 58 columns with half the row empty.
   const band = await mountAt($, on, 64)
   const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
   const text = ((await $.command.run({ command: 'spendometer', args: '', ...RUN })) as { text: string }).text
-  expect(text).toMatch(/compact [\d/]+\+17\b/)
+  expect(text).toMatch(/compact [\d/]+\+16\b/)
   await band.unmount()
 })
 
@@ -233,33 +233,33 @@ test('compact: the keep button sits in the chip block after the next cost', asyn
 const tabLabelsOf = async (band: Awaited<ReturnType<typeof mountAt>>) =>
   Promise.all(['overview', 'context', 'cost'].map(async id => (await band.find({ key: `tab-${id}-button` }))?.props.label))
 
-test('tab buttons: there with the card closed, words on the wide row, one press opens the card on that tab, the chosen one in brackets, each before the fold button', async ($, on) => {
+test('tab buttons: there with the card closed, words on the wide row, one press opens the card on that tab, the others dimmed, each before the fold button', async ($, on) => {
   const band = await mountAt($, on, 160)
   expect(await band.find({ key: 'card' })).toBeUndefined()
-  expect(await tabLabelsOf(band)).toEqual(['[Overview]', 'Context', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   const keys = keysOf(await band.find({ key: 'row' }))
   expect(keys.slice(keys.indexOf('tab-overview'), keys.indexOf('fold') + 1)).toEqual(['tab-overview', 'tab-context', 'tab-cost', 'fold'])
   // Each carries hover text.
   for (const text of [/^Overview: /, /^Context: /, /^Cost: /]) expect(await band.find({ type: 'Text', text })).toBeDefined()
   // Closed: a tab opens the card and is stored, in one press.
   await band.press({ key: 'tab-cost-button' })
-  expect(await tabLabelsOf(band)).toEqual(['Overview', 'Context', '[Cost]'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   expect(lastKv.get('cardTab')).toBe('cost')
   expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('CACHE DISCOUNT')
   // Open: another tab switches, the card stays.
   await band.press({ key: 'tab-context-button' })
   expect(await band.find({ key: 'card' })).toBeDefined()
   expect(lastKv.get('cardTab')).toBe('context')
-  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   // Open: the tab in use closes the card; the tabs stay, the tab stays chosen.
   await band.press({ key: 'tab-context-button' })
   expect(await band.find({ key: 'card' })).toBeUndefined()
-  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   expect(lastKv.get('cardTab')).toBe('context')
   // The fold button opens it again on that tab.
   await band.press({ key: 'cache-fold' })
   expect(await band.find({ key: 'card' })).toBeDefined()
-  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   await band.unmount()
 })
 
@@ -301,9 +301,9 @@ test('the terminal has no tab buttons, open or closed, and no card to open', asy
   await band.unmount()
 })
 
-test('tab buttons: one glyph each on the compact row, the chosen one in brackets', async ($, on) => {
+test('tab buttons: one glyph each on the compact row, the others dimmed', async ($, on) => {
   const band = await mountAt($, on, 70, true, 70)
-  expect(await tabLabelsOf(band)).toEqual(['[◷]', '◧', '$'])
+  expect(await tabLabelsOf(band)).toEqual(['📊', '🧠', '💰'])
   await band.unmount()
 })
 
@@ -311,10 +311,10 @@ test('a stored tab is the one shown, and an unknown stored value reads as Overvi
   const band = await mountAt($, on, 160, true, 70)
   lastKv.set('cardTab', 'context')
   await band.press({ key: 'tab-context-button' })
-  expect(await tabLabelsOf(band)).toEqual(['Overview', '[Context]', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   lastKv.set('cardTab', 'bogus')
   await band.press({ key: 'tab-overview-button' })
-  expect(await tabLabelsOf(band)).toEqual(['[Overview]', 'Context', 'Cost'])
+  expect(await tabLabelsOf(band)).toEqual(['📊 Overview', '🧠 Context', '💰 Cost'])
   await band.unmount()
 })
 
@@ -343,7 +343,7 @@ test('at 100 columns, a usual desktop window, every button stays on the first ro
 
 // The estimates at this content (both windows, ≈$0.49, a warm chip, $0.04 next), desktop, without the buttons:
 // step 0: 53, 1: 43 warm, 2: 35, 3: 30, 4: 23 (a pie, 2 columns, in each window; the keep box 3 columns, measured 2026-11-26). The buttons
-// are the fold and three tabs, 4 columns each plus 1 for the brackets (17), and the fold is 4 of those. With 2 columns of slack:
+// are the fold and three tabs, 4 columns each (16), and the fold is 4 of those. With 2 columns of slack:
 // step 0 from 72 columns, 1 from 62, 2 from 54, 3 from 49, 4 from 42 (with +); from 38 step 4 still inline but without +;
 // then slimmer variants of step 4: no pace track (23, same here as no pace shows), no keep box 20 (from 35), the 5h window
 // alone 14 (from 29); at 28 columns and under the minimal row (18: 5h pie and percent, Robo, +). Never a buttons row (desktop).

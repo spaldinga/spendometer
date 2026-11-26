@@ -25,7 +25,7 @@ import { DAY_PREFIX, dayKey, isOldDay, lastDays } from './days'
 import { WINDOW_MS, paceOf } from './pace'
 import {
   BLOCK_MARGIN, BUTTON_GAP, CACHE_MARGIN, DESKTOP_CHAR_COLS, FOLD_COLS, LABEL_COLS, ROBO_CHIP_COLS, ROW_PAD,
-  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, KEEP_COMPACT_COLS, TAB_BRACKET_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
+  CHIP_COLS, PACE_TRACK_COLS, PIE_COLS, COMPACT_BUTTON_COLS, KEEP_COMPACT_COLS, COMPACT_CHAR_COLS, COMPACT_MARGIN, COMPACT_STEPS, ROBO_COLS, TEXT_CHIP_COLS, WAITING_COLS, WAITING_ROW_COLS, WAITING_SPEND_GAP, WIDE_LABEL_MARGIN, blockCols, buttonCols, cardColsOf, DESKTOP_COL_PX, fitOpen, ROW_PX, layoutOf, rowsOf, textCols, TIP_LIFT,
 } from './layout'
 
 // A band above the prompt in a warm dark look: card surface, cream text,
@@ -943,19 +943,16 @@ export const register: Register = on => {
       </Box>
     ) : null
 
-    // The card's tabs, whenever the fold button shows (open or closed): words on the wide row, one glyph each elsewhere. The one in use is
-    // in brackets (a Button's own props are not known to take a dimmed look).
+    // The card's tabs, whenever the fold button shows (open or closed): an emoji each, with its word on the wide row.
     const tab = await tabOf($)
-    const TAB_GLYPH: Record<Tab, string> = { overview: '◷', context: '◧', cost: '$' }
+    const TAB_GLYPH: Record<Tab, string> = { overview: '📊', context: '🧠', cost: '💰' }
     const TAB_TIPS: Record<Tab, string> = {
       overview: 'Overview: the pace of each usage window against its reset, what delegating to subagents saved, and what this thread has cost.',
       context: 'Context: how big the conversation is, how many turns are left, and what tool output filled it.',
       cost: 'Cost: the cache discount, the cost of a message and what each model cost.',
     }
-    const tabLabel = (id: Tab, isWide: boolean) => {
-      const base = isWide ? TAB_NAMES[id] : TAB_GLYPH[id]
-      return id === tab ? `[${base}]` : base
-    }
+    // Wide row: the emoji and the word; elsewhere the emoji alone. The tab in use is marked by dimming the others (dimColor).
+    const tabLabel = (id: Tab, isWide: boolean) => (isWide ? `${TAB_GLYPH[id]} ${TAB_NAMES[id]}` : TAB_GLYPH[id])
     const tabsShown = Svg !== null && view !== null
     const tabButtons = (isWide: boolean) =>
       tabsShown
@@ -964,6 +961,7 @@ export const register: Register = on => {
               <Button
                 key={`tab-${id}-button`}
                 label={tabLabel(id, isWide)}
+                dimColor={id !== tab}
                 onPress={() => pressTab($, id)}
               />
               {tip(`tab-${id}`, TAB_TIPS[id])}
@@ -1045,7 +1043,7 @@ export const register: Register = on => {
       (keepAlone ? keepButtonCols : 0)
     // Icon buttons on the compact and tight layouts: measured, 6 columns each with its gap.
     // The tabs: a glyph button each, and the one in use has its two brackets.
-    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS + (tabsShown ? TAB_BRACKET_COLS : 0)
+    const buttonsCols = ((button ? 1 : 0) + (keepAlone ? 1 : 0) + (tabsShown ? TABS.length : 0)) * COMPACT_BUTTON_COLS
     // The compact row, from everything (step 0) to the least (step 4): percent left of each window, the
     // cost, the chip and the next message's cost. Steps: 1 next cost only while cold, 2 no total,
     // 3 Robo (the terminal: a letter) for the chip, 4 `26%` for `26% left`.

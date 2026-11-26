@@ -4,7 +4,7 @@ project: spendometer
 order: 120
 kind: design
 size: S
-status: todo
+status: done
 source: user feedback 2026-11-25
 ---
 
@@ -32,3 +32,6 @@ Open for the build (after item 100):
 - Emoji look depends on the font; check in the terminal as well as the app.
 
 Rejected: text glyph sets A to G (less clear), drawn SVG icons H to J (more work, same app-only limit), underline and dimming (app only, weaker than the pill).
+
+## Built
+Tabs are 📊 Overview, 🧠 Context, 💰 Cost: emoji and word on the wide row, the emoji alone elsewhere. The tab in use is marked by dimming the others (`dimColor`), not the accent pill, because a Button's background could not be confirmed settable. The terminal has no tab buttons, so brackets are gone. The compact tab button is still counted at 4 columns, measured for `◷`, not for emoji. Follow-up: `assets/mockups-icons/keep-emoji.svg` shows a green ✅ for the keep-warm box (not chosen yet).
