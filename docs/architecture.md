@@ -57,7 +57,8 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `capacity/usage/windows.ts` | The `windows` atom, `clean`, `trackPace`, `paceFor`, `liveWindows`, `pull`, `setWindows`, `keptWindows` | no |
 | `capacity/usage/art.ts` | The pie, 5h pace track, `paceWords`, `fmtReset`, `fmtSpan`, `PACE_TIP`, `PaceRow` | yes |
 | `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
-| `activity/progress/progress.ts`, `activity/progress/art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
+| `activity/progress/progress.ts`, `activity/progress/art.ts` | Where the request is; the progress bar drawings | yes |
+| `activity/progress/themes/` | The progress themes: `kit.ts` (shared drawing helpers, `Theme`), one file per theme (`calm`, `vitals`, `bridge`, `wake`, `dial`, `comet`), `index.ts` (`THEMES`, ids, names, `themeIdOf`) | yes |
 | `activity/progress/state.ts` | The `progress` atom: `readProgress`, `noteListCall`, `noteReport`, `dropFinished` | no |
 | `activity/crew.ts` | The `crew` atom, `crewText`, `CREW_SHOWN`, and what the spawn, step and turn hooks do to the crew | no |
 | `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...), `svgDoc`, the SVG wrapper, and the drawing kit (`Kit`, `kitOf(W, mode)`: `t`, `big`, `dots`, `pick`, `capPick`, `hline`...) the zones share; the one file domains may import | yes |

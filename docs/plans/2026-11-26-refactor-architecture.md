@@ -195,3 +195,8 @@ all tests pass with only import lines changed (until step 21); the band looks th
   `noteCrewStep`, `addCrew` and `finishCrew` (which returns the type and run interval the spend record needs).
   `crewText` is no longer exported from `register.tsx` (no test imported it). `progress-themes.ts` stays at the root
   until step 15.
+- **Step 15:** the themes' drawing functions are exported as `<id>Walk` / `<id>Pace` (were `heart*`, `console*`, `wave*`,
+  `pie*`, `comet*`); `calm.ts` holds the two lambdas `THEMES.calm` had inline. The `names`/`info` flags stay in
+  `THEMES`. Helpers used by one theme live in it: `dotted` in vitals, `PULSE` in wake, `CAPS`/`SMALL` in bridge.
+  `kit.ts` keeps `CY`, `CHAR`, `FONT` and the helpers several themes use. README's file list is already stale
+  (names `cache-art.ts`); not touched.
