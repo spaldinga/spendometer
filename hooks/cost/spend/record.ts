@@ -183,3 +183,41 @@ export const putSpan = (spans: readonly [number, number][] | undefined, start: n
   else list.push([start, Math.max(end, start)])
   return list.slice(-SPAN_KEEP)
 }
+
+/** Adds a tool call's output tokens (and a re-read of an unchanged file) to this session's record. Nothing to add writes nothing. */
+export async function addToolOut($: EngineInterface, tool: string, tokens: number, reread: boolean): Promise<void> {
+  if (tokens <= 0 && !reread) return
+  try {
+    const key = SPEND_PREFIX + (await $.session.id())
+    const next = recordOf(await readSpend($), await $.clock.now())
+    if (tokens > 0) next.byTool = { ...next.byTool, [tool]: (next.byTool?.[tool] ?? 0) + tokens }
+    if (reread) {
+      next.rereads = (next.rereads ?? 0) + 1
+      next.rereadTok = (next.rereadTok ?? 0) + tokens
+    }
+    await $.store.set(key, next)
+    $.ui.invalidate('ui.render')
+  } catch { /* the card shows no tool output; the call went on */ }
+}
+
+/**
+ * Notes the context size at the end of a main turn, and how fast it grows: the moving average of its increases.
+ * `nextGrowth` is capacity's moving average, passed in by the caller: this file imports nothing from capacity.
+ */
+export async function addContext(
+  $: EngineInterface,
+  nextGrowth: (growth: number | undefined, prev: number | undefined, tokens: number) => number | undefined,
+): Promise<void> {
+  try {
+    const tokens = (await cacheFacts($))?.tokens ?? 0
+    if (tokens <= 0) return
+    const was = await readSpend($)
+    // A conversation with no priced turn yet has nothing to attach the context to.
+    if (!was) return
+    const next = recordOf(was, await $.clock.now())
+    const growth = nextGrowth(next.growth, next.ctxPrev, tokens)
+    if (growth !== undefined) next.growth = growth
+    next.ctxPrev = tokens
+    await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
+  } catch { /* the runway waits for the next turn */ }
+}

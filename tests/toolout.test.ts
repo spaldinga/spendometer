@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { SEEN_CAP, dropPath, noteRead, normPath, readKey, tokOf, topTools } from '../hooks/toolout'
+import { SEEN_CAP, dropPath, noteRead, normPath, readKey, tokOf, topTools } from '../hooks/capacity/context/toolout'
 
 test('tokens are a quarter of the characters, rounded up, and 0 without text', () => {
   expect(tokOf('abcd')).toBe(1)

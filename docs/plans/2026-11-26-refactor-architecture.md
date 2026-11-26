@@ -112,6 +112,9 @@ wanted). Card zones follow the same idea: each slice's `card.ts` draws its zones
   A slice exports small functions around its atom (`setWindows`, `keptWindows`) instead.
 - **Exported functions that take `$` are function declarations** (`export async function f($, …)`), not arrow
   consts: the validator follows `$` calls across an import into function declarations (its `calls: … (via f)` list).
+- **Measure in one domain, record in another** (step 9): `measureCall` returns `{tool, tokens, reread}` and
+  `register.tsx`'s `countCall` passes it to cost's `addToolOut`; `addContext` (cost) takes capacity's `nextGrowth` as a
+  parameter, passed by `register.tsx`.
 - **Copies so far:** `fmtIdle` in `capacity/usage/art.ts`; the window `NAMES` and `COLORS` in
   `capacity/usage/windows.ts` (the band keeps its own until step 17, which should pass one set as data).
 

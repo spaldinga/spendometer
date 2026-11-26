@@ -7,7 +7,7 @@ import { BAR_H, crewSvg } from './progress-art'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
-import { dropPath, noteRead, readKey, tokOf } from './toolout'
+import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import type { Report, Risk } from './guard'
 import { DANGER, EMPTY, HUE, INK, OK, ORANGE, TEXT, YELLOW } from './band/look'
 import {
@@ -20,7 +20,7 @@ import { ROBO_SIZE, WORD, chipSvg, chipTip, roboSvg } from './cost/cache/chip'
 import { MODELS, coldCost, costOf, familyOf, turnCost, usd, warmCost } from './cost/prices'
 import { CACHE_PREFIX, TTL_MIN, TTL_MS, cacheFacts, fmtIdle, mineModel, putCache, readStoredCache, viewOf } from './cost/cache/facts'
 import type { CacheView } from './cost/cache/facts'
-import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readDays, readSpend, recordOf, spendLine } from './cost/spend/record'
+import { DAY_KEEP_DAYS, OLD_PACE_PREFIX, SPEND_KEEP_MS, SPEND_PREFIX, addKeepWarm, addResults, addSpend, readDays, readSpend, recordOf, spendLine, addToolOut, addContext } from './cost/spend/record'
 import type { Keep } from './cost/cache/keepwarm/state'
 import { KEEP_PREFIX, freshKeep } from './cost/cache/keepwarm/state'
 import { pingKeptCacheWarm } from './cost/cache/keepwarm/pinger'
@@ -70,76 +70,11 @@ const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn 
 const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[])
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
-/** Read keys (path and range) the main thread read and has not edited since: a second read of one is a re-read. Lost on a reload. */
-const seen = atom({ plugin: 'spendometer', key: 'seen' } as const, [] as string[])
 
-/** Adds a tool call's output tokens (and a re-read of an unchanged file) to this session's record. Nothing to add writes nothing. */
-const addToolOut = async ($: EngineInterface, tool: string, tokens: number, reread: boolean): Promise<void> => {
-  if (tokens <= 0 && !reread) return
-  try {
-    const key = SPEND_PREFIX + (await $.session.id())
-    const next = recordOf(await readSpend($), await $.clock.now())
-    if (tokens > 0) next.byTool = { ...next.byTool, [tool]: (next.byTool?.[tool] ?? 0) + tokens }
-    if (reread) {
-      next.rereads = (next.rereads ?? 0) + 1
-      next.rereadTok = (next.rereadTok ?? 0) + tokens
-    }
-    await $.store.set(key, next)
-    $.ui.invalidate('ui.render')
-  } catch { /* the card shows no tool output; the call went on */ }
-}
-
-/** True for a hook result that refused the call. */
-const isDeny = (r: unknown): boolean => !!r && typeof r === 'object' && 'deny' in r
-
-/**
- * Counts a finished call's output in the main context: the size of the text the model read, by tool name.
- * Subagent calls are left out (their output never enters the main context), and so are refused ones.
- * A Read of a range already read and not edited since is a re-read; an errored Read is not recorded as seen.
- */
-const measureCall = async ($: EngineInterface, tool: string, e: unknown, r: unknown): Promise<void> => {
-  try {
-    const a = e as { agentId?: string; file_path?: unknown; offset?: unknown; limit?: unknown }
-    if (a.agentId || isDeny(r)) return
-    const res = r as { text?: unknown; isError?: unknown } | null | undefined
-    const tokens = tokOf(res?.text)
-    let reread = false
-    if (tool === 'Read' && typeof a.file_path === 'string' && !res?.isError) {
-      const key = readKey(a.file_path, typeof a.offset === 'number' ? a.offset : undefined, typeof a.limit === 'number' ? a.limit : undefined)
-      await update($, seen, s => {
-        const n = noteRead(s, key)
-        reread = n.reread
-        return n.seen
-      })
-    }
-    await addToolOut($, tool, tokens, reread)
-  } catch { /* the figure misses this call */ }
-}
-
-/** Forgets the reads of a file the main thread just changed. */
-const forgetPath = async ($: EngineInterface, e: unknown, r: unknown): Promise<void> => {
-  try {
-    const a = e as { agentId?: string; file_path?: unknown; notebook_path?: unknown }
-    const path = typeof a.file_path === 'string' ? a.file_path : typeof a.notebook_path === 'string' ? a.notebook_path : null
-    // A subagent's edit changes the file for the main thread too, so it counts here, unlike its output.
-    if (path !== null && !isDeny(r)) await update($, seen, s => dropPath(s, path))
-  } catch { /* a re-read may then be counted that was not one */ }
-}
-
-/** Notes the context size at the end of a main turn, and how fast it grows: the moving average of its increases. */
-const addContext = async ($: EngineInterface): Promise<void> => {
-  try {
-    const tokens = (await cacheFacts($))?.tokens ?? 0
-    if (tokens <= 0) return
-    const was = await readSpend($)
-    // A conversation with no priced turn yet has nothing to attach the context to.
-    if (!was) return
-    const next = recordOf(was, await $.clock.now())
-    const growth = nextGrowth(next.growth, next.ctxPrev, tokens)
-    if (growth !== undefined) next.growth = growth
-    next.ctxPrev = tokens
-    await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
-  } catch { /* the runway waits for the next turn */ }
+/** Measures a finished call (capacity/context) and adds what it found to the Spent record (cost/spend). */
+const countCall = async ($: EngineInterface, tool: string, e: unknown, r: unknown): Promise<void> => {
+  const m = await measureCall($, tool, e, r)
+  if (m) await addToolOut($, m.tool, m.tokens, m.reread)
 }
 
 /** A switch kept in the store: its saved value, or `fallback` when none was saved or the store cannot be read. */
@@ -386,7 +321,7 @@ export const resetHold = (): void => {
 async function pass<E, R>($: EngineInterface, e: E, next: (e: E) => Promise<R> | R, command: string, tool: string): Promise<R> {
   const r = await next(e)
   if (!isDeny(r)) await addResults($, command)
-  await measureCall($, tool, e, r)
+  await countCall($, tool, e, r)
   return r
 }
 
@@ -446,7 +381,7 @@ export const register: Register = on => {
   for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'] as const) {
     on('tool.call', { tool }, async ($, e, next) => {
       const r = await next(e)
-      await measureCall($, tool, e, r)
+      await countCall($, tool, e, r)
       return r
     })
   }
@@ -455,7 +390,7 @@ export const register: Register = on => {
     on('tool.call', { tool }, async ($, e, next) => {
       const r = await next(e)
       await forgetPath($, e, r)
-      await measureCall($, tool, e, r)
+      await countCall($, tool, e, r)
       return r
     })
   }
@@ -576,7 +511,7 @@ export const register: Register = on => {
       try {
         await update($, { plugin: 'spendometer', key: 'cache' } as const, () => null)
         await update($, fold, () => null)
-        await update($, seen, () => [])
+        await clearSeen($)
       } catch { /* the band redraws from the next turn */ }
     }
     return next(e)
@@ -591,7 +526,7 @@ export const register: Register = on => {
       // The context fell below half of what it was: a compaction, after which reading a file again is legitimate.
       try {
         const was = (await cacheFacts($))?.tokens ?? 0
-        if (was > 0 && tokens < was / 2) await update($, seen, () => [])
+        if (was > 0 && tokens < was / 2) await clearSeen($)
       } catch { /* the seen-set stays */ }
       await putCache($, c => (c ? { ...c, tokens, window: e.context.window || c.window } : c))
     }
@@ -604,7 +539,7 @@ export const register: Register = on => {
     if (e.source === 'clear' || e.source === 'compact') {
       await putCache($, () => null)
       await update($, fold, () => null)
-      await update($, seen, () => [])
+      await clearSeen($)
     } else if ((e.source === 'resume' || e.source === 'fork') && typeof e.seconds_since_last_response === 'number') {
       const now = await $.clock.now()
       const lastAt = now - e.seconds_since_last_response * 1000
@@ -690,7 +625,7 @@ export const register: Register = on => {
     const lastAt = !c || now - c.lastAt > e.durationMs ? now : c.lastAt
     try { await pull($) } catch { /* the figures come with the next reading */ }
     await measure($, lastAt, e.usage?.model ?? null)
-    await addContext($)
+    await addContext($, nextGrowth)
     // After the cache clock is stamped: the next ping counts from it.
     try { await afterTurn($, kw, { hasUsage: !!e.usage }) } catch { /* the next turn tries again */ }
     return r

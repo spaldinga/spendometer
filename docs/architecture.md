@@ -40,12 +40,13 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `guard.ts` | Recognises risky git commands and holds them | no |
 | `cost/cache/facts.ts` | The cache facts in atoms and the store, and `viewOf`, `CacheView`, `TTL_*`, `fmtIdle`, `mineModel` | no |
 | `cost/cache/chip.ts` | The WARM/COLD chip and Robo; keep-warm cost figures (`keepWarmCost`, `cheaperModels`) and the chip's hover text | yes |
-| `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
+| `cost/spend/record.ts` | The session's `Spent` record in the store: read it, and add a turn's cost (`addSpend`, with the `subsSince` atom and `putSpan`), commits and PRs (`addResults`), tool output (`addToolOut`), context size and growth (`addContext`), keep-warm figures; `readDays`, `spendLine`, the clean-up ages | no |
 | `cost/prices.ts` | The price table (`MODELS`), what a turn cost, `usd` and `tok` as the card writes them | yes |
 | `cache-art.ts` | The card SVG (palette in `band/look.ts`) | yes |
 | `layout.ts` | Chooses the band's layout (wide, compact steps, tight) from estimated column widths; `fitOpen` | yes |
 | `metrics.ts` | The card's derived figures from the `Spent` record (hit rate, runway, outliers, delegation) | yes |
-| `toolout.ts` | Tool output tokens and the re-read keys | yes |
+| `capacity/context/toolout.ts` | Tool output tokens and the re-read keys | yes |
+| `capacity/context/size.ts` | The `seen` atom (re-read keys), `clearSeen`, `measureCall` (returns the tool, tokens and re-read flag), `forgetPath`, `isDeny` | no |
 | `capacity/usage/pace.ts` | Pace of a usage window | yes |
 | `capacity/usage/windows.ts` | The `windows` atom, `clean`, `trackPace`, `paceFor`, `liveWindows`, `pull`, `setWindows`, `keptWindows` | no |
 | `capacity/usage/art.ts` | The pie, 5h pace track, `paceWords`, `fmtReset`, `fmtSpan`, `PACE_TIP`, `PaceRow` | yes |
@@ -61,7 +62,7 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files, usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command), timers |
 
