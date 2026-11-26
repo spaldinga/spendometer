@@ -19,11 +19,14 @@ What is next for spendometer, one file per item, so each item ships and is seen 
 | 110 | [README images and mockups for the tabs](readme-mockups.md) | change | S |
 | 120 | [Better tab icons](tab-icons.md) | design | S |
 | 130 | [The tight layout cuts off the 7D window](tight-layout-overflow.md) | bug | S |
+| 140 | [Open a subagent's output from the band](subagent-output.md) | feature | M |
+| 150 | [POC: coach the first prompt of a conversation](poc-prompt-coach.md) | poc | M |
+| 160 | [POC: warn before a risky skill or tool call](poc-security-advisor.md) | poc | M |
 
 ## Format
 
 - One file per item, named by its slug. Frontmatter: `type: backlog`, `order` (lower = sooner), `kind` (bug | feature |
-  change | design | refactor), `size` (S | M | L), `status` (todo | doing | done | dropped), `source`.
+  change | design | refactor | poc), `size` (S | M | L), `status` (todo | doing | done | dropped), `source`.
 - Body: **Why** (the feedback, in the user's words where possible), **What**, **Done when** (what the user sees in the
   app), **Open** (questions to settle before building).
 - The table above follows the frontmatter: when an item's order or status changes, change both in the same commit.
