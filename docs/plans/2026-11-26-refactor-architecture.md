@@ -190,3 +190,8 @@ all tests pass with only import lines changed (until step 21); the band looks th
 - **No type-check** on this machine: a wrong import shows only as a test or load failure.
 - Other work on `dev` during the refactor (items 90/100 wait; others may not) conflicts with moved files. Keep each step
   short-lived and commit before starting the next.
+- **Step 14:** the `progress` atom is private to `activity/progress/state.ts` and the `crew` atom to `activity/crew.ts`;
+  register calls `readProgress`, `noteListCall`, `noteReport`, `dropFinished`, `runningCrew`, `dropDoneCrew`,
+  `noteCrewStep`, `addCrew` and `finishCrew` (which returns the type and run interval the spend record needs).
+  `crewText` is no longer exported from `register.tsx` (no test imported it). `progress-themes.ts` stays at the root
+  until step 15.

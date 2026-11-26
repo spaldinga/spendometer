@@ -1,4 +1,4 @@
-import type { Progress, Step, StepStatus, Turn } from '../types'
+import type { Progress, Step, StepStatus, Turn } from '../../../types'
 
 // Where the main session is in the request, from what it already says about itself:
 // the task list it keeps (the desktop app's plan, TodoWrite, the Task tools), or a

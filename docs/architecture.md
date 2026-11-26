@@ -57,7 +57,9 @@ directly. Engine code lives in `register.tsx`, `cost/cache/keepwarm/`, `guard.ts
 | `capacity/usage/windows.ts` | The `windows` atom, `clean`, `trackPace`, `paceFor`, `liveWindows`, `pull`, `setWindows`, `keptWindows` | no |
 | `capacity/usage/art.ts` | The pie, 5h pace track, `paceWords`, `fmtReset`, `fmtSpan`, `PACE_TIP`, `PaceRow` | yes |
 | `cost/spend/days.ts`, `cost/spend/results.ts` | Spend per day; commits and PRs from command text | yes |
-| `progress.ts`, `progress-art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
+| `activity/progress/progress.ts`, `activity/progress/art.ts`, `progress-themes.ts` | Where the request is; the progress bar drawings and themes | yes |
+| `activity/progress/state.ts` | The `progress` atom: `readProgress`, `noteListCall`, `noteReport`, `dropFinished` | no |
+| `activity/crew.ts` | The `crew` atom, `crewText`, `CREW_SHOWN`, and what the spawn, step and turn hooks do to the crew | no |
 | `band/look.ts` | The band's palette (TEXT, HUE, LC_*, ICE, LIGHT...), `svgDoc`, the SVG wrapper, and the drawing kit (`Kit`, `kitOf(W, mode)`: `t`, `big`, `dots`, `pick`, `capPick`, `hline`...) the zones share; the one file domains may import | yes |
 | `band/font.ts` | The embedded Outfit font for SVG text | data |
 
@@ -68,7 +70,7 @@ never been type-checked.
 
 | Where | Lifetime | Holds |
 |---|---|---|
-| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress, crew, turn, seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
+| Atoms (`atom({plugin:'spendometer', key})`, in `$.state`) | Survive a reload, not a restart | cache facts, fold, progress (`activity/progress/state.ts`), crew (`activity/crew.ts`), turn, seen files (`capacity/context/size.ts`), usage windows (`capacity/usage/windows.ts`), subagent cost since the last turn (`subsSince`, in `cost/spend/record.ts`) |
 | `$.store` | Persistent | settings (`cardTab`, `progressTheme`, `hold`, `keepDefault`), `spend:<sessionId>`, `keep:<id>`, days |
 | Module variables | Lost on reload | `lastWidth` (for the status command), timers |
 

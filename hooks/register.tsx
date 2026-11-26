@@ -1,9 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { CacheFacts, Fold, Progress, Spent, Turn, Window, Worker } from '../types'
-import { LIST_TOOLS, REPORT_TOOL, afterListCall, afterReport, barText, fmtElapsed, labelOf, pulseText } from './progress'
-import { BAR_H, crewSvg } from './progress-art'
+import type { CacheFacts, Fold, Spent, Turn, Window } from '../types'
+import { LIST_TOOLS, REPORT_TOOL, barText, fmtElapsed, labelOf, pulseText } from './activity/progress/progress'
+import { BAR_H, crewSvg } from './activity/progress/art'
+import { dropFinished, noteListCall, noteReport, readProgress } from './activity/progress/state'
+import { CREW_SHOWN, addCrew, crewText, dropDoneCrew, finishCrew, noteCrewStep, runningCrew } from './activity/crew'
 import { DEFAULT_THEME, THEMES, THEME_IDS, THEME_NAMES, themeIdOf } from './progress-themes'
 import type { ThemeId } from './progress-themes'
 import { classify, measure as measureRisk, refusal } from './guard'
@@ -65,9 +67,7 @@ const THEME_KEY = 'progressTheme'
 const TAB_KEY = 'cardTab'
 
 const fold = atom({ plugin: 'spendometer', key: 'fold' } as const, null as Fold | null)
-const progress = atom({ plugin: 'spendometer', key: 'progress' } as const, null as Progress | null)
 const turn = atom({ plugin: 'spendometer', key: 'turn' } as const, null as Turn | null)
-const crew = atom({ plugin: 'spendometer', key: 'crew' } as const, [] as Worker[])
 /** When the main thread last sent a request that was not a keep-warm ping (clock ms), or null before the first. */
 const realAt = atom({ plugin: 'spendometer', key: 'realAt' } as const, null as number | null)
 
@@ -184,8 +184,6 @@ const widthLine = (): string =>
     ? 'band: not drawn yet since the mod loaded'
     : `band: drawn at ${lastWidth.used} columns (bodyColumns ${lastWidth.body ?? 'none'}, viewport ${lastWidth.viewport ?? 'none'}), layout ${lastWidth.kind}; estimated need ${lastWidth.need}${lastWidth.fit ? `; open card ${lastWidth.fit}` : ''}`
 
-const CREW_MAX = 40
-const CREW_SHOWN = 5
 /** How wide a button's hover text is, in columns. */
 const TIP_COLS = 44
 
@@ -248,12 +246,6 @@ const measure = async ($: EngineInterface, lastAt: number | null, model: string 
     window: u.context.window || c?.window || 0,
     model: m || c?.model || null,
   }))
-}
-
-/** The running subagents as the band names them: "Explore 4, sonnet-coder 12", kind and requests made. */
-export const crewText = (running: Worker[]): string => {
-  const s = running.map(w => `${w.type} ${w.steps}`).join(', ')
-  return s.length > CREW_MAX ? s.slice(0, CREW_MAX - 1) + '…' : s
 }
 
 
@@ -464,7 +456,7 @@ export const register: Register = on => {
   // The task list the main session keeps is its own account of where it is. The call goes on untouched.
   for (const tool of LIST_TOOLS) {
     on('tool.call', { tool }, async ($, e, next) => {
-      if (!e.agentId) await update($, progress, p => afterListCall(p, tool, e as unknown as Record<string, unknown>))
+      if (!e.agentId) await noteListCall($, tool, e as unknown as Record<string, unknown>)
       return next(e)
     }).catch(($, e, next) => next(e)) // a bar that fails to read a list never holds up the tool
   }
@@ -472,7 +464,7 @@ export const register: Register = on => {
   on('tool.call', { tool: REPORT_TOOL }, async ($, e) => {
     // A subagent's steps are not the request's: only the main session moves the bar.
     if (e.agentId) return { result: 'ignored: only the main session reports progress' }
-    const p = await update($, progress, prev => afterReport(prev, e as unknown as Record<string, unknown>))
+    const p = await noteReport($, e as unknown as Record<string, unknown>)
     return { result: p ? `ok: ${labelOf(p).count}` : 'ok' }
   })
 
@@ -576,19 +568,14 @@ export const register: Register = on => {
       // A turn's first request starts its clock, and a list finished last turn has had its moment.
       if (e.index === 0) {
         await update($, turn, () => ({ startedAt: now, steps: 1 }))
-        await update($, progress, p => (p && p.isFinished ? null : p))
-        await update($, crew, list => list.filter(w => !w.isDone))
+        await dropFinished($)
+        await dropDoneCrew($)
       } else {
         await update($, turn, t => (t ? { ...t, steps: t.steps + 1 } : { startedAt: now, steps: 1 }))
       }
     } else {
       // A subagent's request. One the band never saw start still gets a place.
-      const id = e.agentId
-      await update($, crew, list =>
-        list.some(w => w.id === id)
-          ? list.map(w => (w.id === id ? { ...w, steps: w.steps + 1, isDone: false } : w))
-          : [...list, { id, type: 'agent', steps: 1, isDone: false }].slice(-50),
-      )
+      await noteCrewStep($, e.agentId)
     }
     yield* next(e)
   })
@@ -599,7 +586,7 @@ export const register: Register = on => {
     const id = started.agentId ?? e.tool_use_id
     const type = String(e.subagentType || 'agent')
     const startedAt = await $.clock.now()
-    await update($, crew, list => [...list.filter(w => w.id !== id), { id, type, steps: 0, isDone: false, startedAt }].slice(-50))
+    await addCrew($, id, type, startedAt)
     return started
   })
 
@@ -609,13 +596,8 @@ export const register: Register = on => {
     const paid = turnCost(e.usage) ?? 0
     if (e.agentId) {
       const id = e.agentId
-      const worker = (await read($, crew)).find(w => w.id === id)
-      const type = worker?.type ?? 'agent'
-      // The run interval: from the spawn to this turn's end; a subagent the band never saw start is dated by the turn's length.
-      const end = await $.clock.now()
-      const start = worker?.startedAt ?? Math.max(0, end - (typeof e.durationMs === 'number' ? e.durationMs : 0))
-      await update($, crew, list => list.map(w => (w.id === id ? { ...w, isDone: true, ...(paid > 0 ? { startedAt: start, endedAt: end } : {}) } : w)))
-      if (paid > 0) await addSpend($, paid, false, e.usage, type, { start, end, prevEnd: worker?.endedAt })
+      const { type, start, end, prevEnd } = await finishCrew($, id, paid, e.durationMs)
+      if (paid > 0) await addSpend($, paid, false, e.usage, type, { start, end, prevEnd })
       return r
     }
     if (paid > 0) await addSpend($, paid, true, e.usage)
@@ -895,12 +877,12 @@ export const register: Register = on => {
     // The minimal row has the fold button alone: the tabs are not drawn.
     const inlineButtons = buttonsRow ? [] : [...(minimal ? [] : tabButtons(kind === 'wide')), foldEl, ...buttons]
 
-    const running = (await read($, crew)).filter(w => !w.isDone)
+    const running = await runningCrew($)
     const crewWords = running.length ? ` ×${running.length} ${crewText(running)}` : ''
 
     // Where the request is: a segment per step when there is a list or a report to measure
     // against, one segment sweeping while a turn works with neither, nothing when idle.
-    const prog = await read($, progress)
+    const prog = await readProgress($)
     const walking = prog && prog.total > 0 ? prog : null
     const pacing = !walking && e.props.isWorking ? await read($, turn) : null
     // Subagents still working after the main turn ended (a background agent): the work goes on, so the bar sweeps

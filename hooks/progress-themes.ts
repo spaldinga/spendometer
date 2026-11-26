@@ -1,5 +1,5 @@
 import { EMPTY, LC_BL, LC_INK, LC_LA, LC_OR, LC_PE, LC_TA, MUTED, ORANGE, TEXT, svgDoc } from './band/look'
-import { BAR_CY, BAR_H, paceSvg, walkSvg } from './progress-art'
+import { BAR_CY, BAR_H, paceSvg, walkSvg } from './activity/progress/art'
 import type { Progress } from '../types'
 
 // The progress row's themes. Each is a pair of pure functions: `walk` draws a request with a step list

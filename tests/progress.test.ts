@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { afterListCall, afterReport, fromSteps, pulseText, ratioOf } from '../hooks/progress'
-import { BAR_CY, BAR_H, BAR_TOP, crewSvg, paceSvg, walkSvg } from '../hooks/progress-art'
+import { afterListCall, afterReport, fromSteps, pulseText, ratioOf } from '../hooks/activity/progress/progress'
+import { BAR_CY, BAR_H, BAR_TOP, crewSvg, paceSvg, walkSvg } from '../hooks/activity/progress/art'
 import { fitOpen, rowsOf } from '../hooks/layout'
 
 const NOW = Date.parse('2098-12-31T22:00:00Z')
