@@ -206,7 +206,7 @@ export const register: Register = on => {
   on('session.compact', async ($, e, next) => {
     const r = await next(e)
     if (!e.agentId) {
-      markNextFirst()
+      void markNextFirst($)
       try { await noteCompact($, kw) } catch { /* the next turn re-arms */ }
     }
     return r
@@ -222,7 +222,7 @@ export const register: Register = on => {
       try { await endConversation($, kw, e.sessionId) } catch { /* the next turn seats the new conversation */ }
     }
     if (e.reason === 'clear') {
-      markNextFirst()
+      void markNextFirst($, e.sessionId)
       try {
         await resetCache($)
         await resetFold($)

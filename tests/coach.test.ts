@@ -35,7 +35,95 @@ test('on: the first prompt is scored once, in the fence; a second is not; /clear
   await submit($, LONG)
   await settle()
   expect(calls.length).toBe(2)
-  expect(store.get('coachLast')).toBe('S1')
+  expect(store.get('coachScored')).toEqual(['S1'])
+})
+
+test('two conversations: switching back to one already scored makes no new call', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { calls, session } = coachEngine(on, { prefill: { coach: true } })
+  await start($)
+  await submit($, LONG)
+  await settle()
+  session.id = 'S2'
+  await submit($, LONG)
+  await settle()
+  expect(calls.length).toBe(2)
+  session.id = 'S1'
+  await submit($, LONG + ' More words.')
+  await settle()
+  session.id = 'S2'
+  await submit($, LONG + ' More words.')
+  await settle()
+  expect(calls.length).toBe(2)
+})
+
+test('the scored list is bounded to the last 50 sessions', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const ids = Array.from({ length: 50 }, (_, i) => 'old' + i)
+  const { store, session } = coachEngine(on, { prefill: { coach: true, coachScored: ids } })
+  await start($)
+  session.id = 'new'
+  await submit($, LONG)
+  await settle()
+  const list = store.get('coachScored') as string[]
+  expect(list.length).toBe(50)
+  expect(list[49]).toBe('new')
+  expect(list.includes('old0')).toBe(false)
+})
+
+test('a second prompt sent while the first call is out is not scored', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { calls } = coachEngine(on, { prefill: { coach: true }, hang: new Promise<void>(() => {}) })
+  await start($)
+  void submit($, LONG)
+  void submit($, LONG + ' And a second quick one.')
+  await settle()
+  expect(calls.length).toBe(1)
+})
+
+test('/clear and a compaction re-arm only the session that ended or compacted', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { calls, session } = coachEngine(on, { prefill: { coach: true } })
+  await start($)
+  await submit($, LONG)
+  await settle()
+  session.id = 'S2'
+  await submit($, LONG)
+  await settle()
+  expect(calls.length).toBe(2)
+  await $.session.end({ sessionId: 'S1', reason: 'clear' } as never)
+  session.id = 'S2'
+  await submit($, LONG + ' More words.')
+  await settle()
+  expect(calls.length).toBe(2)
+  session.id = 'S1'
+  await submit($, LONG)
+  await settle()
+  expect(calls.length).toBe(3)
+  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never)
+  await submit($, LONG + ' After the compaction.')
+  await settle()
+  expect(calls.length).toBe(4)
+})
+
+test('a long prompt is cut before it goes to Haiku', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { calls } = coachEngine(on, { prefill: { coach: true } })
+  await start($)
+  await submit($, 'x'.repeat(50000))
+  await settle()
+  expect(calls[0].prompt.length).toBeLessThan(5000)
+})
+
+test('a failed call still adds its cost to the tally, shown in status', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { store } = coachEngine(on, { prefill: { coach: true }, replies: [said('no idea')] })
+  await start($)
+  await submit($, LONG)
+  await settle()
+  expect(store.get('coachFails')).toBe(1)
+  expect(store.get('coachFailUsd') as number).toBeGreaterThan(0)
+  expect(await cmd($, 'coach status')).toMatch(/Haiku \$0\.\d+ total/)
 })
 
 test('the prompt is never held: with a call that never resolves, submit still resolves and the text goes on unchanged', async ($, on) => {
