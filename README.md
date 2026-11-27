@@ -144,7 +144,7 @@ press **Proceed**.
 | **Prompt cache** | `WARM` with minutes left, or `COLD` with the idle time and what the next message costs to re-cache. The tabs open a card: Cost (what is spent in this conversation and the last seven days, what subagents saved, the cache discount, the cost per message and by model) and Capacity (how fast each usage window is being used against its reset, the context size and free room with the turns left and, while cold, what re-caching costs, and the tool output). Hover a usage window or the chip for the limit and reset time, the minutes left, and what keeping warm costs and has saved | A clock from the last main-thread request, one hour long |
 | **Progress** | Six styles to choose from (comet by default), with the count and the step in progress | The task list Claude already keeps, or the `progress` tool (below) |
 | **Activity** | With no task list: each style's working animation and `working · 4 steps · 1m 12s` | Turn events |
-| **Subagents** | One small orange dot per running subagent, `×2 Explore 4, sonnet-coder 12` | Subagent start, request and finish events |
+| **Subagents** | One button per running subagent with its type and requests (`+N` when there are more); click one to open its output in a pane | Subagent start, request and finish events, and the subagent's messages |
 | **Cost** | `COST ≈$12.40 · last $0.35`: the conversation so far and the latest turn | Token counts per finished turn at list prices |
 
 ## What it does
@@ -165,7 +165,7 @@ press **Proceed**.
   `keepwarm:` line.
   A ping that fails or finds the cache gone stops the window and says why.
   Before a send that would re-write a cold cache of 50,000 tokens or more, one line says what it will cost.
-  With cache-tax installed spendometer stays passive (no pings, no button) and says so once: uninstall it with
+  With cache-tax installed spendometer stays passive (no pings, no mark) and says so once: uninstall it with
   `claude plugin uninstall cache-tax@claude-code-mods`.
 - **Hold for risky git commands.** When Claude runs `git reset --hard`, a `git checkout` or
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
@@ -246,7 +246,7 @@ Keep warm shows in the band as a green ✓ while on, saved per conversation (on 
   scripts or aliases, and it only knows the git commands listed above. Use
   [permission rules](https://code.claude.com/docs/en/settings) for a hard block.
 - **The cache state is a clock, not a server check.** It assumes a one-hour cache lifetime.
-- **Prices are a table in the code** (`hooks/cache-art.ts`) and go stale when list prices change.
+- **Prices are a table in the code** (`hooks/cost/prices.ts`) and go stale when list prices change.
   A model the table does not know adds nothing to the cost.
 - **Only one mod can draw the band.** spendometer takes the whole band above the prompt, so another
   mod that draws there will not show.
@@ -267,20 +267,18 @@ claude --plugin-dir .      # try it for one session
 
 ```
 hooks/
-  register.tsx       hooks and the band
-  cache-art.ts       colours (dark and light), prices, the cache card and the robot
-  metrics.ts         the card's metric row: hit rate, runway, outlier (pure)
-  progress.ts        task list and report tracking (pure)
-  progress-art.ts    the calm progress line, the sweep and the subagent dots
-  progress-themes.ts the progress styles: comet, calm, vitals, bridge, wake, dial
-  pace.ts            each usage window's pace against its reset (pure)
-  days.ts            spend per day across sessions (pure)
+  register.tsx       the wiring: each Claude Code event to the domains that use it
   layout.ts          which layout fits the band (pure)
-  guard.ts           risky git commands: classify and measure
-  font.ts            Outfit, embedded so the drawings render anywhere
+  cost/              what the work costs: prices, spend per turn and day, the cache and keep warm, the coach POC
+  capacity/          how much room is left: the 5h and 7D windows with their pace, the context window
+  activity/          what Claude is doing: progress and its styles, subagents and their output pane
+  safety/            what cannot be undone: the git hold, the advisor POC
+  band/              the band and the card: row, buttons, widths, colours, the embedded font
 tests/               one file per area
 types/index.d.ts     the mod's state
 ```
+
+`docs/architecture.md` lists every file and its role.
 
 `AGENTS.md` has the working notes for coding agents.
 
@@ -291,7 +289,7 @@ which provides the usage bars, the cache card and Robo, the robot. Ideas and beh
 from:
 
 - [cache-tax](https://github.com/karanb192/cache-tax) by Karan Bansal: keep-warm. spendometer's pinger in
-  `hooks/keepwarm.ts` is ported from it (MIT, see the table below), so cache-tax is no longer needed.
+  `hooks/cost/cache/keepwarm/pinger.ts` is ported from it (MIT, see the table below), so cache-tax is no longer needed.
 - [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress) by
   JohnnyVizz: the idea of a progress bar and a subagent display above the prompt.
 - [Blast Radius](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius)
@@ -309,7 +307,7 @@ Third-party material:
 |---|---|---|
 | The band, usage bars, cache card, Robo and their tests | [ribbon](https://github.com/robonuggets/ribbon), Copyright (c) 2026 Jay E \| RoboNuggets | MIT, in [LICENSE](LICENSE) |
 | Parts of `hooks/safety/guard/guard.ts`: how risky git commands are measured and reported | [Blast Radius](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius), Copyright 2026 Anthropic PBC | Apache-2.0, in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt); the changes are listed at the top of the file |
-| The keep-warm pinger in `hooks/keepwarm.ts`: its timing, retries and race handling, and the rule for "a ping kept the cache warm" | [cache-tax](https://github.com/karanb192/cache-tax), Copyright (c) 2026 Karan Bansal | MIT |
+| The keep-warm pinger in `hooks/cost/cache/keepwarm/pinger.ts`: its timing, retries and race handling, and the rule for "a ping kept the cache warm" | [cache-tax](https://github.com/karanb192/cache-tax), Copyright (c) 2026 Karan Bansal | MIT |
 | The embedded font | [Outfit](https://github.com/Outfitio/Outfit-Fonts) | SIL Open Font License 1.1 |
 
 [savvy-progress](https://github.com/JohnnyVizz/claude-kit/tree/main/plugins/savvy-progress)

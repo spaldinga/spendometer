@@ -2,7 +2,7 @@
 
 A Claude Code mod: a band above the prompt. A fork of `robonuggets/ribbon` (MIT), installed locally as
 `spendometer@spendometer` from a folder marketplace, so the app reads the files in this repo directly. It
-keeps the prompt cache warm itself (`hooks/keepwarm.ts`, ported from cache-tax; it stays passive when cache-tax is
+keeps the prompt cache warm itself (`hooks/cost/cache/keepwarm/`, ported from cache-tax; it stays passive when cache-tax is
 installed) and adds a progress bar, subagent display, session cost and a hold for risky git commands.
 
 ## Read first
@@ -60,7 +60,8 @@ timers are lost.
 ## Conventions
 
 - `on(...)` and `$.noun.method(...)` are spelled literally; helpers that take `$` are top-level
-  functions. Pure logic lives beside `register.tsx` (`progress.ts`, `cache-art.ts`).
+  functions. Code is grouped by domain (`cost/`, `capacity/`, `activity/`, `safety/`, plus `band/`;
+  [ADR 0008](docs/adr/0008-code-by-domain.md)); a domain imports no other domain, and pure logic stays apart from `$`.
 - Calls that drive Claude (`$.command.run`) are fired, never awaited, inside a hook.
 - Anything that can stop the user's work (the git hold) fails open with a note in the transcript.
 - Keep the upstream MIT notice and the Blast Radius (Apache-2.0) credit in `hooks/safety/guard/guard.ts`.

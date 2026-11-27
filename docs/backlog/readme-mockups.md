@@ -61,3 +61,10 @@ Findings (sections the commit did not touch), to weigh at the app review:
 3. Low. With cache-tax installed the README still says "no button"; keep warm is a status mark now.
 4. Low. The top picture shows two "last" costs: `last $0.47` on the row and $2.11 in the card.
 5. Low. Item 140's subagent buttons and output pane are not in the README (it still shows subagents as joined text).
+
+Fixed 2026-11-27:
+- 1. The README's file tree shows the domain folders and points to `docs/architecture.md` for the full list.
+- 2. Prices point to `hooks/cost/prices.ts`; the cache-tax credit and licence row to `hooks/cost/cache/keepwarm/pinger.ts`; AGENTS.md updated too.
+- 3. "no button" is now "no mark".
+- 4. Not fixed: the two "last" figures in the top picture (low; `assets/mockups.gen.ts`).
+- 5. The Subagents row describes the buttons and the output pane.
