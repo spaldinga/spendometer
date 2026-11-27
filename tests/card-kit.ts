@@ -17,6 +17,7 @@ export const METRICS: Metrics = {
   hit: 0.963, perM: 0.62, avg: 0.38, last: 2.11, multiple: 6, runway: 40.4, growth: 6200,
   models: [['opus', 14.2], ['sonnet', 5.1], ['haiku', 1.09]], deleg: DELEG, subs: 5.14, top: [['Explore', 3.9], ['coder', 1.24]],
   tools: [['Bash', 18000], ['Read', 12000], ['Grep', 6000]], toolTok: 41000, rereads: 4, rereadTok: 9000, ctxFirst: 18000, rereadFiles: [['card.ts', 2], ['record.ts', 1]],
+  turns: 25,
   recent: [0.2, 0.31, 0.25, 0.4, 0.22, 0.35, 0.28, 0.3, 0.14, 2.11],
 }
 /** The pace strip's height, where the columns start; a zone's title is 24 px below. */
@@ -53,7 +54,7 @@ export const after = (s: string, title: string) => s.slice(s.indexOf(`>${title}<
 /** The x of a title that sits at baseline y. */
 export const titleAt = (s: string, title: string, y: number) => Number(new RegExp(`<text x="([0-9.]+)" y="${y}"[^>]*>${title}<`).exec(s)![1])
 export const titleOf = (s: string, title: string) => Number(new RegExp(`<text x="([0-9.]+)" y="[0-9.]+"[^>]*>${title}<`).exec(s)![1])
-export const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [], tools: [], toolTok: 0, rereads: 0, rereadTok: 0, ctxFirst: null, rereadFiles: [], recent: [] }
+export const NONE: Metrics = { hit: null, perM: null, avg: null, last: null, multiple: null, runway: null, growth: null, models: [], deleg: null, subs: 0, top: [], tools: [], toolTok: 0, rereads: 0, rereadTok: 0, ctxFirst: null, rereadFiles: [], turns: 0, recent: [] }
 export const COST_TITLES = ['CACHE DISCOUNT', 'PER MESSAGE', 'BY MODEL']
 /** The BY MODEL zone as drawn in the third of three columns of a card W px wide. Cost's tab never gets a column wide enough for it (the card draws four columns at most), so its drawing is tested on its own. */
 export const byModel = (W: number, models: [string, number][]) => modelsZone(kitOf(W, 'warm'), colXOf(W, 3, 2), 0, colWOf(W, 3), models)

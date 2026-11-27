@@ -38,7 +38,7 @@ The Cost tab shows pictures, not only figures.
 Assumptions taken while building (no questions asked; change them here if the app shows otherwise):
 - `recent` holds the same value as `last` (the main turn plus the subagent cost since the previous one), so the last
   bar equals the "last $x" caption. Kept: 10, oldest first.
-- A bar is an outlier by the caption's own rule (3× the average, from 3 messages on), counted over the bars shown. An
+- A bar is an outlier by the caption's own rule (3× the average, from 3 messages on), counted over the conversation's turns, with the conversation's average, not the bars' (the bars may be fewer). An
   outlier that is also the last bar is red, as the caption flags it in red.
 - Warm against cold sits in CACHE DISCOUNT, as two compare rows like DELEGATION's (shared helper `compareRows`), not
   as a zone of its own: a sixth zone would only add a status line. Warm is one hour of pings, cold one re-cache, both
@@ -56,3 +56,7 @@ Findings (to weigh at the app review):
    orange while the caption already flags it red "5× avg" (the caption counts all turns). Lasts until 3 messages are
    recorded. Fix: pass the turn count to the bars' outlier check.
 2. Docs. The Open says outliers are "counted over the bars shown"; the average is the whole conversation's.
+
+Fixed 2026-11-27:
+1. The bars' outlier check uses the conversation's turn count (`Metrics.turns`), as the caption does, so an older conversation's last bar is red when the caption says so.
+2. The Open's wording says the average and the turn count are the conversation's, not the bars'.

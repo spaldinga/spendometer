@@ -41,7 +41,9 @@ test('stackOf: setup, tool output clamped to what fits after it, chat the rest, 
   near(big.tools[0][1], (222000 * 18000) / 500000)
   // No ctxFirst: no setup, everything not tool output is chat. Setup over the context is cut to it.
   expect(stackOf(240000, 1000000, null, [], 0)).toEqual({ setup: 0, chat: 240000, tools: [], other: 0, free: 760000 })
-  expect(stackOf(10000, 1000000, 18000, [], 0).setup).toBe(10000)
+  // A context below the setup estimate (after a compaction) has no setup part: the estimate no longer holds.
+  expect(stackOf(10000, 1000000, 18000, [], 0)).toEqual({ setup: 0, chat: 10000, tools: [], other: 0, free: 990000 })
+  expect(stackOf(18000, 1000000, 18000, [], 0).setup).toBe(18000)
   // At or over the window there is no free part.
   expect(stackOf(1200000, 1000000, 18000, tools, 41000).free).toBe(0)
 })
@@ -123,7 +125,8 @@ test('the gauge shows the turns left inside a half circle at the right of the fi
 
 test('the gauge fills to a share of 40 turns and is red at 5 or fewer, orange at 15 or fewer, green above', () => {
   const stroke = (turns: number) => arcsOf(body(cap(1400, { ...METRICS, runway: turns }).source))[1]?.stroke
-  expect([stroke(1), stroke(5), stroke(5.4), stroke(15), stroke(15.4), stroke(16), stroke(60)]).toEqual([DANGER, DANGER, ORANGE, ORANGE, OK, OK, OK])
+  // The colour follows the rounded figure the gauge prints: 5.4 shows ~5 and is red, 5.6 shows ~6 and is orange.
+  expect([stroke(1), stroke(5), stroke(5.4), stroke(5.6), stroke(15), stroke(15.4), stroke(15.6), stroke(16), stroke(60)]).toEqual([DANGER, DANGER, DANGER, ORANGE, ORANGE, ORANGE, OK, OK, OK])
   // No turns left: the track alone, with a 0 in it.
   const none = body(cap(1400, { ...METRICS, runway: 0 }).source)
   expect(arcsOf(none).length).toBe(1)
@@ -180,7 +183,9 @@ test('the caption names each tool in its bar colour, and keeps the re-read count
 })
 
 // ---------- the status line and the alt text ----------
-test('on one column the tool output line names the most recent re-read file, where it fits', () => {
+test('on one column the tool output line names the most re-read file (ties: the most recent), where it fits', () => {
+  // The newest file has the fewest re-reads: the line still names the one read most.
+  expect(plainText(body(cap(600, { ...METRICS, rereadFiles: [['new.ts', 1], ['old.ts', 3], ['mid.ts', 3]] }).source))).toContain('(old.ts ×3)')
   expect(plainText(body(cap(600, METRICS).source))).toContain('tool output 41k tokens · 4 re-reads (card.ts ×2)')
   // Without files, or too narrow for the longer line, today's variants.
   expect(plainText(body(cap(600, { ...METRICS, rereadFiles: [] }).source))).not.toContain('card.ts')

@@ -219,7 +219,7 @@ export const delegZone = (k: Kit, x: number, y: number, w: number, metrics: { de
 }
 
 // PER MESSAGE: the average cost of a message; the last one is the caption, flagged in the danger colour when it is far above the average.
-export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg: number | null; last: number | null; multiple: number | null; recent?: number[] } | null): string => {
+export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg: number | null; last: number | null; multiple: number | null; turns?: number; recent?: number[] } | null): string => {
   const { big, capSize, mdash, mhead } = k
   if (!metrics || metrics.avg === null) return mdash(x, y, w, 'PER MESSAGE')
   const last =
@@ -228,18 +228,18 @@ export const avgZone = (k: Kit, x: number, y: number, w: number, metrics: { avg:
       : `<text x="${x}" y="${y + CAP_DY}" font-size="${capSize(w)}" font-weight="500" fill="${MUTED}">last ${usd(metrics.last)}` +
         (metrics.multiple !== null ? `<tspan fill="${DANGER}" font-weight="700"> · ${metrics.multiple}× avg</tspan>` : '') +
         '</text>'
-  return mhead(x, y, 'PER MESSAGE') + big(x, y + FIG_DY, usd(metrics.avg), FIG_SIZE, 'avg', FIG_UNIT_SIZE) + messageBars(metrics.recent ?? [], metrics.avg, x, y + BARS_DY, w) + last
+  return mhead(x, y, 'PER MESSAGE') + big(x, y + FIG_DY, usd(metrics.avg), FIG_SIZE, 'avg', FIG_UNIT_SIZE) + messageBars(metrics.recent ?? [], metrics.avg, metrics.turns, x, y + BARS_DY, w) + last
 }
 
-/** One bar per recent message, oldest left, scaled to the dearest: an outlier in the danger colour, else the last in orange. */
-const messageBars = (recent: number[], avg: number, x: number, base: number, w: number): string => {
+/** One bar per recent message, oldest left, scaled to the dearest: an outlier in the danger colour, else the last in orange. `turns` is the conversation's, as in the caption (the bars alone may be fewer). */
+const messageBars = (recent: number[], avg: number, turns: number | undefined, x: number, base: number, w: number): string => {
   if (recent.length === 0) return ''
   const bw = Math.min(DAY_BAR_W, Math.floor((w - (RECENT_SLOTS - 1) * DAY_GAP) / RECENT_SLOTS))
   const top = Math.max(...recent)
   return recent
     .map((c, i) => {
       const h = c > 0 ? Math.max(DAY_MIN_H, Math.round((c / top) * BARS_H)) : DAY_STUB_H
-      const outlier = outlierMultiple(c, avg, recent.length) !== null
+      const outlier = outlierMultiple(c, avg, turns ?? recent.length) !== null
       const fill = c <= 0 ? EMPTY : outlier ? DANGER : i === recent.length - 1 ? ORANGE : MUTED
       return `<rect x="${x + i * (bw + DAY_GAP)}" y="${base - h}" width="${bw}" height="${h}" rx="1" fill="${fill}"/>`
     })

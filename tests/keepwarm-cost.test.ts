@@ -319,10 +319,10 @@ test('ctxFirst and rereadFiles survive a read-modify-write in order; non-number 
   const m = store.get('spend:S1') as Spent
   expect(m.ctxFirst).toBe(18000)
   expect(Object.entries(m.rereadFiles ?? {})).toEqual([['old.ts', 3], ['new.ts', 1]])
-  // A junk ctxFirst is dropped, and the first turn then sets it.
-  store.set('spend:S1', { ...FRESH(2, 1, 0.5), ctxFirst: 'x', rereadFiles: 7 })
+  // A junk ctxFirst is dropped, and a record with earlier turns does not get a new one: only the first priced turn sets it.
+  store.set('spend:S1', { ...FRESH(2, 1, 0.5), turns: 4, ctxFirst: 'x', rereadFiles: 7 })
   await done($, { usage: USED })
   const j = store.get('spend:S1') as Spent
-  expect(j.ctxFirst).toBe(200000)
+  expect(j.ctxFirst).toBeUndefined()
   expect(j.rereadFiles).toBeUndefined()
 })
