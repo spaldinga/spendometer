@@ -212,6 +212,8 @@ Remove it with `/plugin uninstall spendometer@spendometer`.
 /spendometer progress       list the progress row themes (comet, calm, vitals, bridge, wake, dial)
 /spendometer progress dial  draw the progress row as dials (default: comet; also calm, vitals, bridge, wake)
 /spendometer hold off       stop holding risky git commands (default: on)
+/spendometer output [name]  open the output of the newest subagent, or one whose type or id contains the name
+/spendometer advisor off    stop the security advisor's warnings (default: on)
 /spendometer coach on       score the first prompt of each conversation (default: off; one Haiku call each)
 /spendometer coach status   briefs scored, how the share covered moved, and what the calls cost
 /spendometer                show the settings and the width the band was drawn at
