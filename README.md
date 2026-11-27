@@ -171,6 +171,7 @@ press **Proceed**.
   `git restore` that discards changes, a forced `git clean`, or a force push, through the Bash or
   PowerShell tool, spendometer holds the call and shows what it would lose (files, untracked paths,
   or the commits a force push would drop) with **Cancel** and **Proceed**.
+- **Security advisor** (a trial, on by default). It warns in one line, and never holds, before a shell command that sends data to an unknown host, uploads a file, pipes a download into a shell or deletes recursively, and when a skill or a fetched page reads like an instruction to Claude. Turn it off with `/spendometer advisor off`.
 - **A `progress` tool** Claude can call to report steps on a request it keeps no task list for.
 - **Brief coach** (a trial, off by default). Turned on with `/spendometer coach on`, the first prompt of each
   conversation (and the first after `/clear` or a compaction) is scored by a small Haiku call: which of goal, why,

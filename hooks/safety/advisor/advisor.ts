@@ -2,7 +2,7 @@
 // skill or a fetched page, and says what looks risky. Pure functions, no `$`. It only warns: it is a second look at
 // the text, not a lock, and a command inside a script or an alias is not seen.
 
-export type Kind = 'injection' | 'outbound' | 'upload' | 'delete'
+export type Kind = 'injection' | 'outbound' | 'upload' | 'delete' | 'pipe'
 export type Finding = { kind: Kind; detail: string }
 
 /** Hosts that are not worth a warning: this machine, and these domains with their subdomains. */
@@ -10,6 +10,7 @@ export const KNOWN_HOSTS: readonly string[] = [
   'localhost', '127.0.0.1', '::1',
   'github.com', 'githubusercontent.com', 'dev.azure.com', 'visualstudio.com', 'nuget.org', 'npmjs.org',
   'microsoft.com', 'anthropic.com', 'claude.ai', 'claude.com',
+  'azure.com', 'login.microsoftonline.com', 'windows.net', 'aka.ms', 'npmjs.com', 'ghcr.io', 'docker.io',
 ]
 
 const DETAIL_MAX = 80
@@ -72,33 +73,138 @@ const isUpload = (head: string, args: string[]): boolean => {
   return false
 }
 
+const BUILD_DIRS = new Set(['bin', 'obj', 'node_modules', 'dist', 'build', '.cache'])
+const TEMP_START = /^(\$\{?(tmpdir|temp|tmp)\}?|%(temp|tmp)%|\$env:(temp|tmp)|\/tmp|\/var\/tmp)(\/|$)/
+
+/** A delete target that is scratch by its name: a temp folder or a build folder. Anything with `..` is not. */
+const isScratch = (target: string): boolean => {
+  const p = target.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  if (!p || p.split('/').includes('..') || p.includes('`') || p.includes('$(')) return false
+  if (TEMP_START.test(p) || /\/appdata\/local\/temp(\/|$)/.test(p)) return true
+  return BUILD_DIRS.has(p.slice(p.lastIndexOf('/') + 1))
+}
+const allScratch = (targets: string[]): boolean => targets.length > 0 && targets.every(isScratch)
+/** Words that name something: not a flag (`-r`, `/s`). */
+const targetsOf = (args: string[]): string[] => args.filter(a => !a.startsWith('-') && !/^\/[a-z]$/i.test(a))
+
 const isDelete = (head: string, args: string[]): boolean => {
-  if (head === 'rm') return args.some(a => /^-[a-zA-Z]*[rRf][a-zA-Z]*$/.test(a) || a === '--recursive' || a === '--force')
-  if (head === 'rmdir' || head === 'shred') return true
-  if (['remove-item', 'ri', 'del', 'rd', 'erase'].includes(head)) return args.some(a => a.toLowerCase() === '-recurse' || a.toLowerCase() === '/s')
+  const lower = args.map(a => a.toLowerCase())
+  if (head === 'rm') {
+    // Without -r only named files go, and -f only hides the questions: not worth a warning.
+    if (!args.some(a => /^-[a-zA-Z]*[rR][a-zA-Z]*$/.test(a) || a === '--recursive')) return false
+    return !allScratch(targetsOf(args))
+  }
+  if (head === 'rmdir') {
+    // rmdir takes empty directories only; /s and -r make it recursive.
+    if (lower.includes('/s') || lower.includes('-r')) return !allScratch(targetsOf(args))
+    return targetsOf(args).length > 1
+  }
+  if (head === 'shred') return true
+  if (['remove-item', 'ri', 'del', 'rd', 'erase'].includes(head)) {
+    if (!lower.includes('-recurse') && !lower.includes('/s')) return false
+    return !allScratch(targetsOf(args))
+  }
   if (head === 'find') return args.includes('-delete')
   return false
+}
+
+const WRAPPERS = new Set(['sudo', 'env', 'xargs', 'nohup', 'time', 'command'])
+const SHELL_SINKS = new Set(['bash', 'sh', 'zsh', 'dash', 'pwsh', 'powershell', 'iex', 'invoke-expression'])
+const ASSIGN = /^[A-Za-z_]\w*=/
+const baseName = (w: string): string => w.slice(Math.max(w.lastIndexOf('/'), w.lastIndexOf('\\')) + 1)
+
+/** The words of a command with the call operator, `NAME=value`, and wrappers (`sudo`, `xargs`) and their flags taken off, and the binary named by its base name. */
+const unwrap = (words: string[]): string[] => {
+  let w = words
+  for (let i = 0; i < 8 && w.length; i++) {
+    if (w[0] === '&' || ASSIGN.test(w[0])) { w = w.slice(1); continue }
+    const name = baseName(w[0]).toLowerCase().replace(/\.exe$/, '')
+    if (!WRAPPERS.has(name)) break
+    w = w.slice(1)
+    while (w.length && (w[0].startsWith('-') || (name === 'env' && ASSIGN.test(w[0])))) w = w.slice(1)
+  }
+  return w.length ? [baseName(w[0]).toLowerCase().replace(/\.exe$/, ''), ...w.slice(1)] : w
+}
+
+/** Lines of a command: a line ending in `\` or a backtick joins the next, and a heredoc's body is data, so it is left out. */
+const logicalLines = (command: string): string[] => {
+  const out: string[] = []
+  let cur = ''
+  let tag: string | null = null
+  for (const raw of command.split(/\r?\n/)) {
+    if (tag !== null) {
+      if (raw.trim() === tag) tag = null
+      continue
+    }
+    const line = raw.trimEnd()
+    const joins = /[\\`]$/.test(line)
+    cur += (cur ? ' ' : '') + (joins ? line.slice(0, -1) : line)
+    if (joins) continue
+    out.push(cur)
+    const m = /(?<!<)<<(?!<)-?\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_]\w*))/.exec(cur)
+    if (m) tag = m[1] ?? m[2] ?? m[3]
+    cur = ''
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+type Part = { text: string; piped: boolean }
+
+/** One line cut at `;`, `&&`, `||` and `|` outside quotes. `piped` is true after a single `|`. */
+const partsOf = (line: string): Part[] => {
+  const parts: Part[] = []
+  let cur = ''
+  let quote: string | null = null
+  let piped = false
+  const cut = (next: boolean) => { parts.push({ text: cur, piped }); cur = ''; piped = next }
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (quote) {
+      cur += c
+      if (c === '\\' && quote === '"' && i + 1 < line.length) cur += line[++i]
+      else if (c === quote) quote = null
+    } else if (c === "'" || c === '"') {
+      quote = c
+      cur += c
+    } else if (c === ';') cut(false)
+    else if (c === '&' && line[i + 1] === '&') { cut(false); i++ }
+    else if (c === '|') {
+      const double = line[i + 1] === '|'
+      cut(!double)
+      if (double) i++
+    } else cur += c
+  }
+  cut(false)
+  return parts.filter(p => p.text.trim())
 }
 
 /** What looks risky in a Bash or PowerShell command line: at most one finding per kind. */
 export const checkCommand = (command: string): Finding[] => {
   const found = new Map<Kind, string>()
-  for (const segment of command.split(/&&|\|\||[;|\n]/)) {
-    const words = wordsOf(segment.trim())
-    if (!words.length) continue
-    const head = words[0].toLowerCase()
-    const args = words.slice(1)
-    if (NET.has(head)) {
-      const host = hostOf(head, args)
-      if (host !== null && !isKnown(host) && !found.has('outbound')) found.set('outbound', host)
-      if (isUpload(head, args) && !found.has('upload')) found.set('upload', host ?? 'a remote host')
+  for (const line of logicalLines(command)) {
+    let download: string | null = null // the host of a download earlier in this pipeline
+    for (const part of partsOf(line)) {
+      const words = unwrap(wordsOf(part.text.trim()))
+      if (!words.length) continue
+      const head = words[0]
+      const args = words.slice(1)
+      if (!part.piped) download = null
+      if (part.piped && download !== null && SHELL_SINKS.has(head) && !found.has('pipe')) found.set('pipe', download)
+      if (NET.has(head)) {
+        const host = hostOf(head, args)
+        if (host !== null && !isKnown(host) && !found.has('outbound')) found.set('outbound', host)
+        if (isUpload(head, args) && !found.has('upload')) found.set('upload', host ?? 'a remote host')
+        download = host ?? 'a download'
+      }
+      if (isDelete(head, args) && !found.has('delete')) found.set('delete', part.text.trim().slice(0, DETAIL_MAX))
     }
-    if (isDelete(head, args) && !found.has('delete')) found.set('delete', segment.trim().slice(0, DETAIL_MAX))
   }
   return [...found].map(([kind, detail]) => ({ kind, detail }))
 }
 
-const HIDDEN = /[​-‏‪-‮⁠-⁤﻿]|[\u{E0000}-\u{E007F}]/u
+// Not ZWJ, ZWNJ, LRM or RLM: emoji sequences and many scripts use them. U+2066 to U+2069 are the Trojan Source isolates.
+const HIDDEN = /[​‪-‮⁠-⁤⁦-⁩﻿]|[\u{E0000}-\u{E007F}]/u
 const PHRASES: RegExp[] = [
   /ignore (all |any )?(the )?(previous|prior|above|earlier) (instructions|prompts|rules)/i,
   /disregard (all |any )?(the )?(previous|prior|above|earlier)/i,
@@ -133,6 +239,7 @@ const SAYS: Record<Kind, (d: string) => string> = {
   outbound: d => `outbound to unknown host ${d}`,
   upload: d => `upload to ${d}`,
   delete: d => `delete (${d})`,
+  pipe: d => `a download from ${d} piped into a shell`,
 }
 
 /** One transcript line for the findings of `source`, saying it only warns. */
@@ -149,4 +256,17 @@ export const textOf = (r: unknown): string => {
   } catch {
     return ''
   }
+}
+
+/** How many lines of a SKILL.md are read for the check. */
+export const SKILL_LINES = 2000
+
+/** A path to a SKILL.md named in the given values (a string, or an object as JSON), or null. Only that file name is taken. */
+export const skillPath = (...values: unknown[]): string | null => {
+  for (const v of values) {
+    // JSON escapes a backslash as two; a path in a result may come either way.
+    const m = /(?:[A-Za-z]:|~|\/)[^\s"'<>|*?\n]*?SKILL\.md/.exec(textOf(v).replace(/\\\\/g, '\\'))
+    if (m) return m[0]
+  }
+  return null
 }

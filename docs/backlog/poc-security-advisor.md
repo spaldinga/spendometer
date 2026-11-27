@@ -106,3 +106,28 @@ Findings, most severe first (to weigh at the app review):
 9. Low. `/<!--([\s\S]*?)-->/g` is quadratic on text with many `<!--` and no `-->` (unlikely in practice).
 10. Low, plausible. The Skill hook's `.catch(... next(e))` may run a failed Skill a second time.
 11. Low. The advisor is on by default but not mentioned in README.md.
+
+Fixed 2026-11-27 (unchecked in the app; 512 tests pass):
+1. Fixed. Commands are read line by line: a line ending in `\` or a backtick joins the next, heredoc bodies are
+   left out, and the split on `;`, `&&`, `||` and `|` ignores quoted text. The `|` is kept, so a download piped
+   into a shell is a new kind, `pipe`.
+2. Fixed, in part. The Skill hook now reads the SKILL.md when the call or its result names a path ending in
+   `SKILL.md` (first 2000 lines, through a `Read` tool call, fails open). Unverified in the app: whether the Skill
+   result carries such a path at all. If it does not, this check still cannot see skill text; nothing was guessed
+   about how the app locates a skill's file.
+3. Skipped. WebFetch gives a summary, so hidden text is mostly gone; no fix without another source of the raw page.
+4. Fixed. ZWJ, ZWNJ, LRM and RLM are no longer hidden characters; U+2066 to U+2069 are.
+5. Fixed. `rm -f` without `-r`, recursive deletes of only temp or build folders (`bin`, `obj`, `node_modules`,
+   `dist`, `build`, `.cache`, `/tmp`, `$TMPDIR`, `%TEMP%`, `$env:TEMP`, AppData Temp; a `..` in the path
+   disqualifies), and `rmdir` of one directory without `/s` or `-r` no longer warn. This includes
+   `Remove-Item -Recurse -Force`. `rm -rf build` is therefore no longer a test case for a delete warning.
+6. Fixed, in part. `sudo`, `env`, `xargs`, `nohup`, `time`, `command`, a path before the binary and `& "..."` are
+   seen through, and a download piped into `bash`, `sh`, `zsh`, `iex` and the like warns even from a known host.
+   Skipped: `bash -c "..."`, and uploads via `--json @f`, `-d "$(cat f)"` and `Invoke-RestMethod -Body`.
+7. Fixed. Known hosts now include `azure.com`, `login.microsoftonline.com`, `windows.net`, `aka.ms`, `npmjs.com`,
+   `ghcr.io`, `docker.io` (with subdomains).
+8. Skipped. Not in this round; the measurement will show whether the noise is real.
+9. Skipped. Unlikely in practice.
+10. Fixed. The Skill hook's `.catch` that called `next` again is removed; the inner try already covers the check,
+    so a failed Skill throws once, as without the advisor.
+11. Fixed. README names the advisor, on by default, and `/spendometer advisor off`.
