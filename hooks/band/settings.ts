@@ -5,6 +5,7 @@ import type { EngineInterface } from 'claude-code'
 
 import { DEFAULT_THEME, THEME_IDS, THEME_NAMES, themeIdOf } from '../activity/progress/themes'
 import type { ThemeId } from '../activity/progress/themes'
+import { openRecent } from '../activity/output/state'
 import { coachCommand, coachStatus } from '../cost/coach/coach'
 import { keepOf } from '../cost/cache/keepwarm/lifecycle'
 import { keepwarmCommand, keepwarmStatus } from '../cost/cache/keepwarm/command'
@@ -58,12 +59,14 @@ const themeList = (now: ThemeId): string =>
 /** The settings command's answer to `args`; a change is saved and the band redrawn. */
 export async function settingsAnswer($: EngineInterface, kw: Keep, args: string): Promise<string> {
   const [name, value, ...rest] = args.trim().split(/\s+/)
-  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | advisor on|off|status | keepwarm [on|off|status|90m|always] | coach on|off|status. With no argument it shows the settings.`
+  const usage = `Usage: /${SETTINGS} fold | cost | tab [name] | progress [id] | hold on|off | advisor on|off|status | keepwarm [on|off|status|90m|always] | coach on|off|status | output [agent]. With no argument it shows the settings.`
   // The same answer as the typed /keepwarm, for people who drive everything from this command. Beside cache-tax it is its own.
   if (name === 'keepwarm') {
     if ((await keepOf($, kw)) === null) return 'keepwarm: cache-tax is installed and in charge; use its own /keepwarm'
     return keepwarmCommand($, kw, args.trim().slice('keepwarm'.length))
   }
+  // Opens the output pane on a subagent that has finished, which the band no longer names.
+  if (name === 'output') return openRecent($, args.trim().slice('output'.length))
   if (name === 'coach' && rest.length === 0 && (value === undefined || value === 'on' || value === 'off' || value === 'status')) {
     return coachCommand($, value)
   }
