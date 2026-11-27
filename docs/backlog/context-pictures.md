@@ -66,3 +66,19 @@ Assumptions taken while building without the user (2026-11-26), for review in th
   `tests/card-pictures.test.ts`). The bar sits a few px higher than the dots did, to clear the caption.
 - Tool colours: the top three tools blue, lilac and peach, other tools tan. Tan is near the warm chat hue: check it.
 - A file named like an integer (`123`) would sort first in the stored object and so look oldest. Not guarded.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+The record's read-modify-write carries `ctxFirst` and `rereadFiles`; the bar adds up to the column width; no SVG
+overflow at 1 column. 502 tests pass.
+
+Findings, most severe first (to weigh at the app review):
+1. **Medium.** `hooks/cost/spend/record.ts:242` sets `ctxFirst` on any turn whose record lacks it, not only the first.
+   A conversation recorded before this change (say 150k tokens) gets the whole context labelled "setup" on its next
+   turn, against this item's Open (an old record gets no setup part). A test pins the wrong behaviour
+   (`tests/keepwarm-cost.test.ts`, the second ctxFirst test). Fix: set it only when `turns === 1`.
+2. Medium, plausible. `ctxFirst` is never reset after a compaction, so a context compacted below it shows as all setup.
+3. Low. The 1-column status line names the most recently re-read file, not the most re-read one as the check list
+   says (`hooks/band/card.ts:143`). Fix the code or the wording.
+4. Low. The gauge colours by the raw runway but prints it rounded: 5.4 shows `~5` in orange, though ≤5 is red. Colour
+   by the rounded figure.
+5. Low. The "as tall as before" test cannot fail from data and was not compared with the height before the change.

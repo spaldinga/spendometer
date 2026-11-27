@@ -46,3 +46,13 @@ Assumptions taken while building (no questions asked; change them here if the ap
 - The zone order item 85 settled is kept, so PER MESSAGE has a column, and its bars, only at 4 columns; below that it
   stays a text line. Showing the bars on narrower cards (a tiny inline chart in the status line, or a different zone
   order) is a decision for the user after seeing it.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+`recent` is carried through the record, appended on main turns only, capped at 10. The split bar and warm/cold rows
+match. 502 tests pass.
+
+Findings (to weigh at the app review):
+1. Low–medium. For a conversation recorded before this change, `recent` has under 3 entries, so the last bar is
+   orange while the caption already flags it red "5× avg" (the caption counts all turns). Lasts until 3 messages are
+   recorded. Fix: pass the turn count to the bars' outlier check.
+2. Docs. The Open says outliers are "counted over the bars shown"; the average is the whole conversation's.

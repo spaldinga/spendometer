@@ -48,3 +48,16 @@ Assumptions taken while building (no app check; the user reviews later):
 - Example state: warm, 70% of 5h used and running out, 31% of 7d, $16.61, the narrow row a compact step in (no next
   cost while warm). The cold card is not pictured.
 - Each image embeds the card's font (about 95 KB a file), so the text matches the app.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+The new images, alt text and tab text match the band; no internal paths or host names in README, docs or assets.
+
+Findings (sections the commit did not touch), to weigh at the app review:
+1. **Medium.** The README's file tree lists flat files that the refactor moved (`hooks/cache-art.ts`, `metrics.ts`,
+   `progress*.ts`, `pace.ts`, `days.ts`, `guard.ts`, `font.ts`).
+2. **Medium.** Prices are said to be in `hooks/cache-art.ts` (now `hooks/cost/prices.ts`), and the cache-tax credit
+   and licence table name `hooks/keepwarm.ts` (now `hooks/cost/cache/keepwarm/pinger.ts`). The licence row should point
+   at a real file. AGENTS.md has the same stale names.
+3. Low. With cache-tax installed the README still says "no button"; keep warm is a status mark now.
+4. Low. The top picture shows two "last" costs: `last $0.47` on the row and $2.11 in the card.
+5. Low. Item 140's subagent buttons and output pane are not in the README (it still shows subagents as joined text).

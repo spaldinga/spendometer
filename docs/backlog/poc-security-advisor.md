@@ -77,3 +77,32 @@ After `/reload-plugins --force`:
 ## Open
 - Answered above: what security-advisor checks (nothing), skills or tool calls (both), sharing with the git hold
   (a separate folder, no shared code), credits (unchanged).
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+Held: warns only, never blocks, fails open, the store log is bounded (50 recent, details cut at 80 characters, no
+userinfo in hosts), the git hold's credits are intact. 502 tests pass.
+
+Findings, most severe first (to weigh at the app review):
+1. **Medium.** Commands are split on newlines and on `;`, `|` and `&&` without regard to quotes or line continuations:
+   a multi-line `curl -X POST \` upload is missed, and heredoc text or `git commit -m "fix; rm -rf build"` gives
+   false warnings.
+2. **Medium, plausible.** The Skill check likely never sees the skill's text: the Skill tool's result is a short
+   acknowledgement, and the SKILL.md body comes as a separate message. The first "Done when" will likely fail;
+   reading the skill's file would fix it. Check this first in the app.
+3. **Medium, plausible.** WebFetch returns a processed summary, not the raw page, so hidden comments and characters
+   are mostly gone before the check sees them.
+4. **Medium.** The hidden-character set warns on ZWJ (every 👨‍💻-style emoji), ZWNJ and LRM/RLM (common on
+   multilingual pages), yet leaves out U+2066–2069, the Trojan Source bidi isolates.
+5. **Medium.** Everyday deletes warn: `rm -f out.log`, `rm -rf bin obj node_modules`, any `rmdir`,
+   `Remove-Item -Recurse -Force` on a scratch folder. The "under one noise warning a day" bar likely fails on this
+   alone. Options: no warning for `-f` without `-r`, or none for temp, `bin`, `obj`, `node_modules`.
+6. Low–medium. Misses: prefixed heads (`sudo rm`, `xargs rm -rf`, `/usr/bin/curl`), `bash -c "…"`, piping a
+   downloaded script into a shell (`curl … | bash`, `iwr … | iex`), and uploads via `--json @f`, `-d "$(cat f)"`,
+   `Invoke-RestMethod -Body`.
+7. Low. Known-host list lacks `*.azure.com`, `login.microsoftonline.com`, `*.windows.net`, `aka.ms`, `npmjs.com`,
+   `ghcr.io`, `docker.io`.
+8. Low. Pages and skills that discuss injection warn every time; `COMMENT_WORDS` matches `claude`, `assistant` or
+   `instruction` in any HTML comment.
+9. Low. `/<!--([\s\S]*?)-->/g` is quadratic on text with many `<!--` and no `-->` (unlikely in practice).
+10. Low, plausible. The Skill hook's `.catch(... next(e))` may run a failed Skill a second time.
+11. Low. The advisor is on by default but not mentioned in README.md.

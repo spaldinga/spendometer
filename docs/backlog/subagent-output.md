@@ -54,3 +54,21 @@ Assumptions taken while building (2026-11-26), to be confirmed in the app:
   filed under the run". Such an agent shows "This agent's output can't be read here: <reason>". Not verified live.
 - If the host denies the read after an agent finishes, the lines read while it ran stay.
 - Not tested: the `ui.close` hook (the test kit has no `$.ui.close`), and the crew buttons' real width.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+Host calls match how other mods use `$.ui.open`, the `Pane` render and `ui.close`; `$.session.messages` is used by no
+other mod on disk, so its shape is unverified. Width accounting looks consistent. 502 tests pass.
+
+Findings, most severe first (to weigh at the app review):
+1. **Medium.** A finished subagent cannot be opened once the pane is closed: the band has buttons for running
+   subagents only, the pane's switch row exists only while it is open, and no command opens it. This breaks "Done when:
+   clicking a finished one shows its final output".
+2. Medium, plausible. The idle pane re-renders on the 30 s tick and on every band redraw and crew step, against "an
+   idle pane costs nothing". The transcript read itself is correctly gated on the watched agent.
+3. Medium, plausible. Switching agents can be overwritten by a slower read of the previous one (`state.ts`, `watched`
+   is checked before the await, not after), leaving the new agent at "No output yet."
+4. Medium, plausible. One message without `text` makes `outputLines` throw, and the pane stays empty for that agent.
+5. Low, plausible. `ui.close` is not filtered to the person's own close (other mods check `e.origin.kind === 'person'`);
+   if the host closes on re-open, the watched agent is lost.
+6. Low. An agent no longer in the last 6 shows `done` in its header as a guess.
+7. Low. README not updated (see item 110's review).

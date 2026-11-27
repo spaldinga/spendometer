@@ -50,3 +50,8 @@ Settled with the user on 2026-11-26:
   delegation are there), `context` → Capacity, `cost` → Cost.
 - Icons: Cost 💰, Capacity 🔋 (picked from `assets/mockups-tabs/tabs-by-domain.svg`, which also has the layout the user chose).
 - Order against items 90 and 100: 85 comes first, so their pictures land in the Capacity and Cost tabs directly.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+No findings. Old tab names map through `tabFrom`, pressing the tab in use closes the card with an old stored name too,
+`/spendometer tab overview` answers `tab: cost`, the domain rule holds, and the narrow-step widths follow the new
+labels. 502 tests pass.

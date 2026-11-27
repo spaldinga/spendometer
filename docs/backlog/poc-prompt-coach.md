@@ -73,3 +73,18 @@ After `/reload-plugins --force`:
 - `/spendometer coach status` shows the briefs, the first-10/last-10 share and the Haiku cost.
 - Hypothesis to check: `model: 'haiku'` resolves to the current Haiku and is allowed on this account; if not,
   nothing shows and `not scored` counts up.
+
+## Review (2026-11-27, read-only reviewer, before the app check)
+Held: off by default, never holds the prompt, fails open, prompt fenced as data, README states the cost, no prompt
+text stored (`coachHistory` keeps figures only, capped at 200). 502 tests pass.
+
+Findings, most severe first (to weigh at the app review):
+1. **Medium.** `coachLast` is one global store key, and `$.store` is shared across conversations. With two
+   conversations open, switching between them scores ordinary prompts as "first": extra Haiku calls, and the
+   first10/last10 figure the POC is judged by is skewed. Fix idea: a small set of scored session ids.
+2. Low. `nextFirst` (after /clear or a compaction) is one module flag, not per session.
+3. Low. No length cap on the prompt sent to Haiku: a pasted 200k-character log costs about 100 times the README's
+   figure. Cap at a few thousand characters.
+4. Low. A failed call's usage is not added to the cost tally, so "Haiku $x total" undercounts.
+5. Low, plausible. Two quick prompts can both be scored (two awaits between reading and claiming `coachLast`).
+Still a hypothesis: that `model: 'haiku'` resolves to Haiku.
