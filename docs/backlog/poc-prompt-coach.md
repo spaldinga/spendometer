@@ -88,3 +88,10 @@ Findings, most severe first (to weigh at the app review):
 4. Low. A failed call's usage is not added to the cost tally, so "Haiku $x total" undercounts.
 5. Low, plausible. Two quick prompts can both be scored (two awaits between reading and claiming `coachLast`).
 Still a hypothesis: that `model: 'haiku'` resolves to Haiku.
+
+Fixed 2026-11-27:
+1. `coachLast` is replaced by `coachScored`, a list of the last 50 scored session ids; the session is claimed in it before the model call, so switching between conversations no longer scores ordinary prompts as first.
+2. `nextFirst` is replaced by a set of session ids: /clear re-arms the session that ended, a compaction the current one.
+3. The brief is cut at 4000 characters (`MAX_BRIEF_CHARS`, ends with `[cut]`) and the rubric says a cut is not a missing part.
+4. A call with an unusable reply adds its usage cost to `coachFailUsd`; `coach status` includes it in the Haiku total.
+5. Two quick prompts: a per-session guard around reading and writing the claim, so only one claims the first-prompt slot.

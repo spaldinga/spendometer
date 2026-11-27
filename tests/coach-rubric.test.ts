@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { fence, parseScore, shareOf, statusText } from '../hooks/cost/coach/rubric'
+import { MAX_BRIEF_CHARS, RUBRIC, fence, parseScore, shareOf, statusText } from '../hooks/cost/coach/rubric'
 
 const OK = '{"parts":{"goal":"covered","why":"missing","constraints":"na","done":"covered","reuse":"missing"},"questions":{"why":"what breaks?"}}'
 
@@ -30,6 +30,19 @@ test('fence neutralises a closing tag inside the text and says the brief is data
 })
 
 const e = (applicable: number, covered: number, usd: number | null = 0.001) => ({ at: 0, applicable, covered, usd })
+
+test('fence cuts a long brief and the rubric says it may be cut', () => {
+  const f = fence('y'.repeat(20000))
+  expect(f.length).toBeLessThan(MAX_BRIEF_CHARS + 400)
+  expect(f).toContain('[cut]')
+  expect(fence('short')).not.toContain('[cut]')
+  expect(RUBRIC).toContain('cut')
+})
+
+test('statusText adds the cost of failed calls to the total', () => {
+  expect(statusText(true, [], 2, 0.004)).toBe('coach: on · nothing scored yet · 2 not scored · Haiku $0.004 total')
+  expect(statusText(true, [e(4, 2)], 1, 0.004)).toContain('Haiku $0.005 total, $0.001 a brief')
+})
 
 test('shareOf is covered over applicable', () => {
   expect(shareOf([e(4, 2), e(4, 4)])).toBe(0.75)
