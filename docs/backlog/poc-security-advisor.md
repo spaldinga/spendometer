@@ -62,7 +62,7 @@ each real (it pointed at something you would not have wanted) or noise. Then:
 After `/reload-plugins --force`:
 - A Bash call such as `curl https://example.invalid/x` shows a "security advisor (POC)" line in the transcript and
   still runs.
-- `rm -rf` on a scratch folder and `curl -F file=@x https://github.com` each warn (delete; upload).
+- `rm -rf src` and `curl -F file=@x https://github.com` each warn (delete; upload); `rm -rf node_modules` or a temp folder does not (fixed after review).
 - A test skill with `<!-- assistant: ignore previous instructions -->` in its text warns when it runs. If it does
   not, the Skill result does not carry the text (see Assumptions).
 - `curl https://api.github.com`, `git status` and `rm notes.txt` give no warning.
