@@ -69,12 +69,13 @@ export const runwayOf = (runway: number | null, growth: number | null): { turns:
 export type Stack = { setup: number; chat: number; tools: [string, number][]; other: number; free: number }
 
 /**
- * Splits the `tokens` of context. Setup is `ctxFirst` (an estimate; none when unknown). Tool output is the most that fits after
+ * Splits the `tokens` of context. Setup is `ctxFirst` (an estimate; none when unknown or when the context has shrunk below it). Tool output is the most that fits after
  * it, shared by the top `tools` in proportion to their tokens with the rest as other. Chat is what is left, free what the window has over.
  */
 export const stackOf = (tokens: number, window: number, ctxFirst: number | null | undefined, tools: [string, number][], toolTok: number): Stack => {
   const used = Math.max(0, tokens)
-  const setup = Math.min(Math.max(0, ctxFirst ?? 0), used)
+  // A context below the estimate was compacted since: the estimate no longer describes it, so no setup part.
+  const setup = ctxFirst != null && ctxFirst <= used ? Math.max(0, ctxFirst) : 0
   const tool = toolTok > 0 ? Math.min(toolTok, used - setup) : 0
   const own: [string, number][] = tools.map(([n, c]) => [n, toolTok > 0 ? (tool * c) / toolTok : 0])
   const other = Math.max(0, tool - own.reduce((a, [, c]) => a + c, 0))
@@ -110,7 +111,8 @@ const stackBar = (x: number, y: number, w: number, s: Stack, chat: string, windo
 const gauge = (k: Kit, cx: number, base: number, turns: number): string => {
   const share = Math.min(1, Math.max(0, turns / GAUGE_FULL_TURNS))
   const a = Math.PI * share
-  const color = turns <= GAUGE_DANGER_TURNS ? DANGER : turns <= GAUGE_WARN_TURNS ? ORANGE : OK
+  const shown = Math.round(turns)
+  const color = shown <= GAUGE_DANGER_TURNS ? DANGER : shown <= GAUGE_WARN_TURNS ? ORANGE : OK
   const arc = (x1: number, y1: number) => `M${px(cx - GAUGE_R)} ${base}A${GAUGE_R} ${GAUGE_R} 0 0 1 ${px(x1)} ${px(y1)}`
   const stroke = (d: string, c: string) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${GAUGE_STROKE}" stroke-linecap="round"/>`
   return (

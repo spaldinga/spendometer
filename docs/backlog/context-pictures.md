@@ -28,7 +28,7 @@ Mapped onto today's files (the plan predates the refactor of item 80 and the tab
   (`hooks/capacity/context/runway.ts`). The runway text line stays.
 - **File chips** in TOOL OUTPUT (`toolsZone`): one chip per re-read file, basename and count, newest first, as many as
   fit.
-- Data: `Spent.ctxFirst` (set by `addContext` on the first main turn that has a record) and `Spent.rereadFiles`
+- Data: `Spent.ctxFirst` (set by `addContext` on the first priced main turn only; an older record gets none) and `Spent.rereadFiles`
   (basename → re-reads, the 5 most recent files; `addToolOut` gets the basename from `measureCall`), both carried by
   `readSpend` and `recordOf` (`hooks/cost/spend/record.ts`). `metricsOf` (`hooks/band/card-metrics.ts`) passes them on.
 
@@ -82,3 +82,10 @@ Findings, most severe first (to weigh at the app review):
 4. Low. The gauge colours by the raw runway but prints it rounded: 5.4 shows `~5` in orange, though ≤5 is red. Colour
    by the rounded figure.
 5. Low. The "as tall as before" test cannot fail from data and was not compared with the height before the change.
+
+Fixed 2026-11-27:
+1. `addContext` sets `ctxFirst` only when `turns === 1`; an older record keeps no setup part. The keepwarm-cost test now pins that.
+2. After a compaction: chose to show no setup part when the context is below `ctxFirst` (`stackOf`), over dropping `ctxFirst` on compaction; it needs no compaction hook. (If the context grows past `ctxFirst` again, setup shows again as an estimate.)
+3. Low: the 1-column line names the file with the most re-reads (ties: the most recent).
+4. Low: the gauge colours by the rounded figure it prints (5.4 shows `~5`, red).
+5. Not changed: the "as tall as before" test (not a finding to fix in code).

@@ -215,3 +215,11 @@ test('a main turn appends its cost to recent, keeping the last 10; a subagent tu
   await done($, { usage: USED })
   expect((store.get('spend:S1') as Spent).recent!.length).toBe(1)
 })
+
+test('the bars flag an outlier by the conversation\'s turn count, as the caption does, not by the bars shown', () => {
+  const two = (turns?: number) => barsOf(avgZone(k, 0, 0, 324, { avg: 0.38, last: 2.11, multiple: 6, turns, recent: [0.3, 2.11] })).map(b => b.fill)
+  // An older conversation has 2 bars but 20 turns: the last is red, like the caption's "6× avg".
+  expect(two(20)).toEqual([MUTED, DANGER])
+  // A conversation of 2 turns is too short for an outlier.
+  expect(two(2)).toEqual([MUTED, ORANGE])
+})

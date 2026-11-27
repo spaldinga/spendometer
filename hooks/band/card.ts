@@ -89,6 +89,8 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
   type Zone = { draw: (x: number, y: number, w: number) => string; status?: { dot: string; variants: string[] } }
   const spendHead = `≈${usd(total)} this thread`
   const mm = metrics
+  // The most re-read file; the files are newest first, so on a tie the first (most recent) stays.
+  const top = mm?.rereadFiles.reduce((a, f) => (f[1] > a[1] ? f : a), ['', 0] as [string, number]) ?? ['', 0]
   const modelsLine = mm && mm.models.length ? mm.models.map(([id, c]) => `${famName(id)} ${usd(c)}`) : []
   const delegStatus = (): string[] => {
     if (!mm) return ['delegation: after a few turns']
@@ -140,7 +142,7 @@ export const cardSvg = (v: CacheView, W: number, spend: CardSpend | null = null,
                 mm && mm.toolTok > 0
                   ? [
                       `tool output ${tok(mm.toolTok)} tokens` + (mm.tools.length ? ` · ${mm.tools.map(([k, n]) => `${k} ${tok(n)}`).join(' · ')}` : '') + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
-                      ...(mm.rereads > 0 && mm.rereadFiles.length ? [`tool output ${tok(mm.toolTok)} tokens · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'} (${mm.rereadFiles[0][0]} ×${mm.rereadFiles[0][1]})`] : []),
+                      ...(mm.rereads > 0 && mm.rereadFiles.length ? [`tool output ${tok(mm.toolTok)} tokens · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'} (${top[0]} ×${top[1]})`] : []),
                       `tool output ${tok(mm.toolTok)} tokens` + (mm.rereads > 0 ? ` · ${mm.rereads} re-read${mm.rereads === 1 ? '' : 's'}` : ''),
                       `tool output ${tok(mm.toolTok)} tokens`,
                     ]

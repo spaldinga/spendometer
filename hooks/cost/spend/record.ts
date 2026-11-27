@@ -239,7 +239,8 @@ export async function addContext(
     const growth = nextGrowth(next.growth, next.ctxPrev, tokens)
     if (growth !== undefined) next.growth = growth
     next.ctxPrev = tokens
-    if (next.ctxFirst === undefined) next.ctxFirst = tokens
+    // Only the first priced main turn sets it: an older record keeps no setup part rather than labelling its whole context setup.
+    if (next.ctxFirst === undefined && next.turns === 1) next.ctxFirst = tokens
     await $.store.set(SPEND_PREFIX + (await $.session.id()), next)
   } catch { /* the runway waits for the next turn */ }
 }
