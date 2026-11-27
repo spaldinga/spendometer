@@ -131,3 +131,7 @@ Fixed 2026-11-27 (unchecked in the app; 512 tests pass):
 10. Fixed. The Skill hook's `.catch` that called `next` again is removed; the inner try already covers the check,
     so a failed Skill throws once, as without the advisor.
 11. Fixed. README names the advisor, on by default, and `/spendometer advisor off`.
+
+Reviewer note on the fixes (2026-11-27): the Skill check reads the SKILL.md through `$.tool.call({ tool: 'Read' })`, so
+that read also passes the mod's own Read hook: it adds to TOOL OUTPUT and the seen-set, and a second load of the same
+skill can count as a re-read. `$.tool.call` is confirmed only by the test stub. Check both in the app.
