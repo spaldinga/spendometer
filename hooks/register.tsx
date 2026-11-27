@@ -129,7 +129,7 @@ export const register: Register = on => {
       await $.command.register({
         name: SETTINGS,
         description: "Settings for the band above the prompt: the progress row's look and the hold for risky git commands",
-        argumentHint: 'fold | cost | progress [id] | hold on|off | advisor on|off|status | coach on|off|status',
+        argumentHint: 'fold | cost | progress [id] | hold on|off | advisor on|off|status | coach on|off|status | output [agent]',
         immediate: true,
       })
     } catch { /* without the command the settings keep their defaults */ }
@@ -348,7 +348,9 @@ export const register: Register = on => {
   // The subagent output pane: drawn by outputPane; closing it (by the person or by us) stops the refreshing.
   on('ui.render', { component: 'Pane', requestId: OUTPUT_PANE }, ($, e) => outputPane($, e))
   on('ui.close', { id: OUTPUT_PANE }, async ($, e, next) => {
-    await closedOutput($)
+    // Only the person's own close ends the watching; a missing origin counts as theirs.
+    const origin = (e as { origin?: { kind?: string } | null }).origin
+    if (!origin || origin.kind === 'person') await closedOutput($)
     return next(e)
   }).catch(($, e, next) => next(e)) // a pane that fails to note its closing is still closed
 }

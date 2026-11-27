@@ -20,7 +20,7 @@ git commands until the user answers, and keeps the prompt cache warm between mes
 | `session.measure` | The context size; clears the re-read set when the context shrinks |
 | `agent.spawn` | Subagents for the crew display, the output pane's recent list and delegation figures |
 | `tool.call` | The git hold ([guard](../hooks/safety/guard/guard.ts)); the security advisor (warn only, see below); tool output measuring on the listed tools ([ADR 0002](adr/0002-hook-only-listed-tools.md)); a `Skill` hook that only runs the advisor |
-| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme, `coach on|off|status`; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
+| `command.run` | `/spendometer` (settings, fold, tab, cost, progress theme, `coach on|off|status`, `output [agent]`; `keepwarm [args]` is `/keepwarm`, and `status` has a keepwarm line) and `/keepwarm` |
 | `ui.render` | Draws the band: picks a layout, the row, the buttons, the progress row and the open card |
 | `ui.render` (Pane), `ui.close` | The subagent output pane (`activity/output/pane.tsx`), opened by pressing a subagent in the band and refreshed on that subagent's steps and turn end; its close stops the reading |
 

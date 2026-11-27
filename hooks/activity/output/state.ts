@@ -27,6 +27,9 @@ export async function refreshOutput($: EngineInterface, agentId: string): Promis
     if (!w || w.id !== agentId) return
     // The whole read: a mod's call takes no `last`; outputLines keeps the newest lines.
     const got = await $.session.messages({ agentId })
+    // The pane may have been switched or closed while the read ran: a late answer for another agent is dropped.
+    const now = await read($, watched)
+    if (!now || now.id !== agentId) return
     const has = await read($, agentOut)
     let next: AgentOut
     if (Array.isArray(got)) next = { id: agentId, lines: outputLines(got) }
@@ -41,6 +44,19 @@ export async function openOutput($: EngineInterface, id: string, type: string): 
   await update($, watched, () => ({ id, type }))
   await $.ui.open({ id: OUTPUT_PANE, title: `${type} · output` })
   await refreshOutput($, id)
+}
+
+/**
+ * `/spendometer output [agent]`: opens the pane on the newest recent subagent, or the newest whose id or type contains
+ * `query` (any case); finished ones too. Answers in a line.
+ */
+export async function openRecent($: EngineInterface, query: string): Promise<string> {
+  const q = query.trim().toLowerCase()
+  const list = await read($, recentCrew)
+  const hit = [...list].reverse().find(r => !q || r.id.toLowerCase().includes(q) || r.type.toLowerCase().includes(q))
+  if (!hit) return q ? `no subagent matching "${query.trim()}" in this conversation` : 'no subagent in this conversation yet'
+  await openOutput($, hit.id, hit.type)
+  return `output: ${hit.type} ${hit.isDone ? '(done)' : '(running)'}`
 }
 
 /** An agent seen: listed for the pane's switch row (the last RECENT_KEEP, newest last); its place stays when it finishes. */

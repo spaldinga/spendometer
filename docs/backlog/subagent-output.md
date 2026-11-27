@@ -32,6 +32,9 @@ After `/reload-plugins --force`, start a turn that runs two or more subagents:
   finished ones included.
 - Closing the pane stops the reading; clicking a name again opens it.
 - After `/clear` the pane's list is empty.
+- To open a finished subagent with the pane closed: `/spendometer output` opens the latest subagent, and
+  `/spendometer output explore` the newest whose name contains "explore"; the header says `done` and the final output
+  shows. With none, it answers "no subagent in this conversation yet".
 
 ## Done when
 In the app, clicking a running subagent opens a pane that shows its output as it grows; clicking a finished one shows
@@ -72,3 +75,17 @@ Findings, most severe first (to weigh at the app review):
    if the host closes on re-open, the watched agent is lost.
 6. Low. An agent no longer in the last 6 shows `done` in its header as a guess.
 7. Low. README not updated (see item 110's review).
+
+Fixed 2026-11-27:
+1. **Finished subagent cannot be opened:** `/spendometer output [agent]` opens the pane on the newest recent subagent,
+   or the newest whose id or type contains the text, finished ones included (`openRecent` in `output/state.ts`).
+   Chosen over keeping finished buttons in the band: no change to the band's width accounting, and the pane's list
+   (last 6, until `/clear`) already holds them.
+2. **Idle pane redraws:** the host calls the render on every band redraw and gives no way to skip it. The render only
+   reads three atoms and the crew; a test shows drawing the pane reads no transcript. No memoising built.
+3. **Stale read on switch:** `refreshOutput` re-reads `watched` after the `await $.session.messages(...)` and drops
+   an answer for an agent that is no longer watched (test with a held read).
+4. **Message without `text` or `toolUses`:** `outputLines` treats a missing one as empty, so the rest still shows.
+5. **`ui.close`:** acts only when `origin` is missing or `origin.kind === 'person'`. Not tested: the test kit has no
+   `ui.close` to fire.
+6-7. Not in the brief; left open.

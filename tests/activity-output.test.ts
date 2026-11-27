@@ -5,7 +5,7 @@ import { CREW_MAX, CREW_SHOWN, crewShown } from '../hooks/activity/crew'
 import { OUT_KEEP, outputLines } from '../hooks/activity/output/lines'
 import { NOW, props, engine as progressEngine, start } from './progress-kit'
 import type { T$ } from './progress-kit'
-import { done } from './keepwarm-kit'
+import { RUN, done } from './keepwarm-kit'
 
 type Msg = Parameters<typeof outputLines>[0][number]
 const asst = (text: string, toolUses: Msg['toolUses'] = []): Msg => ({ role: 'assistant', text, toolUses })
@@ -60,7 +60,7 @@ const PANE = { plugin: 'spendometer', component: 'Pane', requestId: 'spendometer
 const BAND = { plugin: 'spendometer', surface: 'desktop', component: 'AbovePrompt', props: props(true, 100) } as const
 const SPAWN = (type: string) => ({ tool_use_id: `t-${type}`, prompt: 'p', description: 'd', subagentType: type, provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false }) as never
 
-type Opts = { messages?: Record<string, unknown> }
+type Opts = { messages?: Record<string, unknown>; gate?: Record<string, Promise<void>> }
 /** The engine beneath: the progress kit's, plus a pane to open, subagents that spawn and the rows an agent has said. */
 const engine = (on: On, o: Opts = {}) => {
   progressEngine(on)
@@ -69,7 +69,7 @@ const engine = (on: On, o: Opts = {}) => {
   const reads: unknown[] = []
   on('ui.open', ($, e) => { opened.push(e as never); return { value: { isPlaced: true } } })
   on('agent.spawn', ($, e) => ({ model: 'claude-sonnet-5-5', agentId: `a-${e.subagentType}` }))
-  on('session.messages', ($, e) => { reads.push(e); return { value: (o.messages ?? {})[String((e as { agentId?: string }).agentId)] ?? [] } as never })
+  on('session.messages', async ($, e) => { reads.push(e); await o.gate?.[String((e as { agentId?: string }).agentId)]; return { value: (o.messages ?? {})[String((e as { agentId?: string }).agentId)] ?? [] } as never })
   on('state.set', ($, e, next) => { sets.push(e.key); return next(e) })
   const writes = () => sets.filter(k => k === 'agentOut').length
   return { opened, sets, reads, writes }
@@ -190,5 +190,75 @@ test('the pane says what to do before anything is watched, and when there is no 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await textOf(pane)).toContain('No output yet.')
   await pane.unmount()
+})
+
+test('outputLines: a message with no text or no toolUses is skipped, the rest still shows', () => {
+  const lines = outputLines([
+    { role: 'assistant', toolUses: [use('Read', { file_path: 'a.ts' })] } as never,
+    { role: 'assistant', text: 'Said.' } as never,
+    { role: 'user' } as never,
+    asst('Fine.'),
+  ])
+  expect(lines).toEqual(['→ Read a.ts', 'Said.', 'Fine.'])
+})
+
+test('a slow read of the agent that was left does not overwrite the one switched to', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  let release: () => void = () => {}
+  const gate = new Promise<void>(r => { release = r })
+  const { writes, reads } = engine(on, { messages: { 'a-Explore': ROWS, 'a-Plan': [asst('A plan.')] }, gate: { 'a-Explore': gate } })
+  await start($)
+  await $.agent.spawn(SPAWN('Explore'))
+  await $.agent.spawn(SPAWN('Plan'))
+  const band = await $.ui.mount(BAND)
+  void band.press({ key: 'crew-a-Explore' }) // its read waits on the gate
+  for (let i = 0; i < 100 && reads.length < 1; i++) await new Promise(r => setTimeout(r, 5))
+  await band.press({ key: 'crew-a-Plan' })
+  for (let i = 0; i < 100 && writes() < 1; i++) await new Promise(r => setTimeout(r, 5))
+  release()
+  await new Promise(r => setTimeout(r, 50))
+  await band.unmount()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const t = await textOf(pane)
+  expect(t).toContain('A plan.')
+  expect(t).not.toContain('→ Read crew.ts')
+  await pane.unmount()
+})
+
+test('/spendometer output opens the latest subagent, or a named one, also when it has finished', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { opened } = engine(on, { messages: { 'a-Explore': ROWS, 'a-Plan': [asst('A plan.')] } })
+  await start($)
+  const out = async (args: string) => ((await $.command.run({ command: 'spendometer', args, ...RUN })) as { text: string }).text
+  expect(await out('output')).toContain('no subagent')
+  await $.agent.spawn(SPAWN('Explore'))
+  await $.agent.spawn(SPAWN('Plan'))
+  await done($, { usage: null, agentId: 'a-Explore' })
+  await done($, { usage: null, agentId: 'a-Plan' })
+
+  expect(await out('output')).toContain('Plan')
+  expect(opened.map(o => o.title)).toEqual(['Plan · output'])
+  expect(await out('output explore')).toContain('Explore')
+  expect(opened.map(o => o.title)).toEqual(['Plan · output', 'Explore · output'])
+  expect(await out('output nosuch')).toContain('no subagent')
+  expect(opened.length).toBe(2)
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const t = await textOf(pane)
+  expect(t).toContain('Explore · done')
+  expect(t).toContain('→ Read crew.ts')
+  await pane.unmount()
+})
+
+test('drawing the pane reads no transcript', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { reads, writes } = engine(on, { messages: { 'a-Explore': ROWS } })
+  await start($)
+  await $.agent.spawn(SPAWN('Explore'))
+  const band = await $.ui.mount(BAND)
+  await pressUntil(band, 'crew-a-Explore', writes, 1)
+  await band.unmount()
+  const before = reads.length
+  for (let i = 0; i < 3; i++) await (await $.ui.mount({ ...PANE, surface: 'desktop' })).unmount()
+  expect(reads.length).toBe(before)
 })
 

@@ -29,12 +29,12 @@ export function outputLines(messages: SessionMessage[]): string[] {
   const out: string[] = []
   for (const m of messages) {
     if (m.role === 'assistant') {
-      for (const l of m.text.split(/\r?\n/)) if (l.trim()) out.push(l)
-      for (const u of m.toolUses) {
+      for (const l of (m.text ?? '').split(/\r?\n/)) if (l.trim()) out.push(l)
+      for (const u of m.toolUses ?? []) {
         const a = argOf(u.input ?? {})
         out.push(a ? `→ ${u.tool} ${a}` : `→ ${u.tool}`)
       }
-    } else if (m.text.trim()) {
+    } else if (m.text?.trim()) {
       out.push('▸ ' + cut(m.text.trim().split(/\r?\n/)[0], PROMPT_MAX))
     }
   }
