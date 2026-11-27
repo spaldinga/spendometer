@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 type Entry = { at: number; kind: Kind; source: string; detail: string }
 type AdvisorLog = { since: number; counts: Record<Kind, number>; recent: Entry[] }
-const KINDS: Kind[] = ['injection', 'outbound', 'upload', 'delete']
+const KINDS: Kind[] = ['injection', 'outbound', 'upload', 'delete', 'pipe']
 
 async function nowOf($: EngineInterface): Promise<number> {
   try { return await $.clock.now() } catch { return Date.now() }
@@ -26,7 +26,7 @@ async function readLog($: EngineInterface): Promise<AdvisorLog | null> {
   try {
     const v = (await $.store.get(LOG_KEY)) as Partial<AdvisorLog> | undefined
     if (!v || typeof v.since !== 'number' || !v.counts || !Array.isArray(v.recent)) return null
-    return { since: v.since, counts: { injection: 0, outbound: 0, upload: 0, delete: 0, ...v.counts }, recent: v.recent }
+    return { since: v.since, counts: { injection: 0, outbound: 0, upload: 0, delete: 0, pipe: 0, ...v.counts }, recent: v.recent }
   } catch {
     return null
   }
@@ -37,7 +37,7 @@ export async function noteFindings($: EngineInterface, source: string, findings:
   try {
     if (!findings.length) return
     const at = await nowOf($)
-    const log = (await readLog($)) ?? { since: at, counts: { injection: 0, outbound: 0, upload: 0, delete: 0 }, recent: [] }
+    const log = (await readLog($)) ?? { since: at, counts: { injection: 0, outbound: 0, upload: 0, delete: 0, pipe: 0 }, recent: [] }
     for (const f of findings) {
       log.counts[f.kind] += 1
       log.recent.push({ at, kind: f.kind, source, detail: f.detail })

@@ -7,7 +7,7 @@ import { addCrew, dropDoneCrew, finishCrew, noteCrewStep } from './activity/crew
 import { OUTPUT_PANE, closedOutput, noteRecent, refreshOutput, resetOutput } from './activity/output/state'
 import { outputPane } from './activity/output/pane'
 import { SHELLS, holdCommand } from './safety/guard/hold'
-import { checkCommand, checkText, textOf } from './safety/advisor/advisor'
+import { SKILL_LINES, checkCommand, checkText, skillPath, textOf } from './safety/advisor/advisor'
 import { advise } from './safety/advisor/log'
 import { clearSeen, forgetPath, isDeny, measureCall } from './capacity/context/size'
 import { MODELS, coldCost, familyOf, turnCost, warmCost } from './cost/prices'
@@ -108,10 +108,16 @@ export const register: Register = on => {
     try {
       const args = (e as unknown as { args?: unknown }).args
       const skill = String((e as unknown as { skill?: unknown }).skill ?? 'skill')
-      await advise($, `Skill ${skill}`, checkText(textOf(r) + (args ? '\n' + textOf(args) : '')))
+      let text = textOf(r) + (args ? '\n' + textOf(args) : '')
+      // The result is probably only an acknowledgement: when it or the call names the SKILL.md, read that file too.
+      const file = skillPath(e, r)
+      if (file) {
+        try { text += '\n' + textOf(await $.tool.call({ tool: 'Read', file_path: file, limit: SKILL_LINES } as never)) } catch { /* the check goes on without it */ }
+      }
+      await advise($, `Skill ${skill}`, checkText(text))
     } catch { /* the result goes on */ }
     return r
-  }).catch(($, e, next) => next(e))
+  })
   // An edit makes the file new: reading it again is not a re-read. Its own output counts like any tool's.
   for (const tool of ['Edit', 'Write', 'NotebookEdit'] as const) {
     on('tool.call', { tool }, async ($, e, next) => {
